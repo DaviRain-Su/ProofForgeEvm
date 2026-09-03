@@ -15,6 +15,7 @@ namespace Tests.Erc20MetaSpec
 open ProofForge
 open ProofForge.Evm
 open ProofForge.Evm.Sdk
+open ProofForge.Core.Value
 open Lean Elab Command
 
 #guard Erc20Meta.defaultNameCapacity == 32
@@ -27,6 +28,11 @@ open Lean Elab Command
 #guard Erc20Meta.canPublish Examples.Evm.Erc20Meta.tokenName Examples.Evm.Erc20Meta.tokenSymbol
 #guard !Erc20Meta.canPublish Erc20Meta.emptyName Examples.Evm.Erc20Meta.tokenSymbol
 #guard !Erc20Meta.canPublish Examples.Evm.Erc20Meta.tokenName Erc20Meta.emptySymbol
+
+private def invalidUtf8Name : BoundedString 8 :=
+  { length := 2, values := #v[0xc0, 0x80, 0, 0, 0, 0, 0, 0] }
+
+#guard !Erc20Meta.canPublish invalidUtf8Name Examples.Evm.Erc20Meta.tokenSymbol
 
 #guard Fungible.Log.transfer ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
 #guard Fungible.Log.approval ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
@@ -107,7 +113,7 @@ elab "#pf_erc20_meta_check" : command => do
     | .ok program => pure program
     | .error reason => throwError reason
   let digest := IR.digestHex program
-  unless digest == "7d3e75465655b224" do
+  unless digest == "b86fa0708b74fc2c" do
     throwError s!"Erc20Meta digest mismatch: {digest}"
   let want := #["allowance", "approve", "balanceOf", "decimals", "initialize",
     "mint", "name", "ownerOf", "symbol", "totalSupply", "transfer", "transferFrom"]

@@ -92,9 +92,31 @@ wrong_data="$("$cast" calldata \
 pf_evm_require_unauthorized "$addr" "$dest" "$wrong_data" "$dest" \
   "transferWithAuthorization signed by recipient"
 
-"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+transfer_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
-  "$sender" "$dest" 25 "$valid_after" "$valid_before" "$nonce" "$v" "$r" "$s" >/dev/null
+  "$sender" "$dest" 25 "$valid_after" "$valid_before" "$nonce" "$v" "$r" "$s")"
+auth_used_topic="$("$cast" keccak "AuthorizationUsed(address,bytes32)")"
+printf '%s' "$transfer_receipt" | "$python" -I -S -c "
+import json, sys
+r = json.load(sys.stdin)
+want = '${auth_used_topic,,}'
+hits = [lg for lg in (r.get('logs') or [])
+        if (lg.get('topics') or []) and lg['topics'][0].lower() == want]
+if len(hits) != 1:
+    raise SystemExit(f'FAIL: expected exactly one AuthorizationUsed log, got {len(hits)}')
+topics = hits[0]['topics']
+if len(topics) != 3:
+    raise SystemExit(f'FAIL: AuthorizationUsed should be LOG3, got {len(topics)} topics')
+sender = int('${sender,,}', 16)
+nonce = int('${nonce,,}', 16)
+if int(topics[1], 16) != sender:
+    raise SystemExit(f'FAIL: AuthorizationUsed authorizer {topics[1]} != sender')
+if int(topics[2], 16) != nonce:
+    raise SystemExit(f'FAIL: AuthorizationUsed nonce {topics[2]} != expected')
+data = (hits[0].get('data') or '0x')[2:]
+if data not in ('', '0'):
+    raise SystemExit(f'FAIL: AuthorizationUsed data should be empty, got {data}')
+"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   75 "sender after authorized transfer"
@@ -109,6 +131,100 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
     "$sender" "$dest" 25 "$valid_after" "$valid_before" "$nonce" "$v" "$r" "$s" >/dev/null 2>&1; then
   echo "FAIL: replayed authorization unexpectedly succeeded" >&2
+  exit 1
+fi
+
+ts="$(printf '%s' "$("$cast" block --rpc-url "$rpc" latest --json)" |
+  "$python" -I -S -c 'import json,sys; print(json.load(sys.stdin)["timestamp"])')"
+edge_nonce="0x0000000000000000000000000000000000000000000000000000000000000003"
+edge_typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"TransferWithAuthorization\": [
+      {\"name\":\"from\",\"type\":\"address\"},
+      {\"name\":\"to\",\"type\":\"address\"},
+      {\"name\":\"value\",\"type\":\"uint256\"},
+      {\"name\":\"validAfter\",\"type\":\"uint256\"},
+      {\"name\":\"validBefore\",\"type\":\"uint256\"},
+      {\"name\":\"nonce\",\"type\":\"bytes32\"}
+    ]
+  },
+  \"primaryType\": \"TransferWithAuthorization\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"from\": \"$sender\",
+    \"to\": \"$dest\",
+    \"value\": \"1\",
+    \"validAfter\": \"$ts\",
+    \"validBefore\": \"$(( ts + 1000 ))\",
+    \"nonce\": \"$edge_nonce\"
+  }
+}")"
+edge_sig="$("$cast" wallet sign --data --private-key "$private_key" "$edge_typed")"
+edge_r="0x${edge_sig:2:64}"
+edge_s="0x${edge_sig:66:64}"
+edge_v="$((16#${edge_sig:130:2}))"
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+    "$sender" "$dest" 1 "$ts" "$(( ts + 1000 ))" "$edge_nonce" "$edge_v" "$edge_r" "$edge_s" \
+    >/dev/null 2>&1; then
+  echo "FAIL: validAfter == timestamp unexpectedly succeeded" >&2
+  exit 1
+fi
+
+edge_before_nonce="0x0000000000000000000000000000000000000000000000000000000000000004"
+edge_before_typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"TransferWithAuthorization\": [
+      {\"name\":\"from\",\"type\":\"address\"},
+      {\"name\":\"to\",\"type\":\"address\"},
+      {\"name\":\"value\",\"type\":\"uint256\"},
+      {\"name\":\"validAfter\",\"type\":\"uint256\"},
+      {\"name\":\"validBefore\",\"type\":\"uint256\"},
+      {\"name\":\"nonce\",\"type\":\"bytes32\"}
+    ]
+  },
+  \"primaryType\": \"TransferWithAuthorization\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"from\": \"$sender\",
+    \"to\": \"$dest\",
+    \"value\": \"1\",
+    \"validAfter\": \"0\",
+    \"validBefore\": \"$ts\",
+    \"nonce\": \"$edge_before_nonce\"
+  }
+}")"
+edge_before_sig="$("$cast" wallet sign --data --private-key "$private_key" "$edge_before_typed")"
+edge_before_r="0x${edge_before_sig:2:64}"
+edge_before_s="0x${edge_before_sig:66:64}"
+edge_before_v="$((16#${edge_before_sig:130:2}))"
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+    "$sender" "$dest" 1 0 "$ts" "$edge_before_nonce" "$edge_before_v" "$edge_before_r" "$edge_before_s" \
+    >/dev/null 2>&1; then
+  echo "FAIL: validBefore == timestamp unexpectedly succeeded" >&2
   exit 1
 fi
 

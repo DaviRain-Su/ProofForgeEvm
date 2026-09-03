@@ -655,6 +655,9 @@ private def emitTransferWithAuthorization (context : Context σ)
   let expiredTxt ← LogError.Emit.emitRevert { indent := indent ++ "  " } { selector := expiredSel }
   let unauthorizedTxt ← LogError.Emit.emitRevert { indent := indent ++ "  " }
     { selector := Keccak.selector "Unauthorized" #["address"], args := #[signer] }
+  let authUsedTxt ← LogError.Emit.emitLog context.logError
+    { data := #[]
+      topics := #["0x" ++ Keccak.keccak256HexOfString "AuthorizationUsed(address,bytes32)", fromA, nonceWord] }
   let transferTxt ← LogError.Emit.emitLog context.logError
     { data := #[amt]
       topics := #["0x" ++ Keccak.keccak256HexOfString "Transfer(address,address,uint256)", fromA, toA] }
@@ -679,8 +682,8 @@ private def emitTransferWithAuthorization (context : Context σ)
     indent ++ "let " ++ rword ++ " := mload(0)" ++ nl ++
     packBytes32At indent 0 hs0 hs1 hs2 hs3 ++
     indent ++ "let " ++ sword ++ " := mload(0)" ++ nl ++
-    indent ++ "if gt(" ++ validAfter ++ ", timestamp()) {" ++ nl ++ expiredTxt ++ indent ++ "}" ++ nl ++
-    indent ++ "if lt(" ++ validBefore ++ ", timestamp()) {" ++ nl ++ expiredTxt ++ indent ++ "}" ++ nl ++
+    indent ++ "if iszero(gt(timestamp(), " ++ validAfter ++ ")) {" ++ nl ++ expiredTxt ++ indent ++ "}" ++ nl ++
+    indent ++ "if iszero(lt(timestamp(), " ++ validBefore ++ ")) {" ++ nl ++ expiredTxt ++ indent ++ "}" ++ nl ++
     indent ++ "mstore(0, " ++ fw0 ++ ")" ++ nl ++
     indent ++ "mstore(32, " ++ fw1 ++ ")" ++ nl ++
     indent ++ "mstore(64, " ++ fw2 ++ ")" ++ nl ++
@@ -727,7 +730,7 @@ private def emitTransferWithAuthorization (context : Context σ)
     indent ++ "if sload(" ++ toSlot ++ ") { " ++ toBal ++ " := sload(add(" ++ toSlot ++ ", 1)) }" ++ nl ++
     indent ++ "sstore(" ++ toSlot ++ ", 1)" ++ nl ++
     indent ++ "sstore(add(" ++ toSlot ++ ", 1), add(" ++ toBal ++ ", " ++ amt ++ "))" ++ nl ++
-    transferTxt
+    authUsedTxt ++ transferTxt
   return (acc, x0, st47)
 
 private def emitTokenPermit (context : Context σ)

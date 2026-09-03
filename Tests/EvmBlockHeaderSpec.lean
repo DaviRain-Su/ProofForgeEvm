@@ -15,7 +15,7 @@ open ProofForge.Evm.Sdk
 open Lean Elab Command
 
 #guard BlockHeader.historyDepth == 256
-#guard BlockHeader.isInHistoryWindow 0
+#guard !BlockHeader.isInHistoryWindow 0
 #guard !BlockHeader.isZeroHash ⟨1, 0, 0, 0⟩
 #guard BlockHeader.isZeroHash ⟨0, 0, 0, 0⟩
 
@@ -43,7 +43,7 @@ private def expectHeaderLink : CommandElabM Unit := do
       abi.contains "\"name\":\"inHistoryWindow\"" &&
       abi.contains "\"name\":\"coinbase\"" do
     throwError s!"HeaderLink ABI lost header surface:\n{abi}"
-  unless IR.digestHex program == "e0e09d52039478fc" do
+  unless IR.digestHex program == "8c4a049ef323d412" do
     throwError s!"HeaderLink digest drifted: {IR.digestHex program}"
   logInfo m!"headerlink: digest={IR.digestHex program} abi-ok"
 

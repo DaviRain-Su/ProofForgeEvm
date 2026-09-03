@@ -25,6 +25,11 @@ open Lean Elab Command
 #guard Eip712Domain.canPublish Examples.Evm.DomainLink.domainName Examples.Evm.DomainLink.domainVersion
 #guard !Eip712Domain.canPublish Eip712Domain.emptyName Examples.Evm.DomainLink.domainVersion
 #guard !Eip712Domain.canPublish Examples.Evm.DomainLink.domainName Eip712Domain.emptyVersion
+
+private def invalidUtf8Version : Eip712Domain.Version :=
+  { length := 2, values := #v[0xc0, 0x80, 0, 0, 0, 0, 0, 0] }
+
+#guard !Eip712Domain.canPublish Examples.Evm.DomainLink.domainName invalidUtf8Version
 #guard Eip712Domain.selectFields Examples.Evm.DomainLink.domainName Examples.Evm.DomainLink.domainVersion == 0x0f
 #guard Eip712Domain.selectFields Eip712Domain.emptyName Eip712Domain.emptyVersion == 0
 
@@ -81,7 +86,7 @@ private def expectDomainLink : CommandElabM Unit := do
     throwError s!"DomainLink ABI lost domain field surface:\n{abi}"
   unless !abi.contains "\"name\":\"permit\"" do
     throwError "DomainLink must not grow a permit mutation surface"
-  unless IR.digestHex program == "91defc704d253605" do
+  unless IR.digestHex program == "52e88ad42d5a8789" do
     throwError s!"DomainLink digest drifted: {IR.digestHex program}"
   logInfo m!"domainlink: digest={IR.digestHex program} abi-ok"
 
