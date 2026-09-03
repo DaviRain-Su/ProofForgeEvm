@@ -1489,22 +1489,6 @@ private def asVectorLits (env : Environment) (e : Expr) : Option (Array Ops.Val)
     | none => none
   else none
 
-/-- A constructed bounded boundary value already has the target-neutral fixed frame expected by
-the codec adapters: one length followed by every compile-time-capacity slot. Keep this recognition
-separate from ordinary user structures because these compiler-owned polymorphic carriers are not
-persistent state and their capacity parameter is erased after extraction. -/
-private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
-  let e := substLets 32 (strip e)
-  let ctor ← e.getAppFn.constName?
-  let .ctorInfo info ← env.find? ctor | none
-  unless info.induct == boundedVecName || info.induct == boundedBytesName ||
-      info.induct == boundedStringName do none
-  let args := e.getAppArgs
-  unless args.size ≥ 2 do none
-  let length ← val env args[args.size - 2]!
-  let values ← asVectorLits env args[args.size - 1]!
-  return #[length] ++ values
-
 /-- Compiler-owned fixed-width scalar constructors are boundary values, not persistent State.
 Expose their ordered limbs directly so target codecs see the same frame as projected wide values. -/
 private def asWideCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
@@ -2131,6 +2115,27 @@ private def scalarResultValues (env : Environment) (fuel : Nat) (e : Expr) :
         <|> asRegisteredBoundaryCtorFields env unfolded
         <|> asRegisteredBoundaryCtorFields env e <|>
         (asBoolVal env fuel e <|> val env e).map (#[·])
+
+private def boundedLengthVal (env : Environment) (e : Expr) : Option Ops.Val :=
+  let e := strip e
+  match val env e with
+  | some v => some v
+  | none =>
+    match scalarResultValues env 16 e with
+    | some #[v] => some v
+    | _ => none
+
+private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
+  let e := substLets 32 (strip e)
+  let ctor ← e.getAppFn.constName?
+  let .ctorInfo info ← env.find? ctor | none
+  unless info.induct == boundedVecName || info.induct == boundedBytesName ||
+      info.induct == boundedStringName do none
+  let args := e.getAppArgs
+  unless args.size ≥ 2 do none
+  let length ← boundedLengthVal env args[args.size - 2]!
+  let values ← asVectorLits env args[args.size - 1]!
+  return #[length] ++ values
 
 /-- Keep the historical scalar `okState` shorthand, but spell multi-leaf effectful results as the
 existing sequence of scalar returns. CFG lowering already joins that sequence into `returnU64s`. -/

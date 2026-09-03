@@ -27,6 +27,7 @@ def entries : Array Entry := #[
   { name := "EvmVecLog", digest := "bea39a52948599c0" },
   { name := "EvmVecStack", digest := "8903e992dacdb808" },
   { name := "GuardedPayout", digest := "359f6025f96aa432" },
+  { name := "ArtLink", digest := "c2e6c0ab4a9389ab" },
   { name := "Collectible", digest := "df29360114f22d5f" },
   { name := "Badge", digest := "ef61792f697edbd3" },
   { name := "TipJar", digest := "33bcabf27f5b9523" },

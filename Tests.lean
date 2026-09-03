@@ -20,6 +20,7 @@ import Tests.EvmErc165Spec
 import Tests.EvmErc2981Spec
 import Tests.EvmErc1155Spec
 import Tests.EvmErc721Spec
+import Tests.EvmMetadataUriSpec
 import Tests.EvmExceptErgonomicsSpec
 import Tests.EvmLogErrorSpec
 import Tests.EvmOrderedStorageSpec
