@@ -12,8 +12,9 @@ State: stored `owner` (rotated by two-step transfer), explicit `paused` flag, `U
 claimed credits, and one fixed pending owner. `credits` uses namespace 0 of `AddressMap256`, the map
 shape whose get/condition/put binding `Examples.Evm.Token` already proves end to end. Application
 policy and typed State writes stay in this file; reusable balance debit mechanics live in
-`Sdk.Fungible`. Successful `acceptOwnership` emits `OwnershipTransferred`; successful `pause` /
-`unpause` emit `Paused` / `Unpaused`.
+`Sdk.Fungible`. Successful `transferOwnership` emits `OwnershipTransferStarted`; successful
+`acceptOwnership` emits `OwnershipTransferred`; successful `pause` / `unpause` emit `Paused` /
+`Unpaused`. Constructor init stores the owner argument and empty pending state; it does not log.
 -/
 
 structure State where
@@ -35,14 +36,16 @@ def init (owner : Address) : State :=
   { owner, paused := Pausable.running, total := UInt256.zero,
     ownership := Access.Ownership.none }
 
-/-- Owner nominates `candidate` for the two-step transfer. -/
+/-- Owner nominates `candidate` for the two-step transfer. Success emits
+    `OwnershipTransferStarted(owner, candidate)`. -/
 @[pf_entry]
 def transferOwnership (s : State) (candidate : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
     if Address.isZero candidate then
       .ok (s, Revert.zeroAddress)
     else
-      .ok ({ s with ownership := Access.Ownership.nominate s.ownership candidate }, 1)
+      .ok ({ s with ownership := Access.Ownership.nominate s.ownership candidate },
+        Ownable.Log.ownershipTransferStarted s.owner candidate)
   else
     .ok (s, Access.ownerViolation)
 
@@ -108,6 +111,11 @@ def unpause (s : State) : Except Error (State × UInt64) :=
 @[pf_entry]
 def ownerOf (s : State) : Address :=
   s.owner
+
+/-- Sole pending nominee; `Address.zero` when none is live. -/
+@[pf_entry]
+def pendingOwner (s : State) : Address :=
+  s.ownership
 
 @[pf_entry]
 def creditOf (_s : State) (who : Address) : UInt256 :=

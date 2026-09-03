@@ -43,6 +43,8 @@ address behavior. Replacement/clear semantics above are ordinary structural valu
 #guard nominatedOwnership.nominationOf sample == 0
 
 #guard Ownable.Log.ownershipTransferred sample sample == 0
+#guard Ownable.Log.ownershipTransferStarted sample sample == 0
+#guard Ownable.canInit sample == false
 #guard Pausable.Log.paused sample == 0
 #guard Pausable.Log.unpaused sample == 0
 #guard Roles.Log.roleGranted ⟨1, 2, 3, 4⟩ sample sample == 0

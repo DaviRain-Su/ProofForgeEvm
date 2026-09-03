@@ -20,7 +20,7 @@
 
 | OZ path | Status | ProofForge module / example | Gap relative to OZ | Implementable? (blocker) |
 |---|---|---|---|---|
-| `access/Ownable.sol`, `Ownable2Step.sol` | PARTIAL | `Sdk.Access`, `Sdk.Ownable`, `TwoStepCounter`, `Credits` | Fixed single pending owner; no constructor or transfer-start log yet | Yes — W3 events only |
+| `access/Ownable.sol`, `Ownable2Step.sol` | PARTIAL | `Sdk.Access`, `Sdk.Ownable`, `TwoStepCounter`, `Credits` | Constructor logs/zero-owner revert not lowered; no `renounceOwnership` | Start event: yes — W3; constructor effects: no (`Emit` refuses constructor effects) |
 | `access/AccessControl.sol`, `IAccessControl.sol` | PARTIAL | `Sdk.Roles.Set2`, `EvmStaticCounter`, `EvmStaticRoster` | One fixed capacity-2 role, no role admin hierarchy/enumeration | `RoleAdminChanged`: no (no role-admin state/API); bounded named roles: later |
 | `access/extensions/*`, `access/manager/*` | ABSENT | — | Delayed admin rules, enumeration, authority manager | No — require unbounded role/account relations or external authority dispatch |
 | `account/**` | ABSENT | — | ERC-4337/7579 account, paymaster, execution modes | No — AA/paymaster and arbitrary execution are product non-goals |
@@ -44,10 +44,10 @@
 | `token/ERC1155/**` | PARTIAL | `Sdk.Erc1155`, `MultiToken`, `CraftToken` | Single-id core only | See IERC1155 row |
 | `token/ERC6909/**` | ABSENT | — | Multi-token transfer/operator semantics | No — broad dynamic multi-token standard is outside current bounded profile |
 | `token/common/ERC2981.sol`, `ERC1363Utils.sol` | PARTIAL | `Sdk.Erc2981`, `RoyaltyArt` | Static royalty only; no transfer-and-call | Royalty: W2 shipped; transfer-and-call: no callbacks |
-| `utils/Context.sol`, `Pausable.sol`, `ReentrancyGuard*.sol` | PARTIAL | `Sdk.Base.Context`, `Sdk.Pausable`, `Sdk.Reentrancy` | Explicit policy helpers, not Solidity inheritance/transient storage clone | Yes — W3 close event/profile gaps |
+| `utils/Context.sol`, `Pausable.sol`, `ReentrancyGuard*.sol` | PARTIAL | `Sdk.Base.Context`, `Sdk.Pausable`, `Sdk.Reentrancy` | Explicit policy helpers, not Solidity inheritance/transient storage clone | Pause events shipped S4b; no further W3 event gap |
 | `utils/Address.sol`, `LowLevelCall.sol`, `Multicall.sol`, `RelayedCall.sol`, `SimulateCall.sol`, `Calldata.sol`, `Memory.sol` | ABSENT | `OpenCall` is typed and closed | Arbitrary call/data/delegate/value helpers | No — arbitrary calldata/call and delegatecall prohibited |
 | `utils/cryptography/**` | PARTIAL | Keccak/SHA-256, fixed EIP-712 permit path, precompile internals | No general ECDSA/Merkle/SignatureChecker public SDK | Bounded Merkle proof: W4; general signature checker: no arbitrary ERC-1271 call |
-| `utils/math/**`, `SafeCast.sol`, `Panic.sol`, `Errors.sol`, `Comparators.sol` | PARTIAL | `Core.Math`, `Core.SafeCast`, `UInt256`, closed `Revert` | Not full Solidity numeric/type/error families | Yes — W3 bounded utility helpers where existing IR supports them |
+| `utils/math/**`, `SafeCast.sol`, `Panic.sol`, `Errors.sol`, `Comparators.sol` | PARTIAL | `Core.Math`, `Core.SafeCast`, `UInt256`, closed `Revert` | Not full Solidity numeric/type/error families | Existing IR already covers the bounded UInt64 math / SafeCast profiles; remaining families stay PARTIAL |
 | `utils/structs/**`, `Arrays.sol`, `Bytes.sol`, `Strings.sol`, `Base*`, `RLP.sol`, `Packing.sol`, `ShortStrings.sol` | PARTIAL | Bounded vec/ring/bitmap/enumerable structures, fixed bytes | No general dynamic bytes/strings/arrays/enumerable map semantics | Fixed-capacity variants only — W4; general versions no |
 | `utils/Create2.sol`, `Create3.sol`, `StorageSlot.sol`, `SlotDerivation.sol`, `TransientSlot.sol`, `draft-InteroperableAddress.sol` | ABSENT | — | Contract creation, arbitrary slots, transient/interoperable address encodings | No — creation/slot escape hatches non-goals |
 | `utils/Blockhash.sol`, `BlockHeader.sol`, `ERC6372Utils.sol`, `Nonces*.sol`, `RateLimiter.sol` | PARTIAL | `Context.blockHash`, block fields, hashed/static storage | No hardened nonce/rate/header utility profile | Bounded per-address nonce/rate profile: W3 |
@@ -59,7 +59,7 @@
 |---|---|---|
 | W1 | Static ERC-165 core (`bytes4` IDs, bounded support predicates), adopt `supportsInterface` in both ERC-721- and ERC-1155-shaped examples, compiler/ABI and Anvil gates | Verified on `cursor/oz-sdk-w1-e4eb`: targeted and full `lake build Tests`, plus four Anvil gates. The examples advertise `IERC165` only: their partial ERC-721/1155 method surfaces must return false for the standard token IDs. |
 | W2 | ERC-20-shaped consumer ergonomics: explicit safe-transfer/allowance policy helpers and a static ERC-2981 royalty profile | Verified on `cursor/oz-sdk-w2-e4eb`: targeted `Tests.EvmSafeErc20Spec` / `Tests.EvmErc2981Spec` and full `lake build Tests` (218 jobs), plus `anvil_safepay.sh` and `anvil_royaltyart.sh`. `forceApprove` is always `approve(0)` then `approve(amount)`. With a nonzero receiver, `RoyaltyArt` advertises IERC165 + complete IERC2981, returns false for IERC721/IERC1155, and quotes the full UInt256 sale-price range; a zero receiver advertises IERC165 only. |
-| W3 | Bounded access/utility closeout: Ownable2Step start event and constructor-init policy where extractable; fixed-capacity role profiles; bounded nonce/rate helpers | Planned |
+| W3 | Bounded access/utility closeout: Ownable2Step start event and constructor-init policy where extractable; fixed-capacity role profiles; bounded nonce/rate helpers | Ownable2Step slice verified on `cursor/oz-sdk-w3-e4eb`: `OwnershipTransferStarted` (LOG3) on nominate, constructor-init policy (`canInit`, no constructor logs); roles/nonce/rate remain for later W3 slices |
 | W4 | Static metadata/finance/crypto profiles: bounded ERC-721/1155 URI response, EIP-5267-style static domain fields, single-beneficiary vesting, bounded Merkle proofs | Planned |
 | W5 | Completion audit: re-inventory the then-current OZ tree, prove every remaining item is either DONE, a restricted PARTIAL profile, or blocked by a documented non-goal | Planned |
 

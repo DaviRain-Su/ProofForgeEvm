@@ -100,7 +100,7 @@ elab "#pf_guard_twostep_counter" : command => do
     | .error reason => throwError reason
   let entryNames := program.entries.map (·.ixName)
   for name in #["transferOwnership", "cancelOwnership", "acceptOwnership", "bump",
-      "pause", "unpause", "ownerOf", "pendingOf", "pausedOf", "get"] do
+      "pause", "unpause", "ownerOf", "pendingOwner", "pendingOf", "pausedOf", "get"] do
     unless entryNames.contains name do
       throwError s!"missing TwoStepCounter entry {name}"
   let rec storesField (fuel : Nat) (name : String)
@@ -159,6 +159,7 @@ elab "#pf_guard_twostep_counter" : command => do
     unless m.view && m.retWidths == widths do
       throwError s!"wrong TwoStepCounter view {name}: view={m.view} retWidths={m.retWidths}"
   expectView "ownerOf" #[20]
+  expectView "pendingOwner" #[20]
   expectView "pausedOf" #[1]
   -- UInt64 views leave retWidths empty (the default scalar width) under live extraction.
   for name in #["pendingOf", "get"] do
@@ -175,7 +176,8 @@ elab "#pf_guard_twostep_counter" : command => do
   let abi := ProofForge.Evm.Emit.emitAbi program
   for name in #["\"name\":\"Unauthorized\"", "\"name\":\"Paused\"", "\"name\":\"ZeroAddress\"",
       "\"name\":\"transferOwnership\"", "\"name\":\"cancelOwnership\"",
-      "\"name\":\"acceptOwnership\"", "\"name\":\"bump\"", "\"name\":\"pendingOf\""] do
+      "\"name\":\"acceptOwnership\"", "\"name\":\"bump\"", "\"name\":\"pendingOf\"",
+      "\"name\":\"pendingOwner\""] do
     unless abi.contains name do
       throwError s!"TwoStepCounter abi missing {name}"
 

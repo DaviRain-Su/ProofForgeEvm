@@ -32,13 +32,17 @@ third_key="0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
 third="$("$cast" wallet address --private-key "$third_key")"
 
 sig_own="$(pf_evm_typed_event_sig "$abi" OwnershipTransferred)"
+sig_started="$(pf_evm_typed_event_sig "$abi" OwnershipTransferStarted)"
 sig_paused="$(pf_evm_typed_event_sig "$abi" Paused)"
 sig_unpaused="$(pf_evm_typed_event_sig "$abi" Unpaused)"
 pf_evm_require_equal "$sig_own" 'OwnershipTransferred(address,address)' \
   "ABI OwnershipTransferred signature"
+pf_evm_require_equal "$sig_started" 'OwnershipTransferStarted(address,address)' \
+  "ABI OwnershipTransferStarted signature"
 pf_evm_require_equal "$sig_paused" 'Paused(address)' "ABI Paused signature"
 pf_evm_require_equal "$sig_unpaused" 'Unpaused(address)' "ABI Unpaused signature"
 topic_own="$("$cast" keccak "$sig_own")"
+topic_started="$("$cast" keccak "$sig_started")"
 topic_paused="$("$cast" keccak "$sig_paused")"
 topic_unpaused="$("$cast" keccak "$sig_unpaused")"
 
@@ -121,13 +125,21 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalOf()(uint256)
   7 "over-credit claim holds total"
 
 # Two-step rotation replaces the sole pending address; a stale nominee cannot accept.
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'transferOwnership(address)' "$other" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'transferOwnership(address)' "$other")"
+pf_evm_typed_event_check "$abi" "$receipt" OwnershipTransferStarted "$topic_started" \
+  "{\"previousOwner\": \"$sender\", \"newOwner\": \"$other\"}" \
+  "transferOwnership OwnershipTransferStarted LOG3"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'pendingOf(address)(uint64)' "$other")" \
   1 "first nomination recorded"
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'transferOwnership(address)' "$third" >/dev/null
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'pendingOwner()(address)')" \
+  "$other" "pendingOwner after first nomination"
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'transferOwnership(address)' "$third")"
+pf_evm_typed_event_check "$abi" "$receipt" OwnershipTransferStarted "$topic_started" \
+  "{\"previousOwner\": \"$sender\", \"newOwner\": \"$third\"}" \
+  "replacement OwnershipTransferStarted LOG3"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'pendingOf(address)(uint64)' "$other")" \
   0 "replacement invalidates stale nominee"
@@ -175,4 +187,4 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'creditOf(address)(uint256)' "$third")" \
   0 "new-owner claim debits credit"
 
-echo "evm-anvil-credits: ok (Access reuse + OwnershipTransferred LOG3 + Paused/Unpaused LOG1)"
+echo "evm-anvil-credits: ok (Access reuse + OwnershipTransferStarted LOG3 + OwnershipTransferred LOG3 + Paused/Unpaused LOG1)"
