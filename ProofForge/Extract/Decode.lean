@@ -6,6 +6,7 @@ import ProofForge.Core.Value
 import ProofForge.Core.Except
 import ProofForge.Evm.Runtime
 import ProofForge.Evm.Codec
+import ProofForge.Evm.NativeFx
 import ProofForge.Extract.Lexical
 
 open Lean
@@ -728,6 +729,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogTransfer256) ||
       (endsWith e ".evmLogApproval256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogApproval256) ||
+      (endsWith e ".evmLogTyped" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped) ||
       (endsWith e ".evmSendEth" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmSendEth) ||
       (endsWith e ".evmSendEth256" ||
@@ -785,6 +788,9 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
         if args.size ≥ n + 1 then (asVal env fuel args[args.size - 1 - n]!).getD (.arg n)
         else .arg n
       some (.mapGetPair (get 6) (get 5) (get 4) (get 3) (get 2) (get 1) (get 0))
+      else if endsWith e ".evmLogTyped" ||
+          isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped then
+      some (.lit 0)
       else if endsWith e ".evmLogTransfer256" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTransfer256 ||
           endsWith e ".evmLogApproval256" ||
@@ -2346,6 +2352,178 @@ private def decodeErrorCtor (env : Environment) (e : Expr) : DecodedError :=
     else .notError
   else .notError
 
+private inductive DecodedEvent where
+  | notEvent
+  | typed (frame : Core.Ops.EventFrame Ops.Val)
+  | unsupported (reason : String)
+
+private def isEvmLogTypedApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped || endsWith e ".evmLogTyped"
+
+private def isIndexedType (ty : Expr) : Bool :=
+  match ty.consumeMData.getAppFn.constName? with
+  | some n => n.toString.endsWith ".Event.Indexed"
+  | none => false
+
+private def indexedPayloadType (ty : Expr) : Option Expr :=
+  if isIndexedType ty then ty.consumeMData.getAppArgs.back? else none
+
+private def unwrapIndexedValue (env : Environment) (e : Expr) : Expr :=
+  let e := unfoldUserHelpers env 8 (peelLets (strip e))
+  match e.getAppFn.constName? with
+  | none => e
+  | some n =>
+    match env.find? n with
+    | some (.ctorInfo ctor) =>
+      if ctor.induct.toString.endsWith ".Event.Indexed" && e.getAppArgs.size ≥ 1 then
+        e.getAppArgs[e.getAppArgs.size - 1]!
+      else e
+    | _ =>
+      if n.toString.endsWith ".Event.Indexed.value" && e.getAppArgs.size ≥ 1 then
+        e.getAppArgs[e.getAppArgs.size - 1]!
+      else e
+
+private def eventScalarOfLeanType (ty : Expr) : Option Core.Codec.Scalar :=
+  let ty := ty.consumeMData
+  match ty.getAppFn.constName? with
+  | some ``Bool => some .boolean
+  | some ``UInt8 => some .uint8
+  | some ``UInt16 => some .uint16
+  | some ``UInt32 => some .uint32
+  | some ``UInt64 => some .uint64
+  | some n =>
+      if n == addr20Name then some .address20
+      else if n == uint128Name then some .uint128
+      else if n == uint256Name || n == evmUInt256AliasName then some .uint256
+      else if n == fixedBytesName || n == evmBytes32AliasName then
+        (fixedBytesSize? ty).map (.fixedBytes ·)
+      else none
+  | none => none
+
+private def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar) (e : Expr) :
+    Option (Array Ops.Val) :=
+  match scalar with
+  | .boolean | .uint 8 | .uint 16 | .uint 32 | .uint 64 =>
+      (val env e).map (fun value => #[value])
+  | .uint 256 =>
+      let (a0, a1, a2, a3) := uint256Leaves env e
+      some #[a0, a1, a2, a3]
+  | .address 20 =>
+      let (w0, w1, w2) := addr20Leaves env e
+      some #[w0, w1, w2]
+  | .fixedBytes 32 =>
+      let (w0, w1, w2, w3) := bytes32Leaves env e
+      some #[w0, w1, w2, w3]
+  | scalar =>
+      if Evm.Codec.isWideIntegerCarrier scalar then
+        let (w0, w1, w2, w3) := uint256Leaves env e
+        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
+      else if Evm.Codec.isFixedBytesCarrier scalar then
+        let (w0, w1, w2, w3) := bytes32Leaves env e
+        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
+      else none
+
+/-- User-written explicit binders only. Hygienic `_`, implicit/instance binders, and generated
+numeric names must not become ABI field names. -/
+private def explicitEventFieldBinder (fieldName : Name) (binderInfo : BinderInfo) : Bool :=
+  binderInfo == .default &&
+    !fieldName.isAnonymous &&
+    !fieldName.hasMacroScopes &&
+    !fieldName.isInaccessibleUserName &&
+    match fieldName with
+    | .str .anonymous s =>
+        !s.isEmpty && s.front.isAlpha && s.all (fun c => c.isAlphanum || c == '_')
+    | _ => false
+
+/-- Preserve a typed event constructor applied to `Runtime.evmLogTyped` / `Sdk.Event.emit` as one
+target-local frame. Names, ABI types, and `Indexed` flags stay structured; unsupported shapes
+must not degrade to closed LOG helpers. -/
+private def decodeEventPayload (env : Environment) (applied : Expr) : DecodedEvent :=
+  let applied := peelLets (strip applied)
+  match applied.getAppFn.constName? with
+  | none => .unsupported "typed event lost constructor"
+  | some ctorName =>
+    let name := Core.IR.lastName ctorName.toString
+    match env.find? ctorName with
+    | some (.ctorInfo ctor) =>
+      if name.isEmpty then
+        .unsupported "typed event constructor name must be non-empty"
+      else
+        match env.find? ctor.induct with
+        | some (.inductInfo info) =>
+          if info.numParams != 0 || info.numIndices != 0 || info.isRec then
+            .unsupported "typed event must be a nonrecursive monomorphic enum"
+          else if applied.getAppArgs.size < ctor.numFields then
+            .unsupported "typed event lost constructor fields"
+          else Id.run do
+            let mut type := ctor.type
+            let mut eventArgs : Array (Core.Ops.EventArg Ops.Val) := #[]
+            let mut names : Array String := #[]
+            for fieldIndex in [:ctor.numFields] do
+              let .forallE fieldName domain body binderInfo := strip type
+                | return .unsupported "typed event lost field metadata"
+              unless explicitEventFieldBinder fieldName binderInfo do
+                return .unsupported "typed event fields must be explicitly named"
+              let (fieldType, indexed) :=
+                match indexedPayloadType domain with
+                | some payload => (payload, true)
+                | none => (domain, false)
+              let some scalar := eventScalarOfLeanType fieldType
+                | return .unsupported "typed event field type is not a closed EVM scalar"
+              unless Evm.NativeFx.eventScalarSupported scalar do
+                return .unsupported "typed event field type is not a closed EVM scalar"
+              let fieldName := fieldName.toString
+              if fieldName.isEmpty || names.contains fieldName then
+                return .unsupported "typed event field names must be unique"
+              let some fieldExpr :=
+                  applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
+                | return .unsupported "typed event lost field value"
+              let fieldExpr :=
+                if indexed then unwrapIndexedValue env fieldExpr else peelLets (strip fieldExpr)
+              let some parts := eventPartsOf env scalar fieldExpr
+                | return .unsupported "typed event field is not a scalar value"
+              names := names.push fieldName
+              eventArgs := eventArgs.push
+                { name := fieldName, type := scalar, parts, indexed }
+              type := body
+            let frame : Core.Ops.EventFrame Ops.Val := { constructor := name, args := eventArgs }
+            if frame.wellFormed (·.wellFormed IR.ValKind.arity) &&
+                Evm.NativeFx.Call.logTypedWellFormed (·.wellFormed IR.ValKind.arity) frame then
+              .typed frame
+            else .unsupported "malformed typed event frame"
+        | _ => .unsupported "typed event has no enum metadata"
+    | _ => .unsupported "typed event lost constructor"
+
+private def decodeEventCtor (env : Environment) (e : Expr) : DecodedEvent :=
+  let e := unfoldUserHelpers env 8 (peelLets (strip e))
+  if isEvmLogTypedApp e then
+    let args := e.getAppArgs
+    match args.back? with
+    | some event => decodeEventPayload env event
+    | none => .unsupported "typed event lost constructor"
+  else .notEvent
+
+private def findTypedEventFailure (env : Environment) (e : Expr) : Option String :=
+  let rec walk (fuel : Nat) (e : Expr) : Option String :=
+    match fuel with
+    | 0 => none
+    | fuel' + 1 =>
+      let e := e.consumeMData
+      match decodeEventCtor env e with
+      | .unsupported reason => some reason
+      | .typed _ => none
+      | .notEvent =>
+        if let some (_, unfolded) := unfoldUserHelper env e then
+          walk fuel' unfolded
+        else
+          match e with
+          | .letE _ _ value body _ =>
+              walk fuel' value <|> walk fuel' (body.instantiate1 value)
+          | .lam _ _ body _ => walk fuel' body
+          | .app f a => walk fuel' f <|> walk fuel' a
+          | _ => none
+  walk 24 e
+
 private def isErrorOverflow (e : Expr) : Bool :=
   let e := peelControl 8 e
   if isExceptErrorHead e then
@@ -2988,6 +3166,11 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
     | _, _, _ =>
       some (.evmLogApproval256 (.arg 0) (.arg 1) (.arg 2) (.arg 3) (.arg 4) (.arg 5)
         (.arg 6) (.arg 7) (.arg 8) (.arg 9))
+  else if isConstNamed app ``ProofForge.Evm.Runtime.evmLogTyped ||
+      endsWith app ".evmLogTyped" then
+    match decodeEventCtor env app with
+    | .typed frame => some (.evmLogTyped frame)
+    | .unsupported _ | .notEvent => none
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmRevertInsufficient ||
       endsWith app ".evmRevertInsufficient" then
     match nthFromEnd args 1, nthFromEnd args 0 with
@@ -3448,6 +3631,7 @@ private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   | some (.evmLog _ v) => v
   | some (.evmLogTransfer256 _ _ _ _ _ _ a0 _ _ _) => a0
   | some (.evmLogApproval256 _ _ _ _ _ _ a0 _ _ _) => a0
+  | some (.evmLogTyped _) => .lit 0
   | some (.evmRevertInsufficient h0 _ _ _ _ _ _ _) => h0
   | some (.evmRevertUnauthorized w0 _ _) => w0
   | some .evmRevertZeroAddress => .lit 0
@@ -3646,7 +3830,7 @@ def zetaPureHeadLets (env : Environment) (fuel : Nat) (e : Expr) : Expr :=
     match strip e with
     | .letE _ _ value body _ =>
         let effectful :=
-          (decodeEvmEffect env value).isSome ||
+          (decodeEvmEffect env value).isSome || (findTypedEventFailure env value).isSome ||
             (findForIn env value).isSome || (findForBodyExpr env value).isSome
         -- A scalar captured before an effect must remain a local: substituting its state-field read
         -- through the call can move that read after a later state write.
@@ -4382,7 +4566,9 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
   let includeSingleStore := stateful || stateType?.any fun stateType =>
     (getStructureFields env stateType).size > 1
   -- 必须在 peelLets 之前找效应：剥掉 `have sent := …` 后调用就没了。
-  if let some ops := decodeEvmEffect env e then
+  if let some reason := findTypedEventFailure env e then
+    .error s!"extract/unsupported: {reason}"
+  else if let some ops := decodeEvmEffect env e then
     .ok (mergeEvmStores localDepth ops (evmEffectStores env e))
   else if let some (n, addend) := findForIn env e then
     .ok #[.forAccum n addend localDepth, .returnU64 (.local localDepth)]
@@ -4741,6 +4927,7 @@ private def nestedSequencedScalarHelper? (env : Environment) (e : Expr) : Option
             | some (.defnInfo info) =>
                 if (resultType 16 info.type).consumeMData.getAppFn.constName? == some ``UInt64 &&
                     (decodeEvmEffect env unfolded).isNone &&
+                    (findTypedEventFailure env unfolded).isNone &&
                     ((findForIn env unfolded).isSome || (findForBodyExpr env unfolded).isSome) then
                   some candidate
                 else
@@ -4771,7 +4958,7 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
     match strip e with
     | .letE _ ty value body _ =>
       let effectful :=
-        (decodeEvmEffect env value).isSome ||
+        (decodeEvmEffect env value).isSome || (findTypedEventFailure env value).isSome ||
           (findForIn env value).isSome || (findForBodyExpr env value).isSome
       let scalarControlProducer := isSequencedScalarProducer env ty value
       if scalarControlProducer then
@@ -4994,6 +5181,8 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
           (stateType? := stateType?) (deepScalars := deepScalars) with
       | .ok ops => return .ok ops
       | .error reason => return .error s!"extract/unsupported: inline {name}: {reason}"
+    else if let some reason := findTypedEventFailure env e then
+      return .error s!"extract/unsupported: {reason}"
     else if let some ops := decodeEvmEffect env e then
       return .ok (mergeEvmStores localDepth ops (evmEffectStores env e))
     else if let some (n, addend) := findForIn env e then
@@ -5038,6 +5227,10 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
       let f :=
         if containsStructuredStateLet env 64 f then f
         else substIteLets 64 f
+      if let some reason := findTypedEventFailure env t then
+        return .error s!"extract/unsupported: {reason}"
+      if let some reason := findTypedEventFailure env f then
+        return .error s!"extract/unsupported: {reason}"
       let checkedSubMatches (candidate : Expr) : Bool :=
         match asCheckedSubGuard env candidate with
         | none => false
@@ -5284,6 +5477,8 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
           return .error (if stateful then s!"state loop then: {r}" else s!"ite then: {r}")
         | _, .error r =>
           return .error (if stateful then s!"state loop else: {r}" else s!"ite else: {r}")
+    else if let some reason := findTypedEventFailure env e then
+      return .error s!"extract/unsupported: {reason}"
     else if let some ops := decodeEvmEffect env e then
       return .ok ops
     else if let some reduced := reduceUInt64NewtypeMatch? env e then

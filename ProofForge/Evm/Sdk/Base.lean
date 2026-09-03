@@ -292,6 +292,20 @@ end Effect
 
 namespace Event
 
+/-- Marks one event constructor field as an EVM topic (after the signature topic). Unwrapped
+fields become ABI data words. The wrapper is extract-time metadata; it has no runtime layout. -/
+structure Indexed (α : Type) where
+  value : α
+  deriving Repr, DecidableEq, Inhabited, BEq
+
+@[pf_inline] def indexed {α : Type} (value : α) : Indexed α := ⟨value⟩
+
+/-- Emit one approved typed event constructor. The extractor builds an `EventFrame` from the
+constructor name, field names, ABI types, and `Indexed` flags without lowering them to raw
+strings or bytes. Closed LOG helpers (`tipped`, `transfer`, …) stay unchanged. -/
+@[pf_inline] def emit {α : Type} (event : α) : UInt64 :=
+  Runtime.evmLogTyped event
+
 @[pf_inline] def tipped (amount : UInt64) : UInt64 := Runtime.evmLogTipped amount
 @[pf_inline] def incremented (amount : UInt64) : UInt64 := Runtime.evmLogIncremented amount
 @[pf_inline] def transferU64 (amount : UInt64) : UInt64 := Runtime.evmLogTransfer amount
