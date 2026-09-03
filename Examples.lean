@@ -31,6 +31,7 @@ import Examples.Evm.EvmCheckpointTrace
 import Examples.Evm.EvmSafeCastAccumulator
 import Examples.Evm.EvmSafeCastConfig
 import Examples.Evm.EvmTypedErrors
+import Examples.Evm.EvmChainGuard
 import Examples.Evm.EvmPriceBand
 import Examples.Evm.GuardedPayout
 import Examples.Evm.Collectible

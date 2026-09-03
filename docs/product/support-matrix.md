@@ -48,12 +48,14 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 
 | Target | Status |
 |---|---|
-| Anvil + `runtime-tests/evm/` | **Supported** engineering gate |
-| Base Sepolia / Base VibeNet (ordinary EOA create of `.bin`) | Possible as generic EVM RPC; **not CI-gated** |
+| Anvil + `runtime-tests/evm/` (default chain id `31338`) | **Supported** engineering gate |
+| External RPC (`PF_EVM_RPC_URL` + required `PF_EVM_CHAIN_ID`) | Same `anvil_*.sh` / `scripts/deploy_evm.sh` path; fail-closed chain-id; `anvil_setStorageAt` disabled; **not** a merge-required public-network gate |
+| Anvil `--chain-id 84532` / `84538453` (`EvmChainGuard`) | **Supported locally** — impersonates Base Sepolia / VibeNet numeric ids; not a public-RPC claim |
+| Base Sepolia (`84532`) / Base VibeNet (`84538453`) ordinary EOA create of `.bin` | Possible as generic EVM RPC; **not CI-gated**; do not claim “verified on Base” from Anvil |
 | Base Mainnet / any production chain | **Not endorsed** |
 | VibeNet EIP-8130 AA / payers | **Out of scope** for ProofForge |
 
-See [deploy.md](deploy.md) for the checkout → `.bin` → RPC story.
+See [deploy.md](deploy.md) for the checkout → `.bin` → RPC story, including `scripts/deploy_evm.sh`.
 
 ## Proof boundary
 

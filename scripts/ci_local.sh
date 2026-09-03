@@ -82,7 +82,7 @@ detect_lanes() {
     matches_any "$f" \
       'ProofForge/Evm/**' 'Examples/Evm/**' \
       'runtime-tests/evm/**' 'scripts/check_artifact_manifest.py' \
-      'scripts/ci_pf_init_named_project.sh' \
+      'scripts/ci_pf_init_named_project.sh' 'scripts/deploy_evm.sh' \
       'lakefile.lean' 'lean-toolchain' 'lake-manifest.json' '.github/workflows/ci.yml' '.agents/setup' \
       'ProofForge/Cli.lean' 'ProofForge/Extract.lean' 'ProofForge/Extract/**' 'ProofForge/Core/**' \
       'templates/**' && evm=1
