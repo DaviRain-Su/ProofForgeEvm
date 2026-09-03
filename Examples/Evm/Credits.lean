@@ -67,8 +67,7 @@ def acceptOwnership (s : State) : Except Error (State × UInt64) :=
 @[pf_entry]
 def renounceOwnership (s : State) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
-    .ok ({ owner := Address.zero, paused := s.paused, total := s.total,
-      ownership := Access.Ownership.cancel s.ownership },
+    .ok ({ s with owner := Address.zero, ownership := Access.Ownership.cancel s.ownership },
       Ownable.Log.ownershipTransferred s.owner Address.zero)
   else
     .ok (s, Access.ownerViolation)
