@@ -55,6 +55,17 @@ private partial def bytes32LeavesAsVal (env : Environment) (fuel : Nat) (e : Exp
     | some v => (flattenField v "w0", flattenField v "w1", flattenField v "w2", flattenField v "w3")
     | none => (proj "w0", proj "w1", proj "w2", proj "w3")
 
+private partial def ecrecoverWideOperands (env : Environment) (fuel : Nat) (args : Array Expr) :
+    Option (Array Ops.Val) :=
+  if args.size < 4 then none
+  else
+    let base := args.size - 4
+    let (h0, h1, h2, h3) := bytes32LeavesAsVal env fuel args[base]!
+    let vv := (asVal env fuel args[base + 1]!).getD (.arg 1)
+    let (r0, r1, r2, r3) := bytes32LeavesAsVal env fuel args[base + 2]!
+    let (s0, s1, s2, s3) := bytes32LeavesAsVal env fuel args[base + 3]!
+    some #[h0, h1, h2, h3, vv, r0, r1, r2, r3, s0, s1, s2, s3]
+
 private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
   match fuel with
   | 0 => none
@@ -453,6 +464,13 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
           endsWith baseE ".evmOrigin20" then
         some (.ext (.evm (.component (.environment (.origin20
           (if leaf == "w0" then 0 else if leaf == "w1" then 1 else 2))))) #[])
+      else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmEcrecover ||
+          endsWith baseE ".evmEcrecover" then
+        match ecrecoverWideOperands env fuel baseE.getAppArgs with
+        | none => none
+        | some operands =>
+            let limb := if leaf == "w0" then 0 else if leaf == "w1" then 1 else 2
+            some (.ext (.evm (.component (.wideWord (.ecrecover20 limb)))) operands)
       else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmImm20b ||
           endsWith baseE ".evmImm20b" then
         some (match leaf with
@@ -525,6 +543,12 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
         let root ← asVal env fuel args[base + 10 + i]!
         operands := operands.push root
       return .ext (.evm (.component (.wideWord .merkleVerify256))) operands
+  else if endsWith e ".evmEcrecover" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmEcrecover then
+    match ecrecoverWideOperands env fuel e.getAppArgs with
+    | none => none
+    | some operands =>
+        some (.ext (.evm (.component (.wideWord (.ecrecover20 0)))) operands)
   else if endsWith e ".evmEqBytes32" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmEqBytes32 then
     let args := e.getAppArgs
@@ -1001,6 +1025,13 @@ private def addr20Leaves (env : Environment) (e : Expr) : Ops.Val × Ops.Val × 
     (.ext (.evm (.component (.environment (.origin20 0)))) #[],
       .ext (.evm (.component (.environment (.origin20 1)))) #[],
       .ext (.evm (.component (.environment (.origin20 2)))) #[])
+  else if isConstNamed e ``ProofForge.Evm.Runtime.evmEcrecover || endsWith e ".evmEcrecover" then
+    match ecrecoverWideOperands env 32 e.getAppArgs with
+    | none => (.arg 0, .arg 1, .arg 2)
+    | some operands =>
+        (.ext (.evm (.component (.wideWord (.ecrecover20 0)))) operands,
+         .ext (.evm (.component (.wideWord (.ecrecover20 1)))) operands,
+         .ext (.evm (.component (.wideWord (.ecrecover20 2)))) operands)
   else if isConstNamed e ``ProofForge.Evm.Runtime.evmImm20b || endsWith e ".evmImm20b" then
     (.evmImmX0, .evmImmX1, .evmImmX2)
   else if isConstNamed e ``ProofForge.Evm.Runtime.evmImm20 || endsWith e ".evmImm20" then
@@ -4067,6 +4098,16 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
       .returnU64 (.ext (.evm (.domainSep256 2)) #[]),
       .returnU64 (.ext (.evm (.domainSep256 3)) #[])
     ]
+  else if isConstNamed app ``ProofForge.Evm.Runtime.evmEcrecover ||
+      endsWith app ".evmEcrecover" then
+    match ecrecoverWideOperands env 32 args with
+    | none => none
+    | some operands =>
+        some #[
+          .returnU64 (.ext (.evm (.component (.wideWord (.ecrecover20 0)))) operands),
+          .returnU64 (.ext (.evm (.component (.wideWord (.ecrecover20 1)))) operands),
+          .returnU64 (.ext (.evm (.component (.wideWord (.ecrecover20 2)))) operands)
+        ]
   else none
 
 private def collectEvmQueryOps (env : Environment) (e : Expr) : Option (Array Ops.Op) :=

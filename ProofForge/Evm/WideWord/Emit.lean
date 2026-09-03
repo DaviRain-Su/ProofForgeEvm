@@ -1,5 +1,6 @@
 import ProofForge.Evm.WideWord
 import ProofForge.Evm.Ops
+import ProofForge.Evm.Precompile.Emit
 
 namespace ProofForge.Evm.WideWord.Emit
 
@@ -350,6 +351,61 @@ private def emitMerkleVerify256 (context : Context σ) (operands : Array Ops.Val
     indent ++ "}" ++ nl
   return (text, result, state)
 
+private def packFixedBytesAt (indent : String) (off : Nat) (w0 w1 w2 w3 : String) : String :=
+  indent ++ "pf_store_fixed_bytes(" ++ toString off ++ ", " ++ w0 ++ ", " ++ w1 ++
+    ", " ++ w2 ++ ", " ++ w3 ++ ", 32)" ++ nl
+
+/-- Convert EVM's big-endian 20-byte address word into source Addr20 little-endian limbs. -/
+private def packAddrWord (src : String) (word : Nat) : String :=
+  let rec orBytes (index remaining : Nat) (acc : String) : String :=
+    match remaining with
+    | 0 => acc
+    | count + 1 =>
+        let byteExpr := "byte(" ++ toString (12 + 8 * word + index) ++ ", " ++ src ++ ")"
+        let next :=
+          if index == 0 then byteExpr
+          else "or(" ++ acc ++ ", shl(" ++ toString (8 * index) ++ ", " ++ byteExpr ++ "))"
+        orBytes (index + 1) count next
+  orBytes 0 (if word == 2 then 4 else 8) "0"
+
+private def precompileContext (context : Context σ) : Precompile.Emit.Context σ :=
+  { fresh := context.fresh, indent := context.indent }
+
+private def emitEcrecover20 (context : Context σ) (limb : Nat) (operands : Array Ops.Val)
+    (st : σ) : Except String (String × String × σ) := do
+  unless operands.size == 13 do
+    throw s!"extract/unsupported: ecrecover arity {operands.size}"
+  let cacheKey :=
+    "ecrecover20|" ++ String.intercalate "|" (operands.map context.valKey).toList
+  match context.lookupWide st cacheKey with
+  | some packed =>
+      let (name, next) := context.fresh st
+      return (context.indent ++ "let " ++ name ++ " := " ++ packAddrWord packed limb ++ nl,
+        name, next)
+  | none =>
+    let indent := context.indent
+    let mut text := ""
+    let mut names : Array String := #[]
+    let mut state := st
+    for operand in operands do
+      let (pre, name, next) ← context.materialize operand state
+      text := text ++ pre
+      names := names.push name
+      state := next
+    let (packed, s0) := context.fresh state
+    let (result, s1) := context.fresh s0
+    let (precompileTxt, signer, s2) ← Precompile.Emit.emit (precompileContext context)
+      Precompile.Plan.ecrecover s1
+    text := text ++
+      packFixedBytesAt indent 0 names[0]! names[1]! names[2]! names[3]! ++
+      indent ++ "mstore(32, " ++ names[4]! ++ ")" ++ nl ++
+      packFixedBytesAt indent 64 names[5]! names[6]! names[7]! names[8]! ++
+      packFixedBytesAt indent 96 names[9]! names[10]! names[11]! names[12]! ++
+      precompileTxt ++
+      indent ++ "let " ++ packed ++ " := " ++ signer ++ nl ++
+      indent ++ "let " ++ result ++ " := " ++ packAddrWord packed limb ++ nl
+    return (text, result, context.rememberWide s2 cacheKey packed)
+
 def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array Ops.Val)
     (st : σ) : Except String (String × String × σ) :=
   match query, operands.toList with
@@ -375,6 +431,8 @@ def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array 
       emitKeccak256Pair32 context limb a0 a1 a2 a3 b0 b1 b2 b3 st
   | .merkleVerify256, operands =>
       emitMerkleVerify256 context operands.toArray st
+  | .ecrecover20 limb, operands =>
+      emitEcrecover20 context limb operands.toArray st
   | .eqBytes32, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitCompare256 context .eq a0 a1 a2 a3 b0 b1 b2 b3 st
   | _, _ =>
