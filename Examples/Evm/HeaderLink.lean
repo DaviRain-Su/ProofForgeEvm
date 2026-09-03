@@ -50,7 +50,12 @@ def blockHash (_s : State) (blockNumber : UInt64) : UInt256 :=
 
 @[pf_entry]
 def inHistoryWindow (_s : State) (blockNumber : UInt64) : Bool :=
-  BlockHeader.isInHistoryWindow blockNumber
+  if blockNumber > Context.blockNumber then
+    false
+  else if Context.blockNumber >= blockNumber + BlockHeader.historyDepth then
+    false
+  else
+    true
 
 @[pf_entry]
 def touch (_s : State) (v : UInt64) : Except Error (State × UInt64) :=
