@@ -3,7 +3,7 @@ import { ProofMark } from "@/components/mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { copy, MCP, NAV, REPO } from "@/lib/content";
+import { copy, NAV, REPO } from "@/lib/content";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -85,14 +85,6 @@ export function SiteHeader({ path }: { path: string }) {
                     rel="noreferrer"
                   >
                     GitHub
-                  </a>
-                  <a
-                    href={MCP}
-                    className="rounded-[var(--radius-md)] px-3 py-3 text-muted"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    MCP
                   </a>
                 </div>
               </SheetContent>

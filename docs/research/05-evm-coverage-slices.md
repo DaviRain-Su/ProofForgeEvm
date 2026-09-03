@@ -1,5 +1,10 @@
 # EVM 覆盖：还差什么，按大切片切
 
+> **Historical / archived (2026-08-22).**  
+> 当时管子刚通、语言面仍薄。文中「白板 / 下一步开 E-RT」等判断**已过时**。  
+> E-RT / E-LANG / E-ASSET / E-OWN / E-TOK 均已落地；当前产品债见 [`docs/product/roadmap.md`](../product/roadmap.md)。  
+> 保留本文只作为大切片切法与「明确不做」边界的历史决策记录。
+
 > Date: 2026-08-22
 > Core question: 相对 ProofForge 已落地的 EVM 工程面，以及一份「能写真实合约」的最小 EVM 剖面，本仓还缺什么？怎样用少数大切片做完，而不是继续一叶一叶加？
 > Related: [04-evm-feasibility.md](04-evm-feasibility.md)

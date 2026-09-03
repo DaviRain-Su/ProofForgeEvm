@@ -6,21 +6,27 @@
 
 A Lean 4 → EVM contract compiler. Mark entries with `@[pf_entry]` in ordinary
 Lean source; ProofForge extracts a checked IR, emits Yul, and assembles EVM
-bytecode + ABI via solc (or the powdr `yulc` backend). This repository is the
-EVM single-target fork of ProofForge.
+bytecode + ABI via **pinned solc** (powdr `yulc` is an **experimental** backend).
+This repository is the EVM single-target fork of ProofForge.
+
+Product contract: [`docs/product/support-matrix.md`](docs/product/support-matrix.md).
+Writing guide: [`docs/product/writing-contracts.md`](docs/product/writing-contracts.md).
+Site: [`website/`](website/) (GitHub Pages).
 
 ## Layout
 
 - `ProofForge/Core/` — target-independent value/effect IR, CFG, codec, schema
 - `ProofForge/Extract/` — Lean expression → IR extractor (EVM-only)
-- `ProofForge/Evm/` — EVM Ops / IR / Yul Emit / Assemble (solc, yulc) / Registry
-- `ProofForge/Evm/Sdk/` — contract-facing SDK (storage, ERC-721/1155, roles, pausable, …)
-- `ProofForge/Cli.lean` — the `pf` command line (`pf build` / `pf init`)
+- `ProofForge/Evm/` — EVM Ops / IR / Yul Emit / Assemble (solc, experimental yulc) / Registry
+- `ProofForge/Evm/Sdk/` — contract-facing SDK (storage, fungible, bounded ERC-721/1155 cores, roles, pausable, …)
+- `ProofForge/Cli.lean` — the `pf` CLI (`pf build` / `pf init` / `pf --version`)
 - `Examples/` — EVM contract examples (digests pinned in `ProofForge/Evm/Registry.lean`)
 - `Tests/` — elaboration-time specs (`#guard` / `example`)
 - `templates/evm-counter/` — `pf init` user project template
 - `runtime-tests/evm/` — Anvil on-chain integration gates
 - `powdr-probe/` — powdr EVM/Yul semantics probe (standalone Lake package)
+- `docs/product/` — support matrix, writing guide, roadmap
+- `docs/research/` — **historical** decision notes (archived)
 - `website/` — project site (Vite + React)
 
 ## Build & test
@@ -28,6 +34,7 @@ EVM single-target fork of ProofForge.
 ```text
 ./.agents/setup        # pinned toolchain: elan/Lake v4.31.0, solc 0.8.34, foundry 1.7.1
 lake build             # compiler library
+lake build pf          # CLI executable
 lake build Tests       # test suite (elaboration-time assertions)
 lake build Examples    # example contracts
 ```
@@ -43,6 +50,7 @@ pf --version
 ```
 
 `pf build` writes `Name.bin` / `Name.yul` / `Name.abi.json` per program.
+Default backend is **solc**. `--backend yulc` is experimental (weekly/manual CI, not a merge gate).
 Bare names map to in-tree `Examples` fixtures; user projects pass `--module`
 or list `[[program]]` entries in `pf.toml`.
 
@@ -52,15 +60,28 @@ or list `[[program]]` entries in `pf.toml`.
 runtime-tests/evm/anvil.sh     # full Anvil gate suite (skips when Foundry is absent)
 ```
 
-## User projects
+## User projects (from this checkout)
 
 ```text
-pf init demo && cd demo && lake build && lake env pf build
+lake build pf
+lake exe pf -- init demo
+cd demo
+lake build
+../.lake/build/bin/pf build
 ```
+
+`pf init` currently requires a repo checkout (copies `templates/evm-counter` and
+rewrites a path-`require`). There is no standalone installer yet.
 
 Contracts import only `ProofForge.Attr` + `ProofForge.Evm.Sdk` — never the
 `ProofForge` umbrella. The SDK transitive closure must not reach
 Emit/Assemble/Registry (enforced in CI by `scripts/check_sdk_import_closure.py`).
+
+## Trust boundary
+
+- Kernel theorems are about user `def`s / static fields — **not** about `.bin` or EVM refinement.
+- Anvil green is an **engineering** gate, not a proof.
+- ERC-721/1155 SDK modules are **bounded cores**, not full standard implementations.
 
 ## License
 

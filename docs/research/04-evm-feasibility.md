@@ -1,7 +1,12 @@
-# Lean 4 直写 EVM 合约：可行性（对照当前 proofforge）
+# Lean 4 直写 EVM 合约：可行性（对照当时 proofforge）
+
+> **Historical / archived (2026-08-22).**  
+> 这是 EVM 竖切启动前的可行性判断，不是当前能力说明。  
+> 现状请看 [`docs/modules/evm.md`](../modules/evm.md) 与 [`docs/product/support-matrix.md`](../product/support-matrix.md)。  
+> Research plan 中的 E0–E4 / E-RT / E-LANG / E-ASSET 等切片均已落地（并已超额），勿再当作 backlog。
 
 > Date: 2026-08-22
-> Core question: 以当前 proofforge 的普通 Lean 4 表面（`def` / `theorem` / attribute / Profile / Extract / Ops），能否做出 EVM target？ProofForge 已有 Yul lowering，是否该搬？
+> Core question: 以当时 proofforge 的普通 Lean 4 表面（`def` / `theorem` / attribute / Profile / Extract / Ops），能否做出 EVM target？ProofForge 已有 Yul lowering，是否该搬？
 > Related: [05-evm-coverage-slices.md](05-evm-coverage-slices.md)
 
 ---

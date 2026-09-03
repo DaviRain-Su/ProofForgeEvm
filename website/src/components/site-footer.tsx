@@ -1,4 +1,4 @@
-import { copy, MCP, REPO } from "@/lib/content";
+import { copy, REPO } from "@/lib/content";
 import { useI18n } from "@/lib/i18n";
 
 export function SiteFooter() {
@@ -10,8 +10,8 @@ export function SiteFooter() {
           <p className="font-display text-2xl tracking-tight">ProofForge EVM</p>
           <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
             {copy(lang, {
-              zh: "Lean 4 编译剖面。普通 def 写合约，普通 theorem 证合约。目标：EVM Yul（solc / yulc）。",
-              en: "A Lean 4 compiler profile. Ordinary defs write contracts; ordinary theorems prove them. Target: EVM Yul (solc / yulc).",
+              zh: "Lean 4 编译剖面。普通 def 写合约，普通 theorem 证合约。产品后端：钉死的 solc；yulc 仍实验。",
+              en: "A Lean 4 compiler profile. Ordinary defs write contracts; ordinary theorems prove them. Product backend: pinned solc; yulc stays experimental.",
             })}
           </p>
         </div>
@@ -19,11 +19,11 @@ export function SiteFooter() {
           <a href={REPO} className="hover:text-fg" target="_blank" rel="noreferrer">
             GitHub
           </a>
+          <a href={`${REPO}/blob/main/docs/product/support-matrix.md`} className="hover:text-fg" target="_blank" rel="noreferrer">
+            {copy(lang, { zh: "能力矩阵", en: "Support matrix" })}
+          </a>
           <a href={`${REPO}/blob/main/README.md`} className="hover:text-fg" target="_blank" rel="noreferrer">
             {copy(lang, { zh: "文档索引", en: "Docs index" })}
-          </a>
-          <a href={MCP} className="hover:text-fg" target="_blank" rel="noreferrer">
-            MCP
           </a>
           <span>Lean 4.31.0</span>
         </div>

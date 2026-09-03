@@ -13,7 +13,6 @@ import {
   DOC_SECTIONS,
   DOCS,
   HERO,
-  MCP,
   PILLARS,
   REPO,
   TARGETS,
@@ -90,12 +89,12 @@ function HomePage() {
           {copy(lang, { zh: "架构", en: "Architecture" })}
         </p>
         <h2 className="mt-3 font-display text-4xl tracking-tight">
-          {copy(lang, { zh: "一条主语，两条后端。", en: "One subject. Two backends." })}
+          {copy(lang, { zh: "一条主语，一个产品后端。", en: "One subject. One product backend." })}
         </h2>
         <p className="mt-3 max-w-2xl text-muted">
           {copy(lang, {
-            zh: "普通 Lean 进，fail-closed 检查，抽出 Core，再降到 EVM Yul，由 solc 或 yulc 汇编。不画内部模块。",
-            en: "Ordinary Lean in, fail-closed check, extract Core, then lower to EVM Yul assembled by solc or yulc. No internal modules.",
+            zh: "普通 Lean 进，fail-closed 检查，抽出 Core，再降到 EVM Yul；默认由钉死的 solc 汇编。yulc 是实验车道，不是对等产品后端。",
+            en: "Ordinary Lean in, fail-closed check, extract Core, then lower to EVM Yul; pinned solc is the default assembler. yulc is an experimental lane, not a peer product backend.",
           })}
         </p>
         <div className="mt-8">
@@ -157,12 +156,12 @@ function HomePage() {
           {copy(lang, { zh: "锻造台", en: "Forge" })}
         </p>
         <h2 className="mt-3 font-display text-4xl tracking-tight">
-          {copy(lang, { zh: "同一份 Counter，两条后端。", en: "The same Counter. Two backends." })}
+          {copy(lang, { zh: "同一份 Counter，示意产物。", en: "The same Counter. Illustrative artifacts." })}
         </h2>
         <p className="mt-3 mb-8 max-w-2xl text-muted">
           {copy(lang, {
-            zh: "源在 Examples/*.lean。锻造按钮走的是剖面走查，产物是仓库里真实形状的摘录。",
-            en: "Source lives in Examples/*.lean. Forge is a profile walkthrough; artifacts are excerpts in the real shape from the tree.",
+            zh: "源在 Examples/*.lean。锻造台是剖面走查；面板里的 Yul/ABI 是仓库形状的示意摘录，不是每次构建的实时产物。",
+            en: "Source lives in Examples/*.lean. Forge is a profile walkthrough; the Yul/ABI panel is an illustrative excerpt in the repo's shape, not a live build artifact.",
           })}
         </p>
         <Studio />
@@ -260,8 +259,8 @@ function CliPage() {
       </h1>
       <p className="mt-4 max-w-2xl text-muted">
         {copy(lang, {
-          zh: "CLI 是 pf。后端 solc 或 yulc。不提供 PATH fallback。不默认公网广播。",
-          en: "The CLI is pf. Backends are solc or yulc. No PATH fallback. No default public broadcast.",
+          zh: "CLI 只有 pf build / pf init / pf --version。产品后端是 solc；yulc 可选且实验。不提供 PATH fallback，不默认公网广播，也没有本仓 MCP。",
+          en: "The CLI is only pf build / pf init / pf --version. The product backend is solc; yulc is optional and experimental. No PATH fallback, no default public broadcast, and no in-repo MCP.",
         })}
       </p>
       <dl className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -282,19 +281,18 @@ function CliPage() {
         ))}
       </div>
       <section className="mt-14 rounded-[var(--radius-xl)] bg-surface p-6 shadow-[var(--shadow-border)]">
-        <h2 className="font-display text-3xl tracking-tight">MCP</h2>
+        <h2 className="font-display text-3xl tracking-tight">
+          {copy(lang, { zh: "现状边界", en: "Current boundary" })}
+        </h2>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
           {copy(lang, {
-            zh: "远程边只提供文档与脚手架，不 spawn Lean。本机 stdio 才接 doctor / build / local。",
-            en: "The remote edge serves docs and scaffolds. It does not spawn Lean. Local stdio is what wraps doctor / build / local.",
+            zh: "v0 产品面：checkout 内可复制的 solc 路径 + Anvil 工程门。没有独立安装包，没有 doctor/install，没有本仓 MCP。能力矩阵见 docs/product/。",
+            en: "v0 product surface: a reproducible in-checkout solc path + Anvil engineering gates. No standalone installer, no doctor/install, no in-repo MCP. See docs/product/ for the support matrix.",
           })}
         </p>
-        <div className="mt-5">
-          <CodeBlock label="codex" code={`codex mcp add proof-forge-mcp --url ${MCP}`} />
-        </div>
         <p className="mt-4 font-mono text-xs text-subtle">
-          <a href={REPO} className="hover:text-fg" target="_blank" rel="noreferrer">
-            {REPO}
+          <a href={`${REPO}/blob/main/docs/product/support-matrix.md`} className="hover:text-fg" target="_blank" rel="noreferrer">
+            docs/product/support-matrix.md
           </a>
         </p>
       </section>
