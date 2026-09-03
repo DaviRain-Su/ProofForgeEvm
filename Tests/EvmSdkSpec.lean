@@ -40,6 +40,12 @@ def fungibleAllowances : Fungible.Allowances := secondMap.handle
 #guard ERC20.allowance paymentAddress paymentAddress paymentAddress == UInt256.zero
 #guard ERC20.permit paymentAddress paymentAddress paymentAddress paymentAmount paymentAmount
   27 ⟨1, 2, 3, 4⟩ ⟨5, 6, 7, 8⟩ == 9
+#guard SafeErc20.transfer paymentAddress paymentAddress paymentAmount == 9
+#guard SafeErc20.approve paymentAddress paymentAddress paymentAmount == 9
+#guard SafeErc20.transferFrom paymentAddress paymentAddress paymentAddress paymentAmount == 9
+#guard SafeErc20.forceApprove paymentAddress paymentAddress paymentAmount == 9
+#guard Erc2981.feeDenominator == ⟨10000, 0, 0, 0⟩
+#guard Erc165.erc2981 == ⟨0x5a20552a, 0, 0, 0⟩
 #guard WETH.deposit paymentAddress paymentAmount == 9
 #guard WETH.withdraw paymentAddress paymentAmount == 9
 #guard UniswapV2.swapExact2 paymentAddress paymentAddress paymentAddress paymentAmount UInt256.zero == 9

@@ -8,6 +8,7 @@ contract ERC20Mock {
     bool public returnFalse;
     bool public noReturn;
     bool public returnTwo;
+    bool public usdtApprove;
 
     function mint(address to, uint256 amt) external {
         balanceOf[to] += amt;
@@ -25,6 +26,10 @@ contract ERC20Mock {
         returnTwo = v;
     }
 
+    function setUsdtApprove(bool v) external {
+        usdtApprove = v;
+    }
+
     function transfer(address to, uint256 amt) external returns (bool) {
         require(balanceOf[msg.sender] >= amt, "bal");
         balanceOf[msg.sender] -= amt;
@@ -33,6 +38,9 @@ contract ERC20Mock {
     }
 
     function approve(address spender, uint256 amt) external returns (bool) {
+        if (usdtApprove && allowance[msg.sender][spender] != 0 && amt != 0) {
+            revert("usdt");
+        }
         allowance[msg.sender][spender] = amt;
         return finish();
     }

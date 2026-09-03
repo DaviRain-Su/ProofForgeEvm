@@ -34,6 +34,11 @@ abbrev InterfaceId := Bytes4
 @[pf_inline] def erc1155 : InterfaceId :=
   ⟨0x267ab6d9, 0, 0, 0⟩
 
+/-- `IERC2981`: `0x2a55205a`, packed in the source fixed-bytes limb order. Advertise this id only
+when the consumer implements the complete `royaltyInfo(uint256,uint256)` surface. -/
+@[pf_inline] def erc2981 : InterfaceId :=
+  ⟨0x5a20552a, 0, 0, 0⟩
+
 /-- Equality over canonical ABI `bytes4` values, lowered through the closed two-operand runtime
 leaf rather than structural carrier inspection. -/
 @[pf_inline] def equal (left right : InterfaceId) : Bool :=
@@ -50,5 +55,13 @@ leaf rather than structural carrier inspection. -/
 /-- Support any of the common bounded two-interface profiles: ERC-165 plus one token interface. -/
 @[pf_inline] def supportsToken (requested token : InterfaceId) : Bool :=
   supports2 requested erc165 token
+
+/-- Support any of three explicitly declared interfaces. -/
+@[pf_inline] def supports3 (requested first second third : InterfaceId) : Bool :=
+  supports2 requested first second || supports requested third
+
+/-- ERC-165 plus IERC2981. Valid only when `royaltyInfo` is implemented. -/
+@[pf_inline] def supportsRoyalty (requested : InterfaceId) : Bool :=
+  supports2 requested erc165 erc2981
 
 end ProofForge.Evm.Sdk.Erc165

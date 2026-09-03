@@ -28,10 +28,10 @@
 | `finance/VestingWallet*.sol` | ABSENT | `Context.timestamp`, static storage primitives | Vesting schedule/releasable accounting | Yes — W4 bounded single-beneficiary schedule profile |
 | `governance/**` | ABSENT | `Sdk.StorageCheckpoints` only | Proposal/vote/quorum/timelock lifecycle | No — Governor requires unconstrained proposal/voter relations and token snapshot semantics |
 | `interfaces/IERC165.sol` | DONE | `Sdk.Erc165`, `Collectible`, `Badge`, `MultiToken`, `CraftToken` | Static, explicitly declared `IERC165` only; incomplete token interfaces return false | Yes — W1 shipped |
-| `interfaces/IERC20*.sol`, `IERC2612.sol` | PARTIAL | `Sdk.Fungible`, `Erc20Meta`, `Token`, `Sdk.Payments` | Profiles, not a complete audited token implementation; permit is a closed call/internal profile | Yes — W2 standard helper/event/profile gaps |
+| `interfaces/IERC20*.sol`, `IERC2612.sol` | PARTIAL | `Sdk.Fungible`, `Sdk.SafeErc20`, `Erc20Meta`, `Token`, `SafePay`, `Sdk.Payments` | Profiles, not a complete audited token implementation; permit is a closed call/internal profile | Yes — W2 helpers shipped; remaining event/metadata gaps are later |
 | `interfaces/IERC721*.sol`, `IERC4906.sol`, `IERC2309.sol` | PARTIAL | `Sdk.Erc721`, `Collectible`, `Badge`, `Sdk.Erc165` | No safe receiver callback, metadata URI, enumeration, consecutive mint | Receiver/enumeration: no; bounded metadata: W4 |
 | `interfaces/IERC1155*.sol` | PARTIAL | `Sdk.Erc1155`, `MultiToken`, `CraftToken`, `Sdk.Erc165` | No callbacks, metadata URI, `balanceOfBatch`, or `TransferBatch` | `TransferBatch`: no (dynamic arrays/events); bounded URI: W4 |
-| `interfaces/IERC2981.sol` | ABSENT | `UInt256`, static config | Royalty info profile | Yes — W2 static royalty profile |
+| `interfaces/IERC2981.sol` | DONE | `Sdk.Erc2981`, `RoyaltyArt`, `Sdk.Erc165` | Static receiver + basis-point quote; `tokenId` ignored | Yes — W2 shipped |
 | `interfaces/IERC1271.sol` | ABSENT | `Precompile` internals | Contract signature validation response | No — requires arbitrary external contract call/result protocol |
 | `interfaces/IERC3156*.sol`, `IERC4626.sol`, `IERC6909.sol`, `IERC777*.sol`, `IERC1363*.sol` | ABSENT | `Vault` is not ERC-4626 | Flash callbacks, hooks, multi-token operator model | No — callback/reentrancy and broader dynamic interface requirements |
 | `interfaces/IERC1820*.sol`, `IERC1967.sol`, `IERC1822.sol` | ABSENT | — | Global registry/proxy-slot interoperability | No — registry/proxy non-goals |
@@ -39,11 +39,11 @@
 | `interfaces/draft-IERC3009.sol`, `IERC7674.sol`, `IERC7751.sol`, `IERC7786.sol`, `IERC7802.sol`, `IERC7821.sol` | ABSENT | — | Authorization transfers, temporary approvals, cross-chain/account protocols | No — signed authorization state or cross-chain/account model absent |
 | `metatx/ERC2771*.sol` | ABSENT | — | Trusted-forwarder sender/calldata suffix | No — raw/rewritten calldata is prohibited |
 | `proxy/**`, `interfaces/IERC1967.sol` | ABSENT | — | Delegate proxy, beacon, clones, UUPS | No — `delegatecall`, proxy, CREATE2 are permanent non-goals |
-| `token/ERC20/**` | PARTIAL | `Sdk.Fungible`, `Erc20Meta`, `Token` | No complete extensions/permit-votes ecosystem | Yes — W2 bounded safe-transfer and metadata/event profile work |
+| `token/ERC20/**` | PARTIAL | `Sdk.Fungible`, `Sdk.SafeErc20`, `Erc20Meta`, `Token`, `SafePay` | No complete extensions/permit-votes ecosystem | Yes — W2 safe-transfer helpers shipped; remaining metadata/event work later |
 | `token/ERC721/**` | PARTIAL | `Sdk.Erc721`, `Collectible`, `Badge` | Core only, no receiver/metadata/enumeration | See IERC721 row |
 | `token/ERC1155/**` | PARTIAL | `Sdk.Erc1155`, `MultiToken`, `CraftToken` | Single-id core only | See IERC1155 row |
 | `token/ERC6909/**` | ABSENT | — | Multi-token transfer/operator semantics | No — broad dynamic multi-token standard is outside current bounded profile |
-| `token/common/ERC2981.sol`, `ERC1363Utils.sol` | ABSENT | — | Royalty / transfer-and-call utility | Royalty: W2; transfer-and-call: no callbacks |
+| `token/common/ERC2981.sol`, `ERC1363Utils.sol` | PARTIAL | `Sdk.Erc2981`, `RoyaltyArt` | Static royalty only; no transfer-and-call | Royalty: W2 shipped; transfer-and-call: no callbacks |
 | `utils/Context.sol`, `Pausable.sol`, `ReentrancyGuard*.sol` | PARTIAL | `Sdk.Base.Context`, `Sdk.Pausable`, `Sdk.Reentrancy` | Explicit policy helpers, not Solidity inheritance/transient storage clone | Yes — W3 close event/profile gaps |
 | `utils/Address.sol`, `LowLevelCall.sol`, `Multicall.sol`, `RelayedCall.sol`, `SimulateCall.sol`, `Calldata.sol`, `Memory.sol` | ABSENT | `OpenCall` is typed and closed | Arbitrary call/data/delegate/value helpers | No — arbitrary calldata/call and delegatecall prohibited |
 | `utils/cryptography/**` | PARTIAL | Keccak/SHA-256, fixed EIP-712 permit path, precompile internals | No general ECDSA/Merkle/SignatureChecker public SDK | Bounded Merkle proof: W4; general signature checker: no arbitrary ERC-1271 call |
@@ -58,7 +58,7 @@
 | Wave | Scope | Status |
 |---|---|---|
 | W1 | Static ERC-165 core (`bytes4` IDs, bounded support predicates), adopt `supportsInterface` in both ERC-721- and ERC-1155-shaped examples, compiler/ABI and Anvil gates | Verified on `cursor/oz-sdk-w1-e4eb`: targeted and full `lake build Tests`, plus four Anvil gates. The examples advertise `IERC165` only: their partial ERC-721/1155 method surfaces must return false for the standard token IDs. |
-| W2 | ERC-20-shaped consumer ergonomics: explicit safe-transfer/allowance policy helpers and a static ERC-2981 royalty profile | Next |
+| W2 | ERC-20-shaped consumer ergonomics: explicit safe-transfer/allowance policy helpers and a static ERC-2981 royalty profile | Verified on `cursor/oz-sdk-w2-e4eb`: targeted `Tests.EvmSafeErc20Spec` / `Tests.EvmErc2981Spec` and full `lake build Tests` (218 jobs), plus `anvil_safepay.sh` and `anvil_royaltyart.sh`. `forceApprove` is always `approve(0)` then `approve(amount)`. With a nonzero receiver, `RoyaltyArt` advertises IERC165 + complete IERC2981, returns false for IERC721/IERC1155, and quotes the full UInt256 sale-price range; a zero receiver advertises IERC165 only. |
 | W3 | Bounded access/utility closeout: Ownable2Step start event and constructor-init policy where extractable; fixed-capacity role profiles; bounded nonce/rate helpers | Planned |
 | W4 | Static metadata/finance/crypto profiles: bounded ERC-721/1155 URI response, EIP-5267-style static domain fields, single-beneficiary vesting, bounded Merkle proofs | Planned |
 | W5 | Completion audit: re-inventory the then-current OZ tree, prove every remaining item is either DONE, a restricted PARTIAL profile, or blocked by a documented non-goal | Planned |

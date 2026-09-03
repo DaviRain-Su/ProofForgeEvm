@@ -18,7 +18,7 @@ Site: [`website/`](website/) (GitHub Pages).
 - `ProofForge/Core/` — target-independent value/effect IR, CFG, codec, schema
 - `ProofForge/Extract/` — Lean expression → IR extractor (EVM-only)
 - `ProofForge/Evm/` — EVM Ops / IR / Yul Emit / Assemble (solc, experimental yulc) / Registry
-- `ProofForge/Evm/Sdk/` — contract-facing SDK (storage, fungible, bounded ERC-721/1155 cores, roles, pausable, …)
+- `ProofForge/Evm/Sdk/` — contract-facing SDK (storage, fungible, SafeErc20, ERC-2981, bounded ERC-721/1155 cores, roles, pausable, …)
 - `ProofForge/Cli.lean` — the `pf` CLI (`pf build` / `pf init` / `pf --version`)
 - `Examples/` — EVM contract examples (digests pinned in `ProofForge/Evm/Registry.lean`)
 - `Tests/` — elaboration-time specs (`#guard` / `example`)

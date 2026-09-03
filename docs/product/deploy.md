@@ -102,4 +102,6 @@ or VibeNet.
 - Support matrix: [support-matrix.md](support-matrix.md)
 - Writing guide: [writing-contracts.md](writing-contracts.md)
 - ERC-20-shaped metadata example: `Examples/Evm/Erc20Meta.lean`
+- Fail-closed ERC-20 consumer: `Examples/Evm/SafePay.lean`
+- Static ERC-2981 royalty: `Examples/Evm/RoyaltyArt.lean`
 - Chain-id example: `Examples/Evm/EvmChainGuard.lean`

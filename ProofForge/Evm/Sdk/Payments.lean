@@ -33,7 +33,7 @@ end Ether
 
 namespace ERC20
 
-/-- Closed ERC-20 `transfer`; empty or canonical nonzero return data succeeds. -/
+/-- Closed ERC-20 `transfer`; code-backed empty returndata or canonical ABI `true` succeeds. -/
 @[pf_inline] def transfer (token destination : Address) (amount : UInt256) : UInt64 :=
   Runtime.evmTokenTransfer token destination amount
 
@@ -41,11 +41,11 @@ namespace ERC20
 @[pf_inline] def balanceOfSelf (token : Address) : UInt256 :=
   Runtime.evmTokenBalanceOfSelf token
 
-/-- Closed ERC-20 `approve`; empty or canonical nonzero return data succeeds. -/
+/-- Closed ERC-20 `approve`; code-backed empty returndata or canonical ABI `true` succeeds. -/
 @[pf_inline] def approve (token spender : Address) (amount : UInt256) : UInt64 :=
   Runtime.evmTokenApprove token spender amount
 
-/-- Closed ERC-20 `transferFrom`; empty or canonical nonzero return data succeeds. -/
+/-- Closed ERC-20 `transferFrom`; code-backed empty returndata or canonical ABI `true` succeeds. -/
 @[pf_inline] def transferFrom (token owner destination : Address) (amount : UInt256) : UInt64 :=
   Runtime.evmTokenTransferFrom token owner destination amount
 
