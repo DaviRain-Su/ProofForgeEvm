@@ -38,6 +38,8 @@ lean_lib ProofForgeEvmSdk where
     `ProofForge.Evm.Sdk.Reentrancy,
     `ProofForge.Evm.Sdk.SafeErc20,
     `ProofForge.Evm.Sdk.Roles,
+    `ProofForge.Evm.Sdk.Nonces,
+    `ProofForge.Evm.Sdk.RateLimit,
     `ProofForge.Evm.Sdk.Storage,
     `ProofForge.Evm.Sdk.StorageBitmap,
     `ProofForge.Evm.Sdk.StorageCheckpoints,

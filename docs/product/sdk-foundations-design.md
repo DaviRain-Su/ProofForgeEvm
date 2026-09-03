@@ -248,7 +248,9 @@ Examples land in dependency order and each wave stays honest about its supported
    Credits, and Capped; not constructor logs. W3 adds Ownable2Step `OwnershipTransferStarted`
    on `transferOwnership`. Constructor Ownable logs remain unlowered. S4d landed `RoleGranted` /
    `RoleRevoked` on EvmStaticCounter / EvmStaticRoster; not `RoleAdminChanged` — `Set2` has no
-   admin-role rotation API.)*
+   admin-role rotation API. W3 slice 2 extends `Set4`/`EvmCrew` with the same LOG4 events;
+   `Nonces`/`RateLimit`/`EvmQuota` add closed nonce/rate failures without quota events: stale
+   nonces use `Insufficient(current,provided)`, while rate exhaustion is typed.)*
 2. **Wave B — ERC-721:** Collectible/Badge adopt `Transfer`, `Approval`, and `ApprovalForAll`;
    advertised interface IDs are limited to implemented functions. *(S4a landed the three
    canonical events; not ERC-165, safe callbacks, or metadata URI.)*

@@ -28,6 +28,11 @@ import Tests.EvmPayableSpec
 import Tests.EvmPrecompileSpec
 import Tests.EvmReentrancySpec
 import Tests.EvmRolesSpec
+import Tests.EvmRolesSet4Spec
+import Tests.EvmCrewSpec
+import Tests.EvmNoncesSpec
+import Tests.EvmRateLimitSpec
+import Tests.EvmQuotaSpec
 import Tests.EvmSafeCastSpec
 import Tests.EvmSafeErc20Spec
 import Tests.EvmSdkSpec
@@ -46,6 +51,7 @@ import Tests.EvmChainGuardSpec
 import Tests.EvmOpenCallSpec
 import Tests.EvmOzPolicyEventSpec
 import Tests.EvmOzRolesEventSpec
+import Tests.EvmOzCrewEventSpec
 import Tests.Fixtures
 import Tests.FlagSpec
 import Tests.LangSpec
