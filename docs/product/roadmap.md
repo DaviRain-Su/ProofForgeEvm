@@ -5,6 +5,13 @@
 - EVM-only module docs under `docs/modules/`
 - Public site under `website/` + GitHub Pages workflow
 - Compiler/SDK slice coverage well past the old E-RT / E-LANG / E-ASSET / E-OWN / E-TOK research plan
+- Named user-project CI gate (`pf init demo`)
+- `Examples.Evm.Erc20Meta` string metadata profile (Token remains the richer non-standard surface)
+- Deploy story docs (`docs/product/deploy.md`)
+- CallResult S2 (#9): bounded multiword returndata policies (`exactWords n`, `strictBool`, `magicBytes4`, typed `words`)
+- Base RPC gates (#8): `PF_EVM_RPC_URL` + required `PF_EVM_CHAIN_ID`, fail-closed mismatch, Anvil-local storage probes
+- Typed OpenCall S3 (#10): CALL/STATICCALL to a typed `Address` with a compile-time constructor ABI
+- S4a–c (#11–#13): canonical ERC-721 `Transfer`/`Approval`/`ApprovalForAll`; Ownable `OwnershipTransferred` + Pausable `Paused`/`Unpaused`; ERC-1155 `TransferSingle`/`ApprovalForAll`
 
 ## Now (product surface)
 
@@ -26,10 +33,12 @@
 
 11. Effect representation rewrite (remove `dummy` / `hold` / fake guards).
 12. Reference `World` semantics + Lean↔Anvil differential.
-13. Generic typed events; richer constructors. *(S1a frames + S1b `Event.emit` extract/SDK/Anvil path landed)*
-14. Typed OpenCall (S3). *(implemented on `cursor/opencall-s3-e4eb`; not claimed on `main` until merge)*
+13. Generic typed events; richer constructors. *(S1a frames + S1b `Event.emit` extract/SDK/Anvil path landed. Product typed events are named ABI events (LOG1–4, signature topic always), not anonymous LOG0.)*
+14. Typed OpenCall (S3). *(landed on `main` as #10)*
 15. Decide yulc: full second backend vs permanent experimental subset.
 16. Formal powdr bridge beyond probe status.
+
+Remaining S4 (not a “full ERC” claim): ERC-165, ERC-1155 `TransferBatch`, Roles events, constructor `OwnershipTransferred`, Ownable2Step `OwnershipTransferStarted`. S4d is not on `main`.
 
 ## Explicit non-goals
 

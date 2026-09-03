@@ -334,7 +334,9 @@ structure Indexed (α : Type) where
 
 /-- Emit one approved typed event constructor. The extractor builds an `EventFrame` from the
 constructor name, field names, ABI types, and `Indexed` flags without lowering them to raw
-strings or bytes. Closed LOG helpers (`tipped`, `transfer`, …) stay unchanged. -/
+strings or bytes. Product typed events are named ABI events (LOG1–4): topic0 is always the
+signature hash (`anonymous: false`). Anonymous LOG0 is plan-layer geometry only, not a
+source `Event.emit` shape. Closed LOG helpers (`tipped`, `transfer`, …) stay unchanged. -/
 @[pf_inline] def emit {α : Type} (event : α) : UInt64 :=
   Runtime.evmLogTyped event
 
