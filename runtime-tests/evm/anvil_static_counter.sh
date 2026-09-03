@@ -9,7 +9,9 @@ source "$here/lib.sh"
 
 pf_evm_evm_init evm-anvil-static-counter
 bin="$root/build/evm/EvmStaticCounter.bin"
+abi="$root/build/evm/EvmStaticCounter.abi.json"
 pf_evm_ensure_bin "$bin"
+[[ -f "$abi" ]] || { echo "FAIL: missing $abi" >&2; exit 1; }
 pf_evm_start_anvil "${PF_EVM_PORT:-18563}" "$root/build/evm/anvil-static-counter.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
@@ -77,9 +79,19 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'windowOf()(uint16)
   513 "record window getter"
 
 # EVM-SDK-3 roles: bounded static operator set, two explicit address slots (7..12).
+# S4d: actual grants/revokes emit LOG4 RoleGranted/RoleRevoked; idempotent no-ops do not.
 zero_addr="0x0000000000000000000000000000000000000000"
 op2="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
 op3="0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+role_op="$("$cast" keccak "OPERATOR_ROLE")"
+sig_granted="$(pf_evm_typed_event_sig "$abi" RoleGranted)"
+sig_revoked="$(pf_evm_typed_event_sig "$abi" RoleRevoked)"
+pf_evm_require_equal "$sig_granted" 'RoleGranted(bytes32,address,address)' \
+  "ABI RoleGranted signature"
+pf_evm_require_equal "$sig_revoked" 'RoleRevoked(bytes32,address,address)' \
+  "ABI RoleRevoked signature"
+topic_granted="$("$cast" keccak "$sig_granted")"
+topic_revoked="$("$cast" keccak "$sig_revoked")"
 
 operator_limbs() {
   "$python" -I -S -c "
@@ -117,8 +129,11 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
 fi
 
 # Owner grant fills slot 0 only (slots 7..9 = address limbs; 10..12 stay zero).
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'grantOperator(address)' "$other" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'grantOperator(address)' "$other")"
+pf_evm_typed_event_check "$abi" "$receipt" RoleGranted "$topic_granted" \
+  "{\"role\": \"$role_op\", \"account\": \"$other\", \"sender\": \"$sender\"}" \
+  "grant operator slot0 RoleGranted LOG4"
 read -r ow0 ow1 ow2 <<< "$(operator_limbs "$other")"
 pf_evm_require_storage "$addr" 7 "$ow0" "grant operator slot0 w0"
 pf_evm_require_storage "$addr" 8 "$ow1" "grant operator slot0 w1"
@@ -131,17 +146,22 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'isOperator(address)(bool)' "$sender")" false "nonmember view after grant"
 
-# Duplicate grant is a successful idempotent no-op: nothing moves.
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'grantOperator(address)' "$other" >/dev/null
+# Duplicate grant is a successful idempotent no-op: nothing moves, no RoleGranted.
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'grantOperator(address)' "$other")"
+pf_evm_typed_event_absent "$receipt" RoleGranted "$topic_granted" \
+  "duplicate operator grant has no RoleGranted"
 for slot in 10 11 12; do
   pf_evm_require_storage "$addr" "$slot" 0 "duplicate grant holds slot1 vacant"
 done
 pf_evm_require_storage "$addr" 7 "$ow0" "duplicate grant holds slot0"
 
 # Second distinct grant fills slot 1 (slots 10..12).
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'grantOperator(address)' "$op2" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'grantOperator(address)' "$op2")"
+pf_evm_typed_event_check "$abi" "$receipt" RoleGranted "$topic_granted" \
+  "{\"role\": \"$role_op\", \"account\": \"$op2\", \"sender\": \"$sender\"}" \
+  "grant operator slot1 RoleGranted LOG4"
 read -r pw0 pw1 pw2 <<< "$(operator_limbs "$op2")"
 pf_evm_require_storage "$addr" 10 "$pw0" "grant operator slot1 w0"
 pf_evm_require_storage "$addr" 11 "$pw1" "grant operator slot1 w1"
@@ -157,14 +177,19 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
 fi
 
 # Nonmember revoke is a successful idempotent no-op.
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'revokeOperator(address)' "$op3" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'revokeOperator(address)' "$op3")"
+pf_evm_typed_event_absent "$receipt" RoleRevoked "$topic_revoked" \
+  "nonmember operator revoke has no RoleRevoked"
 pf_evm_require_storage "$addr" 7 "$ow0" "nonmember revoke holds slot0"
 pf_evm_require_storage "$addr" 10 "$pw0" "nonmember revoke holds slot1"
 
 # Member revoke clears exactly slot 0.
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'revokeOperator(address)' "$other" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'revokeOperator(address)' "$other")"
+pf_evm_typed_event_check "$abi" "$receipt" RoleRevoked "$topic_revoked" \
+  "{\"role\": \"$role_op\", \"account\": \"$other\", \"sender\": \"$sender\"}" \
+  "revoke operator slot0 RoleRevoked LOG4"
 for slot in 7 8 9; do
   pf_evm_require_storage "$addr" "$slot" 0 "revoke clears slot0"
 done
@@ -184,4 +209,4 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
 fi
 pf_evm_require_storage "$addr" 10 "$pw0" "unauthorized revoke holds slot1"
 
-echo "evm-anvil-static-counter: ok (scalar/wide/record slots + access gates + bounded operator roles; engineering only)"
+echo "evm-anvil-static-counter: ok (scalar/wide/record slots + access gates + bounded operator roles + RoleGranted/RoleRevoked; engineering only)"

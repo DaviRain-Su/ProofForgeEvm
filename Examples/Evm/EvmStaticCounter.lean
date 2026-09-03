@@ -8,8 +8,10 @@ bounded static operator role set (two explicit address fields after the record f
 the handles are compile-time descriptor data erased before extraction, and every entry below
 reads and writes state through ordinary typed `State` field access. Role decisions rebuild a
 `Roles.Set2` value from the two explicit fields and every role write is a literal-slot field
-update. `Tests/EvmStaticStorageSpec` and `Tests/EvmRolesSpec` prove the extracted slots
-equal `layout.leaves`, so the declaration and the real flattening cannot drift apart.
+update. Successful grants/revokes emit canonical `RoleGranted` / `RoleRevoked` for
+`OPERATOR_ROLE`; idempotent no-ops do not log. `Tests/EvmStaticStorageSpec` and
+`Tests/EvmRolesSpec` prove the extracted slots equal `layout.leaves`, so the declaration and
+the real flattening cannot drift apart.
 -/
 
 namespace Examples.Evm.EvmStaticCounter
@@ -59,6 +61,10 @@ structure Handles where
 inductive Error where
   | overflow
   deriving Repr, DecidableEq, Inhabited, BEq
+
+/-- keccak256("OPERATOR_ROLE") as source-order `Bytes32` limbs. -/
+@[pf_inline] def OPERATOR_ROLE : Bytes32 :=
+  ⟨0x82f14ec570706697, 0xc1ea4b038b85f5b0, 0x8b18d3a29a08f3b6, 0x29b9a94f9f92e8b1⟩
 
 def u64Max : UInt64 := ~~~(0 : UInt64)
 
@@ -120,8 +126,8 @@ def pausedOf (s : State) : UInt8 :=
 
 /-- Immutable-owner-gated operator grant. The pure `Roles.Set2` decisions over the two
 explicit fields select the terminal or the literal-slot field write: zero candidate →
-`ZeroAddress()`, duplicate → idempotent no-op, `grantSlot0`/`grantSlot1` → explicit slot
-write, full set → `CapExceeded()`. -/
+`ZeroAddress()`, duplicate → idempotent no-op (no log), `grantSlot0`/`grantSlot1` → explicit
+slot write plus `RoleGranted(OPERATOR_ROLE, who, caller)`, full set → `CapExceeded()`. -/
 @[pf_entry]
 def grantOperator (s : State) (who : Address) : Except Error (State × UInt64) :=
   if Address.eqImmutable Context.caller then
@@ -131,24 +137,29 @@ def grantOperator (s : State) (who : Address) : Except Error (State × UInt64) :
     else if rs.member who then
       .ok (s, 0)
     else if rs.grantSlot0 who then
-      .ok ({ s with operator0 := who }, 1)
+      .ok ({ s with operator0 := who },
+        Roles.Log.roleGranted OPERATOR_ROLE who Context.caller)
     else if rs.grantSlot1 who then
-      .ok ({ s with operator1 := who }, 1)
+      .ok ({ s with operator1 := who },
+        Roles.Log.roleGranted OPERATOR_ROLE who Context.caller)
     else
       .ok (s, Revert.capExceeded)
   else
     .ok (s, Revert.unauthorized Context.caller)
 
 /-- Immutable-owner-gated operator revoke; the pure `Roles.Set2.revokeSlot0`/`revokeSlot1`
-decisions select the literal-slot clear, and a nonmember candidate is an idempotent no-op. -/
+decisions select the literal-slot clear plus `RoleRevoked`, and a nonmember candidate is an
+idempotent no-op with no log. -/
 @[pf_entry]
 def revokeOperator (s : State) (who : Address) : Except Error (State × UInt64) :=
   if Address.eqImmutable Context.caller then
     let rs : Roles.Set2 := ⟨s.operator0, s.operator1⟩
     if rs.revokeSlot0 who then
-      .ok ({ s with operator0 := Address.zero }, 1)
+      .ok ({ s with operator0 := Address.zero },
+        Roles.Log.roleRevoked OPERATOR_ROLE who Context.caller)
     else if rs.revokeSlot1 who then
-      .ok ({ s with operator1 := Address.zero }, 1)
+      .ok ({ s with operator1 := Address.zero },
+        Roles.Log.roleRevoked OPERATOR_ROLE who Context.caller)
     else
       .ok (s, 0)
   else

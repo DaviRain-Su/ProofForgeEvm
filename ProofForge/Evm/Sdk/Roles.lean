@@ -15,6 +15,14 @@ Consumers store two adjacent Address fields, reconstruct `Set2` for decisions, a
 fields in `Storage.Static`. Duplicate grants and nonmember revokes are idempotent; zero is never a
 member; a third distinct grant is full.
 
+Canonical OpenZeppelin `RoleGranted` / `RoleRevoked` logs are reusable `Event.emit` wrappers
+(`Log.roleGranted` / `Log.roleRevoked`): LOG4 with empty data, three indexed topics after
+topic0 (`bytes32 role`, `address account`, `address sender`). Applications choose the `Bytes32`
+role id and emit only on an actual slot write; idempotent no-ops must not log. There is no
+`RoleAdminChanged` helper: `Set2` has no admin-role rotation API. This module is not a drop-in
+OpenZeppelin AccessControl (no `mapping(bytes32 => RoleData)`, no ERC-165, no default-admin
+hierarchy).
+
 The pattern matches in these helpers are part of the current compiler-erased contract: they expose
 the consumer's field expressions to Address limb lowering. Dynamic indexed Address reads are not
 published until their zero/OOB return path is supported by extraction.
@@ -78,5 +86,28 @@ namespace Set2
   | ⟨_a, b⟩ => !Address.isZero b && Address.eq b who
 
 end Set2
+
+/-- Canonical OZ AccessControl events. Constructor and field names are the ABI surface
+(`RoleGranted` / `RoleRevoked`). Indexed flags produce LOG4 with empty data. -/
+inductive Notice where
+  | RoleGranted (role : Event.Indexed Bytes32) (account : Event.Indexed Address)
+      (sender : Event.Indexed Address)
+  | RoleRevoked (role : Event.Indexed Bytes32) (account : Event.Indexed Address)
+      (sender : Event.Indexed Address)
+  deriving Repr, DecidableEq, Inhabited
+
+namespace Log
+
+/-- LOG4 `RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)`. -/
+@[pf_inline] def roleGranted (role : Bytes32) (account sender : Address) : UInt64 :=
+  Event.emit (Notice.RoleGranted (Event.indexed role) (Event.indexed account)
+    (Event.indexed sender))
+
+/-- LOG4 `RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)`. -/
+@[pf_inline] def roleRevoked (role : Bytes32) (account sender : Address) : UInt64 :=
+  Event.emit (Notice.RoleRevoked (Event.indexed role) (Event.indexed account)
+    (Event.indexed sender))
+
+end Log
 
 end ProofForge.Evm.Sdk.Roles

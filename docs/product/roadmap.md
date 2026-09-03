@@ -38,7 +38,7 @@
 15. Decide yulc: full second backend vs permanent experimental subset.
 16. Formal powdr bridge beyond probe status.
 
-Remaining S4 (not a “full ERC” claim): ERC-165, ERC-1155 `TransferBatch`, Roles events, constructor `OwnershipTransferred`, Ownable2Step `OwnershipTransferStarted`. S4d is not on `main`.
+Remaining S4 (not a “full ERC” claim): ERC-165, ERC-1155 `TransferBatch`, constructor `OwnershipTransferred`, Ownable2Step `OwnershipTransferStarted`, `RoleAdminChanged`. S4a–d (721/Ownable-Pausable/1155/Roles events) landed on `main` as #11–#14.
 
 ## Explicit non-goals
 

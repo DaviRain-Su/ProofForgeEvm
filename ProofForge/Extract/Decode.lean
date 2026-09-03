@@ -1001,6 +1001,7 @@ private def uint256Leaves (env : Environment) (e : Expr) :
 
 private def bytes32Leaves (env : Environment) (e : Expr) :
     Ops.Val × Ops.Val × Ops.Val × Ops.Val :=
+  let e := unfoldUserHelpers env 8 e
   let projConst : String → Name
     | "w0" => ``ProofForge.Core.Value.FixedBytes.w0
     | "w1" => ``ProofForge.Core.Value.FixedBytes.w1
