@@ -69,6 +69,25 @@ def decimals (_s : State) : UInt8 :=
 def totalSupply (s : State) : UInt256 :=
   s.supply
 
+/-- Constructor immutable owner (see `init`). -/
+@[pf_entry]
+def ownerOf (_s : State) : Address :=
+  Immutable.address
+
+/-- Owner-only mint: credits `to` and increases `supply`. Non-owner → `Unauthorized(caller)`;
+zero recipient → `ZeroAddress()`. Success emits canonical `Transfer(address(0), to, value)`. -/
+@[pf_entry]
+def mint (s : State) (to : Address) (value : UInt256) : Except Error (State × UInt64) :=
+  Effect.ensureCode (Address.eqImmutable Context.caller) (hold s)
+      (Revert.unauthorized Context.caller) fun _ =>
+  Effect.ensureCode (!Address.isZero to) (hold s) Revert.zeroAddress fun _ =>
+  if Fungible.Balances.canCredit balances to value then
+    .ok ({ dummy := Fungible.Balances.credit balances to value,
+           supply := UInt256.add s.supply value },
+      Fungible.Log.transfer Address.zero to value)
+  else
+    .error .overflow
+
 @[pf_entry]
 def balanceOf (_s : State) (who : Address) : UInt256 :=
   Fungible.Balances.balanceOf balances who

@@ -1,31 +1,12 @@
 #!/usr/bin/env bash
-# Erc20Meta: ERC-20-shaped string name/symbol + standard allowance/transfer/approve.
+# Erc20Meta: ERC-20-shaped string name/symbol + owner-gated mint + standard allowance/transfer/approve.
 # Receipts: canonical Transfer/Approval LOG3 (indexed from/to or owner/spender, uint256 data).
-# Erc20Meta has no mint; the hashed Addr256 balance map is seeded Anvil-locally for a
-# non-zero Transfer. Darwin + Linux.
+# Darwin + Linux.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=runtime-tests/evm/lib.sh
 source "$here/lib.sh"
-
-# Hashed Addr256 slot: keccak256(w0||w1||w2||base) with LE address limbs, base 0.
-# Tag at slot, packed UInt256 payload at slot+1 (same geometry as HashedMap.Emit).
-pf_erc20meta_balance_slots() {
-  local who="$1"
-  local blob raw
-  blob="$("$python" -I -S -c "
-addr=int('$who', 16)
-b=addr.to_bytes(20, 'big')
-w0=int.from_bytes(b[0:8], 'little')
-w1=int.from_bytes(b[8:16], 'little')
-w2=int.from_bytes(b[16:20], 'little')
-print('0x' + (w0.to_bytes(32,'big') + w1.to_bytes(32,'big') +
-              w2.to_bytes(32,'big') + (0).to_bytes(32,'big')).hex())
-")"
-  raw="$("$cast" keccak "$blob")"
-  "$python" -I -S -c "s=int('$raw', 16); print(s); print(s+1)"
-}
 
 pf_evm_evm_init evm-anvil-erc20meta
 bin="$root/build/evm/Erc20Meta.bin"
@@ -89,9 +70,11 @@ pf_evm_require_equal "$got_symbol" "PF" "compile-time string symbol"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'decimals()(uint8)')" \
   18 "compile-time decimals"
+got_owner="$("$cast" call --rpc-url "$rpc" "$addr" 'ownerOf()(address)')"
+pf_evm_require_equal "${got_owner,,}" "${sender,,}" "ownerOf"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
-  0 "absent total supply (no mint)"
+  0 "absent total supply"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   0 "absent sender balance"
@@ -99,16 +82,66 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowance(address,address)(uint256)' "$sender" "$dest")" \
   0 "absent allowance"
 
-# Seed hashed balance map: tag=1, payload=100. Anvil-local only (lib.sh fails closed otherwise).
-{
-  read -r tag_slot
-  read -r payload_slot
-} < <(pf_erc20meta_balance_slots "$sender")
-pf_evm_set_storage_word "$addr" "$tag_slot" 1
-pf_evm_set_storage_word "$addr" "$payload_slot" 100
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'mint(address,uint256)' "$zero" 100 >/dev/null 2>&1; then
+  echo "FAIL: mint to zero unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_zero_address "$addr" "$sender" \
+  "$("$cast" calldata 'mint(address,uint256)' "$zero" 100)" \
+  "mint to zero"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'totalSupply()(uint256)')" \
+  0 "mint to zero holds supply"
+
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'mint(address,uint256)' "$dest" 100 >/dev/null 2>&1; then
+  echo "FAIL: non-owner mint unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_unauthorized "$addr" "$dest" \
+  "$("$cast" calldata 'mint(address,uint256)' "$dest" 100)" "$dest" \
+  "non-owner mint"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'totalSupply()(uint256)')" \
+  0 "non-owner mint holds supply"
+
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256)' "$sender" 100)"
+printf '%s' "$receipt" | "$python" -I -S -c "
+import json,sys
+r=json.load(sys.stdin)
+logs=r.get('logs') or []
+want='$topic_xfer'.lower()
+zero=int('$zero', 16)
+sender=int('$sender', 16)
+hit=None
+for lg in logs:
+    topics=lg.get('topics') or []
+    if topics and topics[0].lower()==want:
+        hit=lg
+        break
+if hit is None:
+    raise SystemExit('FAIL: missing Transfer(address,address,uint256) log on mint')
+topics=hit.get('topics') or []
+if len(topics)!=3:
+    raise SystemExit(f'FAIL: mint Transfer should be LOG3, got {len(topics)} topics')
+if int(topics[1],16)!=zero:
+    raise SystemExit(f'FAIL: mint Transfer from {topics[1]} != zero')
+if int(topics[2],16)!=sender:
+    raise SystemExit(f'FAIL: mint Transfer to {topics[2]} != sender')
+data=int(hit.get('data') or '0x0', 16)
+if data!=100:
+    raise SystemExit(f'FAIL: mint Transfer data {data} != 100')
+"
+pf_evm_typed_event_check "$abi" "$receipt" Transfer "$topic_xfer" \
+  "{\"from\": \"$zero\", \"to\": \"$sender\", \"value\": 100}" "mint Transfer LOG3 ABI decode"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
-  100 "seeded sender balance"
+  100 "minted sender balance"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'totalSupply()(uint256)')" \
+  100 "totalSupply after mint"
 
 receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'transfer(address,uint256)' "$dest" 30)"
@@ -148,7 +181,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   30 "dest after transfer"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
-  0 "totalSupply is not updated (no mint path)"
+  100 "totalSupply unchanged by transfer"
 
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
     "$addr" 'transfer(address,uint256)' "$zero" 1 >/dev/null 2>&1; then
@@ -221,4 +254,4 @@ got_symbol2="${got_symbol2#\"}"; got_symbol2="${got_symbol2%\"}"
 pf_evm_require_equal "$got_name2" "Token" "string name holds after transfer"
 pf_evm_require_equal "$got_symbol2" "PF" "string symbol holds after transfer"
 
-echo "evm-anvil-erc20meta: ok (string name/symbol ABI + LOG3 Transfer/Approval topics/data; engineering only)"
+echo "evm-anvil-erc20meta: ok (string name/symbol ABI + owner mint + LOG3 Transfer/Approval topics/data; engineering only)"

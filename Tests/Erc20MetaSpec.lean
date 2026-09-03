@@ -3,7 +3,8 @@ import ProofForge.Evm.Commands
 import Examples.Evm.Erc20Meta
 
 /-!
-W5 slice 4: ERC-20 metadata SDK + canonical typed Transfer/Approval on `Erc20Meta`.
+W5 slice 4–6: ERC-20 metadata SDK + canonical typed Transfer/Approval on `Erc20Meta`,
+plus owner-gated mint (rows 9/20 mint gap closed; extensions/permit-votes remain PARTIAL).
 
 Pins the `Erc20Meta` digest and checks that `name` / `symbol` use the ERC-20 `string` ABI (not
 packed `bytes32` like `Examples.Evm.Token`) and that Transfer/Approval appear as typed events.
@@ -82,6 +83,7 @@ elab "#pf_erc20_meta_check" : command => do
   let transferFrames := sourceTypedFrames (← methodOps source "transfer")
   let approveFrames := sourceTypedFrames (← methodOps source "approve")
   let transferFromFrames := sourceTypedFrames (← methodOps source "transferFrom")
+  let mintFrames := sourceTypedFrames (← methodOps source "mint")
   unless transferFrames.size == 1 &&
       eventMatches transferFrames[0]! "Transfer"
         #[("from", true), ("to", true), ("value", false)] &&
@@ -95,15 +97,20 @@ elab "#pf_erc20_meta_check" : command => do
       eventMatches transferFromFrames[0]! "Transfer"
         #[("from", true), ("to", true), ("value", false)] do
     throwError s!"Erc20Meta.transferFrom Transfer frame diverged: {repr transferFromFrames}"
+  unless mintFrames.size == 1 &&
+      eventMatches mintFrames[0]! "Transfer"
+        #[("from", true), ("to", true), ("value", false)] &&
+      mintFrames[0]!.args[2]!.type == .uint256 do
+    throwError s!"Erc20Meta.mint Transfer frame diverged: {repr mintFrames}"
   let program ←
     match IR.fromExtracted source with
     | .ok program => pure program
     | .error reason => throwError reason
   let digest := IR.digestHex program
-  unless digest == "fb7b729e9b7ea596" do
+  unless digest == "7d3e75465655b224" do
     throwError s!"Erc20Meta digest mismatch: {digest}"
   let want := #["allowance", "approve", "balanceOf", "decimals", "initialize",
-    "name", "symbol", "totalSupply", "transfer", "transferFrom"]
+    "mint", "name", "ownerOf", "symbol", "totalSupply", "transfer", "transferFrom"]
   let methods :=
     (#[program.constructor.ixName] ++ program.entries.map (·.ixName)) |>.qsort (· < ·)
   unless methods == want do

@@ -51,7 +51,7 @@ end UnsupportedConditionFixture
 
 -- Closed ERC-20-shaped programs keep their digests; this slice only refreshes MultiToken/CraftToken.
 #guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
-#guard Registry.digestOf "Erc20Meta" == some "fb7b729e9b7ea596"
+#guard Registry.digestOf "Erc20Meta" == some "7d3e75465655b224"
 
 def specBalances : Erc1155.Balances := Storage.Layout.root.addressPairMap256.handle
 def specOperators : Erc1155.Operators :=
