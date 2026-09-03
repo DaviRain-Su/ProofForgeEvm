@@ -80,9 +80,11 @@ open ProofForge.Crypto.Keccak
     if bytes32Less a b then (a, b) else (b, a)
   byteArrayToBytes32 (keccak256 (bytes32Bytes left ++ bytes32Bytes right))
 
-/-- Extractable single-step Merkle verify; erases to `Runtime.evmMerkleVerify256`. -/
-@[pf_inline] def verify256 (leaf sibling : Bytes32) (r0 r1 r2 r3 : UInt64) : Bool :=
-  Runtime.evmMerkleVerify256 leaf sibling r0 r1 r2 r3
+/-- Extractable depth-8 proof fold; erases to the bounded `Runtime.evmMerkleVerify256` query. -/
+@[pf_inline] def verify256
+    (length : UInt64) (leaf s0 s1 s2 s3 s4 s5 s6 s7 : Bytes32)
+    (r0 r1 r2 r3 : UInt64) : Bool :=
+  Runtime.evmMerkleVerify256 length leaf s0 s1 s2 s3 s4 s5 s6 s7 r0 r1 r2 r3
 
 /-- Extractable `bytes32` equality for folded Merkle roots; erases to `Runtime.evmEqBytes32`. -/
 @[pf_inline] def eqRoot256 (c0 c1 c2 c3 r0 r1 r2 r3 : UInt64) : Bool :=

@@ -296,49 +296,59 @@ private def emitKeccak256Pair32 (context : Context σ) (limb : Nat)
         indent ++ "let " ++ nm ++ " := " ++ packU256Word hash limb ++ nl
       return (txt, nm, context.rememberWide t9 hash cacheKey)
 
-private def emitMerkleVerify256 (context : Context σ)
-    (l0 l1 l2 l3 s0 s1 s2 s3 r0 r1 r2 r3 : Ops.Val) (st : σ) :
+private def emitMerkleVerify256 (context : Context σ) (operands : Array Ops.Val) (st : σ) :
     Except String (String × String × σ) := do
+  unless operands.size == 41 do
+    throw s!"extract/unsupported: depth-8 Merkle verify arity {operands.size}"
   let indent := context.indent
-  let (p0, x0, s0') ← context.materialize l0 st
-  let (p1, x1, s1') ← context.materialize l1 s0'
-  let (p2, x2, s2') ← context.materialize l2 s1'
-  let (p3, x3, s3') ← context.materialize l3 s2'
-  let (q0, y0, t0) ← context.materialize s0 s3'
-  let (q1, y1, t1) ← context.materialize s1 t0
-  let (q2, y2, t2) ← context.materialize s2 t1
-  let (q3, y3, t3) ← context.materialize s3 t2
-  let (u0, z0, u1) ← context.materialize r0 t3
-  let (u1p, z1, u2) ← context.materialize r1 u1
-  let (u2p, z2, u3) ← context.materialize r2 u2
-  let (u3p, z3, u4) ← context.materialize r3 u3
-  let (lv, u5) := context.fresh u4
-  let (sv, u6) := context.fresh u5
-  let (left, u7) := context.fresh u6
-  let (right, u8) := context.fresh u7
-  let (hash, u9) := context.fresh u8
-  let (rv, u10) := context.fresh u9
-  let (rootv, u11) := context.fresh u10
-  let (nm, u12) := context.fresh u11
-  let txt := p0 ++ p1 ++ p2 ++ p3 ++ q0 ++ q1 ++ q2 ++ q3 ++ u0 ++ u1p ++ u2p ++ u3p ++
-    indent ++ "pf_store_fixed_bytes(0, " ++ x0 ++ ", " ++ x1 ++ ", " ++ x2 ++ ", " ++ x3 ++ ", 32)" ++ nl ++
-    indent ++ "pf_store_fixed_bytes(32, " ++ y0 ++ ", " ++ y1 ++ ", " ++ y2 ++ ", " ++ y3 ++ ", 32)" ++ nl ++
-    indent ++ "pf_store_fixed_bytes(64, " ++ z0 ++ ", " ++ z1 ++ ", " ++ z2 ++ ", " ++ z3 ++ ", 32)" ++ nl ++
-    indent ++ "let " ++ lv ++ " := mload(0)" ++ nl ++
-    indent ++ "let " ++ sv ++ " := mload(32)" ++ nl ++
-    indent ++ "let " ++ rootv ++ " := mload(64)" ++ nl ++
-    indent ++ "let " ++ left ++ " := " ++ lv ++ nl ++
-    indent ++ "let " ++ right ++ " := " ++ sv ++ nl ++
-    indent ++ "if gt(" ++ left ++ ", " ++ right ++ ") {" ++ nl ++
-    indent ++ "  " ++ left ++ " := " ++ sv ++ nl ++
-    indent ++ "  " ++ right ++ " := " ++ lv ++ nl ++
-    indent ++ "}" ++ nl ++
-    indent ++ "mstore(0, " ++ left ++ ")" ++ nl ++
-    indent ++ "mstore(32, " ++ right ++ ")" ++ nl ++
-    indent ++ "let " ++ hash ++ " := keccak256(0, 64)" ++ nl ++
-    indent ++ "let " ++ rv ++ " := " ++ hash ++ nl ++
-    indent ++ "let " ++ nm ++ " := eq(" ++ rv ++ ", " ++ rootv ++ ")" ++ nl
-  return (txt, nm, u12)
+  let mut text := ""
+  let mut names : Array String := #[]
+  let mut state := st
+  for operand in operands do
+    let (pre, name, next) ← context.materialize operand state
+    text := text ++ pre
+    names := names.push name
+    state := next
+  let (computed, s0) := context.fresh state
+  let (rootv, s1) := context.fresh s0
+  let (result, s2) := context.fresh s1
+  state := s2
+  text := text ++
+    indent ++ "let " ++ computed ++ " := 0" ++ nl ++
+    indent ++ "let " ++ result ++ " := 0" ++ nl ++
+    indent ++ "if iszero(gt(" ++ names[0]! ++ ", 8)) {" ++ nl ++
+    indent ++ "  pf_store_fixed_bytes(0, " ++ names[1]! ++ ", " ++ names[2]! ++
+      ", " ++ names[3]! ++ ", " ++ names[4]! ++ ", 32)" ++ nl ++
+    indent ++ "  " ++ computed ++ " := mload(0)" ++ nl
+  for i in [0:8] do
+    let base := 5 + 4 * i
+    let (sibling, t0) := context.fresh state
+    let (left, t1) := context.fresh t0
+    let (right, t2) := context.fresh t1
+    state := t2
+    text := text ++
+      indent ++ "  if gt(" ++ names[0]! ++ ", " ++ toString i ++ ") {" ++ nl ++
+      indent ++ "    pf_store_fixed_bytes(32, " ++ names[base]! ++ ", " ++
+        names[base + 1]! ++ ", " ++ names[base + 2]! ++ ", " ++ names[base + 3]! ++
+        ", 32)" ++ nl ++
+      indent ++ "    let " ++ sibling ++ " := mload(32)" ++ nl ++
+      indent ++ "    let " ++ left ++ " := " ++ computed ++ nl ++
+      indent ++ "    let " ++ right ++ " := " ++ sibling ++ nl ++
+      indent ++ "    if gt(" ++ left ++ ", " ++ right ++ ") {" ++ nl ++
+      indent ++ "      " ++ left ++ " := " ++ sibling ++ nl ++
+      indent ++ "      " ++ right ++ " := " ++ computed ++ nl ++
+      indent ++ "    }" ++ nl ++
+      indent ++ "    mstore(0, " ++ left ++ ")" ++ nl ++
+      indent ++ "    mstore(32, " ++ right ++ ")" ++ nl ++
+      indent ++ "    " ++ computed ++ " := keccak256(0, 64)" ++ nl ++
+      indent ++ "  }" ++ nl
+  text := text ++
+    indent ++ "  pf_store_fixed_bytes(64, " ++ names[37]! ++ ", " ++ names[38]! ++
+      ", " ++ names[39]! ++ ", " ++ names[40]! ++ ", 32)" ++ nl ++
+    indent ++ "  let " ++ rootv ++ " := mload(64)" ++ nl ++
+    indent ++ "  " ++ result ++ " := eq(" ++ computed ++ ", " ++ rootv ++ ")" ++ nl ++
+    indent ++ "}" ++ nl
+  return (text, result, state)
 
 def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array Ops.Val)
     (st : σ) : Except String (String × String × σ) :=
@@ -363,8 +373,8 @@ def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array 
       emitArith256 context op limb a0 a1 a2 a3 b0 b1 b2 b3 st
   | .keccak256Pair32 limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitKeccak256Pair32 context limb a0 a1 a2 a3 b0 b1 b2 b3 st
-  | .merkleVerify256, [l0, l1, l2, l3, s0, s1, s2, s3, r0, r1, r2, r3] =>
-      emitMerkleVerify256 context l0 l1 l2 l3 s0 s1 s2 s3 r0 r1 r2 r3 st
+  | .merkleVerify256, operands =>
+      emitMerkleVerify256 context operands.toArray st
   | .eqBytes32, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitCompare256 context .eq a0 a1 a2 a3 b0 b1 b2 b3 st
   | _, _ =>

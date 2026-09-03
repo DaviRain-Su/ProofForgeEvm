@@ -51,7 +51,7 @@ inductive Query where
   | arith256 (op : Nat) (limb : Nat)
   /-- Sorted commutative `keccak256` of two `bytes32` values; `limb` is 0..3 (w0 lowest). -/
   | keccak256Pair32 (limb : Nat)
-  /-- True when sorted pair hash of two `bytes32` values equals a third; twelve operands. -/
+  /-- Fold a length plus leaf and eight siblings, then compare with a root; 41 operands. -/
   | merkleVerify256
   /-- Exact equality of two `bytes32` values; eight operands: a0..a3, b0..b3. -/
   | eqBytes32
@@ -60,7 +60,7 @@ inductive Query where
 def Query.arity : Query → Nat
   | .ge256 | .compare256 _ | .bitwise256 _ _ | .checkedDivMod256 _ _ | .arith256 _ _
   | .keccak256Pair32 _ | .eqBytes32 => 8
-  | .merkleVerify256 => 12
+  | .merkleVerify256 => 41
   | .not256 _ => 4
   | .shift256 _ _ => 5
   | .eq20 => 6

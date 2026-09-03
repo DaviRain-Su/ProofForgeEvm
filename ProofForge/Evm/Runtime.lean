@@ -374,10 +374,15 @@ The host stub returns `a`; EVM emission performs the commutative ordering and `k
 @[irreducible] def evmKeccak256Pair32 (a b : Bytes32) : Bytes32 :=
   let _ := b; a
 
-/-- True when `keccak256Pair32(leaf, sibling)` equals the four root limbs. The host stub
-returns `true`. -/
-@[irreducible] def evmMerkleVerify256 (leaf sibling : Bytes32) (r0 r1 r2 r3 : UInt64) : Bool :=
-  let _ := sibling; let _ := r0; let _ := r1; let _ := r2; let _ := r3; leaf.w0 == r0
+/-- Fold up to eight sorted `bytes32` siblings and compare with the four root limbs. The target
+emits the bounded Keccak loop; this host stub only preserves the extraction signature. -/
+@[irreducible] def evmMerkleVerify256
+    (length : UInt64) (leaf s0 s1 s2 s3 s4 s5 s6 s7 : Bytes32)
+    (r0 r1 r2 r3 : UInt64) : Bool :=
+  let _ := s0; let _ := s1; let _ := s2; let _ := s3
+  let _ := s4; let _ := s5; let _ := s6; let _ := s7
+  let _ := r1; let _ := r2; let _ := r3
+  length ≤ 8 && leaf.w0 == r0
 
 /-- Exact equality of two ABI `bytes32` values. The EVM emitter compares packed words. -/
 @[irreducible] def evmEqBytes32 (a0 a1 a2 a3 b0 b1 b2 b3 : UInt64) : Bool :=

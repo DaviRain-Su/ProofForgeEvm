@@ -513,21 +513,18 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
   else if endsWith e ".evmMerkleVerify256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmMerkleVerify256 then
     let args := e.getAppArgs
-    if args.size < 6 then none
-    else
-      let leafE := args[args.size - 6]!
-      let sibE := args[args.size - 5]!
-      let r0E := args[args.size - 4]!
-      let r1E := args[args.size - 3]!
-      let r2E := args[args.size - 2]!
-      let r3E := args[args.size - 1]!
-      let (l0, l1, l2, l3) := bytes32LeavesAsVal env fuel leafE
-      let (s0, s1, s2, s3) := bytes32LeavesAsVal env fuel sibE
-      match asVal env fuel r0E, asVal env fuel r1E, asVal env fuel r2E, asVal env fuel r3E with
-      | some r0, some r1, some r2, some r3 =>
-        some (.ext (.evm (.component (.wideWord .merkleVerify256)))
-          #[l0, l1, l2, l3, s0, s1, s2, s3, r0, r1, r2, r3])
-      | _, _, _, _ => none
+    if args.size < 14 then none
+    else do
+      let base := args.size - 14
+      let length ← asVal env fuel args[base]!
+      let mut operands := #[length]
+      for i in [0:9] do
+        let (w0, w1, w2, w3) := bytes32LeavesAsVal env fuel args[base + 1 + i]!
+        operands := operands ++ #[w0, w1, w2, w3]
+      for i in [0:4] do
+        let root ← asVal env fuel args[base + 10 + i]!
+        operands := operands.push root
+      return .ext (.evm (.component (.wideWord .merkleVerify256))) operands
   else if endsWith e ".evmEqBytes32" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmEqBytes32 then
     let args := e.getAppArgs
