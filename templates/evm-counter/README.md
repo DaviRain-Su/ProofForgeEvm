@@ -13,10 +13,11 @@
 
 ```bash
 lake build pf
+export PATH="$PWD/.lake/build/bin:$PATH"
 lake exe pf -- init my-contract
 cd my-contract
 lake build
-../.lake/build/bin/pf build
+lake env pf build
 ```
 
 参考仓内例子：`Examples/Evm/TipJar.lean`（`import ProofForge.Evm.Sdk`）。

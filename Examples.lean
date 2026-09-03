@@ -39,6 +39,7 @@ import Examples.Evm.TipJar
 import Examples.Evm.Vault
 import Examples.Evm.Ownable
 import Examples.Evm.Token
+import Examples.Evm.Erc20Meta
 import Examples.Evm.Capped
 import Examples.Evm.MultiToken
 import Examples.Evm.CraftToken

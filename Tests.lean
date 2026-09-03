@@ -53,6 +53,7 @@ import Tests.TipJarSpec
 import Tests.TokenSpec
 import Tests.TwoStepCounterSpec
 import Tests.TokenShapeSpec
+import Tests.Erc20MetaSpec
 import Tests.VaultSpec
 import Tests.WideSpec
 import Tests.WindowSpec

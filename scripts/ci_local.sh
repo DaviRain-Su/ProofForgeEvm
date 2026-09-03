@@ -82,8 +82,10 @@ detect_lanes() {
     matches_any "$f" \
       'ProofForge/Evm/**' 'Examples/Evm/**' \
       'runtime-tests/evm/**' 'scripts/check_artifact_manifest.py' \
+      'scripts/ci_pf_init_named_project.sh' \
       'lakefile.lean' 'lean-toolchain' 'lake-manifest.json' '.github/workflows/ci.yml' '.agents/setup' \
-      'ProofForge/Cli.lean' 'ProofForge/Extract.lean' 'ProofForge/Extract/**' 'ProofForge/Core/**' && evm=1
+      'ProofForge/Cli.lean' 'ProofForge/Extract.lean' 'ProofForge/Extract/**' 'ProofForge/Core/**' \
+      'templates/**' && evm=1
   done
   if (( shared )); then lean=1; evm=1; fi
   LANES=()
@@ -136,6 +138,8 @@ run_evm() {
   lake build Examples
   lake exe pf -- build --out build/evm
   python3 scripts/check_artifact_manifest.py --target evm --out build/evm
+  log "Named user-project gate (pf init demo)"
+  ./scripts/ci_pf_init_named_project.sh
   runtime-tests/evm/anvil.sh
 }
 

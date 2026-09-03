@@ -271,8 +271,8 @@ private def runInit (opts : Options) : IO UInt32 := do
         |>.replace "from \"../..\"" s!"from \"{requireFrom}\""
     IO.FS.writeFile lakefile rewritten
   IO.println s!"initialized {dst} (target=evm)"
-  IO.println s!"next: cd {dst} && lake build && ../.lake/build/bin/pf build"
-  IO.println s!"  (run `lake build pf` from the ProofForge EVM checkout first)"
+  IO.println s!"next: cd {dst} && lake build && lake env pf build"
+  IO.println s!"  (run `lake build pf` from the ProofForge EVM checkout; put `.lake/build/bin` on PATH)"
   return 0
 
 private def toolLine (cmd : String) (args : Array String) (fallback : String) : IO String := do

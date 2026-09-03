@@ -190,7 +190,7 @@ export const COMMANDS = [
   },
   {
     title: { zh: "用户项目（checkout 内）", en: "User project (from checkout)" },
-    cmd: "lake exe pf -- init demo && cd demo && lake build && ../.lake/build/bin/pf build",
+    cmd: "export PATH=\"$PWD/.lake/build/bin:$PATH\" && lake exe pf -- init demo && cd demo && lake build && lake env pf build",
     note: {
       zh: "模板在 templates/evm-counter。当前 init 依赖仓库 checkout；尚无独立安装包。",
       en: "Template is templates/evm-counter. init currently requires a repo checkout; there is no standalone installer yet.",
@@ -221,7 +221,7 @@ export const DOCS: Record<
       blocks: [
         "ProofForge EVM 是 Lean 4 的编译剖面，不是 DSL。克隆仓库，用 Lake 构建，用 pf 编合约。",
         "Toolchain 钉死：leanprover/lean4:v4.31.0、solc 0.8.34、Foundry 1.7.1。不要用 PATH 里随便一个汇编器顶替锁版本。",
-        "可复制路径（在仓库根）：lake build pf && lake exe pf -- init demo && cd demo && lake build && ../.lake/build/bin/pf build。",
+        "可复制路径（在仓库根）：lake build pf && export PATH=\"$PWD/.lake/build/bin:$PATH\" && lake exe pf -- init demo && cd demo && lake build && lake env pf build。",
         "产品能力矩阵与写合约指南见 docs/product/。模块内部说明见 docs/modules/。",
       ],
     },
@@ -230,7 +230,7 @@ export const DOCS: Record<
       blocks: [
         "ProofForge EVM is a Lean 4 compiler profile, not a DSL. Clone the repo, build with Lake, compile with pf.",
         "Toolchain is pinned: leanprover/lean4:v4.31.0, solc 0.8.34, Foundry 1.7.1. Do not substitute a PATH assembler for the lock.",
-        "Reproducible path (repo root): lake build pf && lake exe pf -- init demo && cd demo && lake build && ../.lake/build/bin/pf build.",
+        "Reproducible path (repo root): lake build pf && export PATH=\"$PWD/.lake/build/bin:$PATH\" && lake exe pf -- init demo && cd demo && lake build && lake env pf build.",
         "See docs/product/ for the support matrix and writing guide. See docs/modules/ for internal module notes.",
       ],
     },

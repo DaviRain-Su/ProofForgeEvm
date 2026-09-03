@@ -15,7 +15,8 @@ Do **not** import the `ProofForge` umbrella (it can pull Emit / Assemble / Regis
 
 Mark chain entries with `@[pf_entry]`. Keep state in an explicit `structure`, errors in an `inductive`, and mutations as `Except`-style transitions when you need revert.
 
-See `templates/evm-counter/MyContract/Counter.lean` and `Examples/Evm/TipJar.lean`.
+See `templates/evm-counter/MyContract/Counter.lean`, `Examples/Evm/TipJar.lean`, and
+`Examples/Evm/Erc20Meta.lean` (ERC-20-shaped `string` metadata + standard selectors).
 
 ## What works today
 
@@ -23,6 +24,7 @@ See `templates/evm-counter/MyContract/Counter.lean` and `Examples/Evm/TipJar.lea
 - Checked math / bit ops / bounded loops / narrow + wide ABI
 - Ownable / roles / pause / reentrancy helpers
 - Closed ETH + ERC-20/WETH calls
+- BoundedString returns as ABI `string` (see `Erc20Meta.name` / `symbol`)
 - Kernel proofs about the Lean `def` (not about bytecode)
 
 ## Known sharp edges (be honest in examples)
@@ -32,15 +34,16 @@ See `templates/evm-counter/MyContract/Counter.lean` and `Examples/Evm/TipJar.lea
 3. **Constructor effects** — deployment-time map writes / logs / value transfers are tightly constrained.
 4. **Events** — prefer the closed LOG helpers that exist; arbitrary user event ABI is not a finished product surface.
 5. **NFT modules** — use as bounded cores, not “ship ERC-721”.
+6. **`Examples.Evm.Token` metadata** — `name` / `symbol` are packed `bytes32` (Anvil gates use that shape). Prefer `Erc20Meta` when external tools expect ERC-20 `string` metadata.
 
 These are product debts tracked in [roadmap.md](roadmap.md), not undocumented folklore.
 
 ## Build
 
 ```bash
-# in a pf init project, from repo checkout
+# after `pf init demo` (CI job pf-init-user-project runs this same path)
 lake build
-../.lake/build/bin/pf build
+lake env pf build
 ```
 
 Artifacts: `Name.bin`, `Name.yul`, `Name.abi.json`.

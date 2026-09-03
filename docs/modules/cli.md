@@ -21,6 +21,7 @@ pf --version
 - 每次运行重新抽取 IR；`Examples` fixture 的 digest 必须与 `Evm.Registry` 钉值一致，
   否则 fail-closed（`ir/mismatch`）
 - `pf init <name>` 复制 `templates/evm-counter`，并把 path-`require` 改写为指向本仓
+- CI job `pf-init-user-project` 用字面命令 `pf init demo` 建工程再编制品（不是匿名 smoke）
 
 ## Tests
 

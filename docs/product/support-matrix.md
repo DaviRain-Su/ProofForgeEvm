@@ -39,9 +39,21 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 
 | Module | Say this | Do **not** say this |
 |---|---|---|
-| Fungible + Token examples | ERC-20-style ledger / allowance policy | “Full ERC-20” without checking ABI/metadata |
+| `Examples.Evm.Erc20Meta` | ERC-20-shaped ABI: `string` name/symbol, standard `allowance` / `transfer` / `approve` selectors | “Audited EIP-20” / mainnet token factory |
+| Fungible + `Examples.Evm.Token` | ERC-20-style ledger / allowance policy; **`name`/`symbol` are packed `bytes32`**, and several views use `*Of` names | “Full ERC-20” / drop-in for MetaMask token import without checking ABI |
 | `Erc721` / `Erc1155` | Bounded ownership/balance **core** | Full ERC-721/1155 (events, safe callbacks, metadata) |
 | Roles / Pausable / Reentrancy | Explicit policy helpers | Drop-in OpenZeppelin clone |
+
+## Networks / deploy
+
+| Target | Status |
+|---|---|
+| Anvil + `runtime-tests/evm/` | **Supported** engineering gate |
+| Base Sepolia / Base VibeNet (ordinary EOA create of `.bin`) | Possible as generic EVM RPC; **not CI-gated** |
+| Base Mainnet / any production chain | **Not endorsed** |
+| VibeNet EIP-8130 AA / payers | **Out of scope** for ProofForge |
+
+See [deploy.md](deploy.md) for the checkout → `.bin` → RPC story.
 
 ## Proof boundary
 
@@ -58,17 +70,20 @@ From repo root after toolchain setup:
 
 ```bash
 lake build pf
-lake exe pf -- init demo
+export PATH="$PWD/.lake/build/bin:$PATH"
+pf init demo
 cd demo
 lake build
-../.lake/build/bin/pf build
+lake env pf build
 ```
 
+CI job `pf-init-user-project` gates this exact command (`pf init demo`, then build artifacts).
 `pf init` currently requires the checkout (template path + require rewrite). A standalone installer / release tarball is roadmap work, not v0.
 
 ## Related
 
 - Writing guide: [writing-contracts.md](writing-contracts.md)
+- Deploy story: [deploy.md](deploy.md)
 - Roadmap: [roadmap.md](roadmap.md)
 - Module internals: [../modules/](../modules/)
 - Historical research (archived): [../research/](../research/)
