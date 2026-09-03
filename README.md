@@ -58,6 +58,7 @@ or list `[[program]]` entries in `pf.toml`.
 
 ```text
 runtime-tests/evm/anvil.sh     # full Anvil gate suite (skips when Foundry is absent)
+scripts/deploy_evm.sh          # cast send --create; fail-closed chain-id (see docs/product/deploy.md)
 ```
 
 ## User projects (from this checkout)

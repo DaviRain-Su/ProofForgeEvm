@@ -57,6 +57,7 @@ def entries : Array Entry := #[
   { name := "EvmPriceBand", digest := "a7015ac3e2e471ad" },
   { name := "EvmTypedErrors", digest := "499001a31fb4d9e7" },
   { name := "EvmTypedEvents", digest := "90bd573ddf9e2e49" },
+  { name := "EvmChainGuard", digest := "ebef98a36a4b1cc5" },
   { name := "EvmOpenCall", digest := "a300130619c177c" }
 ]
 

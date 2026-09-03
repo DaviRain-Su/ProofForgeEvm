@@ -1,0 +1,99 @@
+name: Deploy testnet (manual)
+
+# S5 stub: prove scripts/deploy_evm.sh + chain-id mismatch locally.
+# workflow_dispatch only. No required secrets, no funded key, not a merge gate.
+# Optional rpc_url is read-only (cast chain-id); this job never broadcasts to it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rpc_url:
+        description: "Optional JSON-RPC URL. If set, only verify cast chain-id (no broadcast, no secrets)."
+        required: false
+        type: string
+        default: ""
+      chain_id:
+        description: "Expected chain id for the optional read-only RPC check (default Base Sepolia)."
+        required: false
+        type: string
+        default: "84532"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-testnet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-anvil:
+    name: Local Anvil deploy (chain id 84532)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache toolchains and Lean dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            ~/.foundry
+            .lake/packages
+          key: toolchains-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', '.agents/setup') }}
+
+      - name: Prepare pinned toolchains
+        run: |
+          ./.agents/setup
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
+
+      - name: Restore Lean build products
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake/build
+          key: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+      - name: Build EvmChainGuard artifacts
+        run: |
+          set -euo pipefail
+          lake build Examples.Evm.EvmChainGuard
+          lake exe pf -- build --out build/evm EvmChainGuard
+
+      - name: Deploy on local Anvil --chain-id 84532 and refuse mismatch
+        run: |
+          set -euo pipefail
+          anvil --host 127.0.0.1 --port 8545 --chain-id 84532 --silent &
+          anvil_pid=$!
+          cleanup() { kill "$anvil_pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          ready=0
+          for i in $(seq 1 50); do
+            if cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 0.1
+          done
+          test "$ready" = 1
+          export PF_EVM_RPC_URL=http://127.0.0.1:8545
+          export PF_EVM_CHAIN_ID=84532
+          export PF_EVM_PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+          ./scripts/deploy_evm.sh build/evm/EvmChainGuard.bin -- 'constructor(uint64)' 84532
+          if PF_EVM_CHAIN_ID=8453 ./scripts/deploy_evm.sh build/evm/EvmChainGuard.bin \
+              -- 'constructor(uint64)' 84532; then
+            echo "FAIL: chain-id mismatch unexpectedly signed" >&2
+            exit 1
+          fi
+
+      - name: Optional read-only public RPC chain-id check
+        if: ${{ inputs.rpc_url != '' }}
+        env:
+          RPC_URL: ${{ inputs.rpc_url }}
+          CHAIN_ID: ${{ inputs.chain_id }}
+        run: |
+          set -euo pipefail
+          observed="$(cast chain-id --rpc-url "$RPC_URL")"
+          echo "read-only chain-id: $observed (expected $CHAIN_ID)"
+          test "$observed" = "$CHAIN_ID"

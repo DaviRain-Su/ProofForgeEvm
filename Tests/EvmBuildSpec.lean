@@ -24,6 +24,7 @@ import Examples.Evm.Token
 import Examples.Evm.Capped
 import Examples.Evm.Wide
 import Examples.Evm.Const
+import Examples.Evm.EvmChainGuard
 
 #pf_evm_build Examples.Counter
 
@@ -72,6 +73,8 @@ import Examples.Evm.Const
 #pf_evm_build Examples.Evm.Wide
 
 #pf_evm_build Examples.Evm.Const
+
+#pf_evm_build Examples.Evm.EvmChainGuard
 
 /--
 error: extract/unsupported: no pf_entry
