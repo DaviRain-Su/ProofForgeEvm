@@ -63,14 +63,12 @@ max_amt="$(printf '%s\n' "$max_quote" | awk 'NR==2 {print}')"
 pf_evm_require_equal "$max_recv" "$receiver" "maximum sale-price receiver"
 pf_evm_require_uint "$max_amt" "$max_royalty" "2.5% of maximum uint256"
 
-# A zero static receiver represents no royalty and must never quote a positive amount.
+# A zero static receiver is invalid and must not advertise IERC2981.
 zero="0x0000000000000000000000000000000000000000"
 zero_addr="$(pf_evm_deploy_ctor_address "$bytecode" "$zero")"
-zero_quote="$("$cast" call --rpc-url "$rpc" "$zero_addr" \
-  'royaltyInfo(uint256,uint256)(address,uint256)' 7 10000)"
-zero_recv="$(printf '%s\n' "$zero_quote" | awk 'NR==1 {print}')"
-zero_amt="$(printf '%s\n' "$zero_quote" | awk 'NR==2 {print}')"
-pf_evm_require_equal "$zero_recv" "$zero" "zero receiver disables royalties"
-pf_evm_require_uint "$zero_amt" 0 "zero receiver returns zero royalty"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$zero_addr" \
+  'supportsInterface(bytes4)(bool)' 0x01ffc9a7)" true "zero receiver keeps IERC165"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$zero_addr" \
+  'supportsInterface(bytes4)(bool)' 0x2a55205a)" false "zero receiver rejects IERC2981"
 
 echo "evm-anvil-royaltyart: ok (IERC165+IERC2981 + static full-range 2.5% royaltyInfo)"
