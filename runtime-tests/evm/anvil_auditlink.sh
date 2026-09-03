@@ -31,7 +31,7 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'coverageRows()(ui
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'classifiedCount()(uint64)')" \
   32 "classified row count"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'blockedCount()(uint64)')" \
-  12 "blocked row count"
+  10 "blocked row count"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'isComplete()(bool)')" \
   true "inventory complete"
 
@@ -49,10 +49,10 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   3 "access/extensions path tag"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'statusOf(uint64)(uint8)' 2)" \
-  3 "access/extensions ABSENT status"
+  2 "access/extensions PARTIAL status"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'isBlocked(uint64)(bool)' 2)" \
-  true "access/extensions blocked"
+  false "access/extensions not blocked"
 
 for row in $(seq 0 31); do
   classified="$("$cast" call --rpc-url "$rpc" "$addr" "isClassified(uint64)(bool)" "$row")"

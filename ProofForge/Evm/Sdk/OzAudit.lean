@@ -13,7 +13,7 @@ This is an audit witness, not runtime interface discovery: unknown rows fail clo
 Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - tree SHA `641ba990cad2f7f70878e0d66be1bfbef95710e8`
 - 452 `contracts/` tree paths, 367 Solidity sources
-- 32 backlog coverage rows: 2 DONE, 18 PARTIAL, 12 ABSENT (12 blocked by non-goals)
+- 32 backlog coverage rows: 2 DONE, 20 PARTIAL, 10 ABSENT (10 blocked by non-goals)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal

@@ -101,6 +101,28 @@ private def countTemporaryGap : Nat := Id.run do
 
 #guard countTemporaryGap == 0
 
+private def auditLinkState : Examples.Evm.AuditLink.State :=
+  { dummy := 0 }
+
+private def auditLinkMirrorsCompileTable : Bool := Id.run do
+  let mut matches := true
+  for row in [0:32] do
+    let ix := row.toUInt64
+    matches := matches &&
+      Examples.Evm.AuditLink.pathTagOf auditLinkState ix == OzAudit.pathTagOf ix &&
+      Examples.Evm.AuditLink.statusOf auditLinkState ix == OzAudit.statusOf ix &&
+      Examples.Evm.AuditLink.isBlocked auditLinkState ix == OzAudit.isBlocked ix &&
+      Examples.Evm.AuditLink.nonGoalTagOf auditLinkState ix == OzAudit.nonGoalTagOf ix &&
+      Examples.Evm.AuditLink.isClassified auditLinkState ix == OzAudit.isClassified ix
+  return matches
+
+#guard Examples.Evm.AuditLink.coverageRows auditLinkState == OzAudit.coverageRows
+#guard Examples.Evm.AuditLink.classifiedCount auditLinkState == OzAudit.classifiedCount
+#guard Examples.Evm.AuditLink.blockedCount auditLinkState == OzAudit.blockedCount
+#guard auditLinkMirrorsCompileTable
+#guard !Examples.Evm.AuditLink.isClassified auditLinkState 32
+#guard Examples.Evm.AuditLink.statusOf auditLinkState 32 == OzAudit.statusUnknown
+
 private def expectAuditLink : CommandElabM Unit := do
   let env ← getEnv
   let source ←
