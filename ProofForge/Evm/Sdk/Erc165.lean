@@ -30,11 +30,10 @@ abbrev InterfaceId := Bytes4
 @[pf_inline] def erc1155 : InterfaceId :=
   ⟨0x267ab6d9, 0, 0, 0⟩
 
-/-- Equality over the one meaningful `bytes4` carrier limb. The other fixed-byte carrier limbs
-are outside the logical four-byte value and ABI decoding canonically zeroes them. -/
+/-- Equality over canonical ABI `bytes4` values, lowered through the closed two-operand runtime
+leaf rather than structural carrier inspection. -/
 @[pf_inline] def equal (left right : InterfaceId) : Bool :=
-  match left, right with
-  | ⟨left0, _, _, _⟩, ⟨right0, _, _, _⟩ => left0 == right0
+  WideWord.Source.eqBytes4 left right
 
 /-- Support a single explicitly declared interface. -/
 @[pf_inline] def supports (requested implemented : InterfaceId) : Bool :=
@@ -46,8 +45,6 @@ are outside the logical four-byte value and ABI decoding canonically zeroes them
 
 /-- Support any of the common bounded two-interface profiles: ERC-165 plus one token interface. -/
 @[pf_inline] def supportsToken (requested token : InterfaceId) : Bool :=
-  match requested, token with
-  | ⟨requested0, _, _, _⟩, ⟨token0, _, _, _⟩ =>
-      requested0 == 0xa7c9ff01 || requested0 == token0
+  supports2 requested erc165 token
 
 end ProofForge.Evm.Sdk.Erc165

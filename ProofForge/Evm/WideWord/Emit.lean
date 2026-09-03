@@ -79,6 +79,17 @@ private def emitEq20 (context : Context σ)
     indent ++ "let " ++ nm ++ " := eq(" ++ av ++ ", " ++ bv ++ ")" ++ nl
   return (txt, nm, t5)
 
+/-- Compare the canonical left-aligned ABI words produced for two `bytes4` values. -/
+private def emitEqBytes4 (context : Context σ) (left right : Ops.Val) (st : σ) :
+    Except String (String × String × σ) := do
+  let indent := context.indent
+  let (leftPrefix, leftValue, st1) ← context.materialize left st
+  let (rightPrefix, rightValue, st2) ← context.materialize right st1
+  let (name, st3) := context.fresh st2
+  return (leftPrefix ++ rightPrefix ++
+    indent ++ "let " ++ name ++ " := eq(" ++ leftValue ++ ", " ++ rightValue ++ ")" ++ nl,
+    name, st3)
+
 private def bitwiseExpr (operation : WideWord.Bitwise) (left right : String) : String :=
   match operation with
   | .and => "and(" ++ left ++ ", " ++ right ++ ")"
@@ -249,6 +260,8 @@ def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array 
       emitCompare256 context comparison a0 a1 a2 a3 b0 b1 b2 b3 st
   | .eq20, [a0, a1, a2, b0, b1, b2] =>
       emitEq20 context a0 a1 a2 b0 b1 b2 st
+  | .eqBytes4, [left, right] =>
+      emitEqBytes4 context left right st
   | .bitwise256 operation limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitBitwise256 context operation limb a0 a1 a2 a3 b0 b1 b2 b3 st
   | .not256 limb, [a0, a1, a2, a3] =>

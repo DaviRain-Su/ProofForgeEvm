@@ -88,6 +88,10 @@ projecting `UInt256.wN (add256 …)`, so Extract does not flatten the projection
 @[pf_inline] def eq20 (a b : Addr20) : Bool :=
   evmEq20 a b
 
+/-- Exact equality of canonical ABI `bytes4` values. -/
+@[pf_inline] def eqBytes4 (a b : Bytes4) : Bool :=
+  evmEqBytes4 a b
+
 @[pf_inline] def zero20 : Addr20 := ⟨0, 0, 0⟩
 
 @[pf_inline] def isZero20 (a : Addr20) : Bool :=
