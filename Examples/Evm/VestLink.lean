@@ -112,26 +112,41 @@ guard is visible before the external call and restored afterwards. -/
 def release (s : State) (payout : UInt256) : Except Error (State × UInt64) :=
   if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
     if Reentrancy.canEnter s.guard then
-      let available :=
-        if Context.timestamp < Immutable.u64 then
-          UInt256.zero
-        else if Context.timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
-          UInt256.sub (UInt256.add Context.selfBalance s.released) s.released
+      if Context.timestamp < Immutable.u64 then
+        if UInt256.le payout UInt256.zero then
+          let _ := Reentrancy.enter declared.handle.guard
+          let _ := Ether.send Immutable.address payout
+          let _ := Reentrancy.leave declared.handle.guard
+          .ok ({ released := UInt256.add s.released payout, guard := Reentrancy.notEntered },
+            Vesting.Log.etherReleased payout)
         else
+          .ok (s, Revert.insufficient UInt256.zero payout)
+      else if Context.timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
+        let available := UInt256.sub (UInt256.add Context.selfBalance s.released) s.released
+        if UInt256.le payout available then
+          let _ := Reentrancy.enter declared.handle.guard
+          let _ := Ether.send Immutable.address payout
+          let _ := Reentrancy.leave declared.handle.guard
+          .ok ({ released := UInt256.add s.released payout, guard := Reentrancy.notEntered },
+            Vesting.Log.etherReleased payout)
+        else
+          .ok (s, Revert.insufficient available payout)
+      else
+        let available :=
           UInt256.sub
             (UInt256.div
               (UInt256.mul (UInt256.add Context.selfBalance s.released)
                 ⟨Context.timestamp - Immutable.u64, 0, 0, 0⟩)
               ⟨Immutable.u64b, 0, 0, 0⟩)
             s.released
-      if UInt256.le payout available then
-        let _ := Reentrancy.enter declared.handle.guard
-        let _ := Ether.send Immutable.address payout
-        let _ := Reentrancy.leave declared.handle.guard
-        .ok ({ released := UInt256.add s.released payout, guard := Reentrancy.notEntered },
-          Vesting.Log.etherReleased payout)
-      else
-        .ok (s, Revert.insufficient available payout)
+        if UInt256.le payout available then
+          let _ := Reentrancy.enter declared.handle.guard
+          let _ := Ether.send Immutable.address payout
+          let _ := Reentrancy.leave declared.handle.guard
+          .ok ({ released := UInt256.add s.released payout, guard := Reentrancy.notEntered },
+            Vesting.Log.etherReleased payout)
+        else
+          .ok (s, Revert.insufficient available payout)
     else
       .error .reentrantCall
   else
