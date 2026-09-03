@@ -282,14 +282,6 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
             | some a0, some a1, some a2 =>
               some (.ext (.evm (.component (.closedCall (.balance256 limb.toNat)))) #[a0, a1, a2])
             | _, _, _ => none
-        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmOpenStaticWord ||
-            endsWith baseE ".evmOpenStaticWord" ||
-            isConstNamed baseE ``ProofForge.Evm.Runtime.evmOpenStaticWords2 ||
-            endsWith baseE ".evmOpenStaticWords2" then
-          match decodeOpenCallCtor env baseE with
-          | .query query operands =>
-            some (.ext (.evm (.component (.openCall { query with limb := limb.toNat }))) operands)
-          | _ => none
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmTokenAllowanceOf ||
             endsWith baseE ".evmTokenAllowanceOf" then
           let gargs := baseE.getAppArgs
@@ -2553,6 +2545,9 @@ private inductive DecodedOpenCall where
   | query (query : Evm.OpenCall.Query) (operands : Array Ops.Val)
   | unsupported (reason : String)
 
+private def nthFromEnd (args : Array Expr) (n : Nat) : Option Expr :=
+  if args.size ≥ n + 1 then some args[args.size - 1 - n]! else none
+
 private def isEvmOpenCallApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall || endsWith e ".evmOpenCall"
 
@@ -3281,9 +3276,6 @@ private def collectIndexSets (env : Environment) (e : Expr)
 
 private def findIndexSet (env : Environment) (e : Expr) : Option Ops.Op :=
   (collectIndexSets env e)[0]?
-
-private def nthFromEnd (args : Array Expr) (n : Nat) : Option Expr :=
-  if args.size ≥ n + 1 then some args[args.size - 1 - n]! else none
 
 private def valAtEnd (env : Environment) (args : Array Expr) (n : Nat) : Ops.Val :=
   match nthFromEnd args n with
