@@ -30,6 +30,7 @@ import Tests.EvmReentrancySpec
 import Tests.EvmRolesSpec
 import Tests.EvmNoncesSpec
 import Tests.EvmRateLimitSpec
+import Tests.EvmQuotaSpec
 import Tests.EvmSafeCastSpec
 import Tests.EvmSafeErc20Spec
 import Tests.EvmSdkSpec

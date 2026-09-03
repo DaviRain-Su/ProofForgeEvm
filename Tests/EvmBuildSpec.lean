@@ -9,6 +9,7 @@ import Examples.Maybe
 import Examples.Evm.EvmCtx
 import Examples.Evm.EvmStaticCounter
 import Examples.Evm.EvmStaticRoster
+import Examples.Evm.EvmQuota
 import Examples.Evm.EvmAggregateStorage
 import Examples.Evm.EvmOrderedStorage
 import Examples.Evm.EvmVecLog
@@ -43,6 +44,8 @@ import Examples.Evm.EvmChainGuard
 #pf_evm_build Examples.Evm.EvmStaticCounter
 
 #pf_evm_build Examples.Evm.EvmStaticRoster
+
+#pf_evm_build Examples.Evm.EvmQuota
 
 #pf_evm_build Examples.Evm.EvmAggregateStorage
 
