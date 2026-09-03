@@ -1,6 +1,6 @@
 # Fable SDK foundations design / SDK 基础设计
 
-> Status: design proposal, reviewed against `origin/main` on 2026-09-03.  
+> Status: design proposal, reviewed against `origin/main` on 2026-09-03.
 > Scope: a staged path from the current closed EVM components to typed events, typed external
 > calls, honest OpenZeppelin-compatible examples, and Base-ready execution.
 
