@@ -5,7 +5,8 @@
 #   PF_EVM_RPC_URL      JSON-RPC URL (default http://127.0.0.1:8545)
 #   PF_EVM_CHAIN_ID     Expected chain id. Required when PF_EVM_RPC_URL is set
 #                       (fail-closed). Local default: 31338.
-#   PF_EVM_PRIVATE_KEY  Signing key. Never written to disk. Default: Anvil account 0.
+#   PF_EVM_PRIVATE_KEY  Signing key. Never written to disk. Required for external RPC;
+#                       local default: Anvil account 0.
 #
 # No GitHub secrets are required. A funded key is an operator input for public RPCs.
 #
@@ -21,7 +22,7 @@ usage() {
   echo "Usage: scripts/deploy_evm.sh <artifact.bin> [-- <cast abi-encode args>]" >&2
   echo "  PF_EVM_RPC_URL      JSON-RPC URL (default http://127.0.0.1:8545)" >&2
   echo "  PF_EVM_CHAIN_ID     expected chain id (required when PF_EVM_RPC_URL is set)" >&2
-  echo "  PF_EVM_PRIVATE_KEY  signing key (default: Anvil account 0; never persisted)" >&2
+  echo "  PF_EVM_PRIVATE_KEY  signing key (required for external RPC; local default: Anvil account 0)" >&2
   exit 2
 }
 
@@ -71,11 +72,16 @@ if [[ -n "${PF_EVM_RPC_URL:-}" ]]; then
     echo "FAIL: PF_EVM_RPC_URL is set but PF_EVM_CHAIN_ID is missing (fail-closed)" >&2
     exit 1
   fi
+  if [[ -z "${PF_EVM_PRIVATE_KEY:-}" ]]; then
+    echo "FAIL: PF_EVM_RPC_URL is set but PF_EVM_PRIVATE_KEY is missing (fail-closed)" >&2
+    exit 1
+  fi
   expected="$PF_EVM_CHAIN_ID"
+  private_key="$PF_EVM_PRIVATE_KEY"
 else
   expected="${PF_EVM_CHAIN_ID:-31338}"
+  private_key="${PF_EVM_PRIVATE_KEY:-ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
 fi
-private_key="${PF_EVM_PRIVATE_KEY:-ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
 
 cast="$(pf_deploy_find_tool cast)" || {
   echo "FAIL: cast not found (install foundryup, or set FOUNDRY_BIN)" >&2

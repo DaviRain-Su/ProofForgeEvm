@@ -31,7 +31,7 @@ anvil --chain-id 31338
 scripts/deploy_evm.sh build/evm/Counter.bin -- 'constructor(uint64)' 7
 ```
 
-`scripts/deploy_evm.sh` runs `cast send --create`, then prints `chain-id`, `address`, `tx`, and `digest: sha256:…`. It reads the observed chain id and **refuses to sign** on mismatch. Private keys stay in the environment (`PF_EVM_PRIVATE_KEY`; default Anvil account 0) and are never written to generated config.
+`scripts/deploy_evm.sh` runs `cast send --create`, then prints `chain-id`, `address`, `tx`, and `digest: sha256:…`. It reads the observed chain id and **refuses to sign** on mismatch. Private keys stay in the environment (`PF_EVM_PRIVATE_KEY`; required for external RPC, local default Anvil account 0) and are never written to generated config.
 
 Anvil green means the bytecode ran under that node’s semantics. It does **not** mean proved on-chain behavior, mainnet readiness, or that a theorem about the Lean `def` refined to the `.bin`.
 

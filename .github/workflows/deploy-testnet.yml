@@ -79,6 +79,7 @@ jobs:
           test "$ready" = 1
           export PF_EVM_RPC_URL=http://127.0.0.1:8545
           export PF_EVM_CHAIN_ID=84532
+          export PF_EVM_PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
           ./scripts/deploy_evm.sh build/evm/EvmChainGuard.bin -- 'constructor(uint64)' 84532
           if PF_EVM_CHAIN_ID=8453 ./scripts/deploy_evm.sh build/evm/EvmChainGuard.bin \
               -- 'constructor(uint64)' 84532; then

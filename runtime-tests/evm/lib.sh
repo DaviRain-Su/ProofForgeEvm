@@ -6,7 +6,8 @@
 #   PF_EVM_RPC_URL      If set, skip launching Anvil and use this JSON-RPC URL.
 #                       PF_EVM_CHAIN_ID is then required (fail-closed; no 31338 default).
 #   PF_EVM_CHAIN_ID     Expected chain id. Local Anvil default: 31338.
-#   PF_EVM_PRIVATE_KEY  Signing key (never written to disk). Default: Anvil account 0.
+#   PF_EVM_PRIVATE_KEY  Signing key (never written to disk). Required for external RPC;
+#                       local Anvil default: account 0.
 #   PF_EVM_PORT         Preferred loopback port for a locally launched Anvil.
 #   FOUNDRY_BIN         Optional directory containing `anvil` / `cast`.
 #
@@ -88,8 +89,6 @@ pf_evm_evm_init() {
     echo "$label: skip: cast not found (install foundryup, or set FOUNDRY_BIN)" >&2
     exit 0
   }
-  # Anvil default account 0. Never persisted; callers may override for a funded key.
-  private_key="${PF_EVM_PRIVATE_KEY:-ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
   anvil=""
   anvil_pid=""
   if [[ -n "${PF_EVM_RPC_URL:-}" ]]; then
@@ -99,7 +98,12 @@ pf_evm_evm_init() {
       echo "$label: FAIL: PF_EVM_RPC_URL is set but PF_EVM_CHAIN_ID is missing (fail-closed)" >&2
       exit 1
     fi
+    if [[ -z "${PF_EVM_PRIVATE_KEY:-}" ]]; then
+      echo "$label: FAIL: PF_EVM_RPC_URL is set but PF_EVM_PRIVATE_KEY is missing (fail-closed)" >&2
+      exit 1
+    fi
     chain_id="$PF_EVM_CHAIN_ID"
+    private_key="$PF_EVM_PRIVATE_KEY"
   else
     anvil_mode=1
     anvil="$(pf_evm_find_tool anvil)" || {
@@ -107,6 +111,8 @@ pf_evm_evm_init() {
       exit 0
     }
     chain_id="${PF_EVM_CHAIN_ID:-31338}"
+    # Public Anvil account 0 is safe only for the local node this helper launches.
+    private_key="${PF_EVM_PRIVATE_KEY:-ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
   fi
 }
 
