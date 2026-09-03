@@ -31,7 +31,9 @@ two data words (`id`, `value`), and LOG3 `ApprovalForAll` with a bool data word.
 ## Explicitly unsupported
 
 Batch operations (`safeBatchTransferFrom`, `balanceOfBatch`, mint/burn batches), ERC1155Receiver
-callbacks (`onERC1155Received`), metadata URI, `TransferBatch`, ERC-165, and unbounded inputs.
+callbacks (`onERC1155Received`), metadata URI, `TransferBatch`, and unbounded inputs.
+Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
+interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,
 selector/topic/offset magic, or hidden storage write: every state write is an existing explicit
 hashed-map effect. Authorization against `Context.caller`, event/error ordering, pause, and

@@ -32,6 +32,13 @@ token_id=7
 alias_id="$("$python" -I -S -c "print($token_id + (1 << 192))")"
 zero="0x0000000000000000000000000000000000000000"
 
+supports_interface() { # interface id
+  "$cast" call --rpc-url "$rpc" "$addr" 'supportsInterface(bytes4)(bool)' "$1"
+}
+pf_evm_require_equal "$(supports_interface 0x01ffc9a7)" true "IERC165 support"
+pf_evm_require_equal "$(supports_interface 0xd9b67a26)" true "IERC1155 support"
+pf_evm_require_equal "$(supports_interface 0x80ac58cd)" false "IERC721 is unsupported"
+
 sig_xfer="$(pf_evm_typed_event_sig "$abi" TransferSingle)"
 sig_op="$(pf_evm_typed_event_sig "$abi" ApprovalForAll)"
 pf_evm_require_equal "$sig_xfer" 'TransferSingle(address,address,address,uint256,uint256)' \

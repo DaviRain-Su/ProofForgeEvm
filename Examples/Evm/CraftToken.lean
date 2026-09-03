@@ -116,4 +116,9 @@ def supplyOf (_s : State) (tokenId : UInt256) : UInt256 :=
 def isApprovedForAll (_s : State) (owner operator : Address) : Bool :=
   Erc1155.Operators.isApprovedForAll operators owner operator
 
+/-- Explicit bounded ERC-165 declaration for this ERC-1155-shaped profile. -/
+@[pf_entry]
+def supportsInterface (_s : State) (interfaceId : Bytes4) : Bool :=
+  Erc165.supportsToken interfaceId Erc165.erc1155
+
 end Examples.Evm.CraftToken

@@ -44,6 +44,13 @@ sender_packed="$(pf_pack_addr_u256 "$sender")"
 other_packed="$(pf_pack_addr_u256 "$other")"
 zero="0x0000000000000000000000000000000000000000"
 
+supports_interface() { # interface id
+  "$cast" call --rpc-url "$rpc" "$addr" 'supportsInterface(bytes4)(bool)' "$1"
+}
+pf_evm_require_equal "$(supports_interface 0x01ffc9a7)" true "IERC165 support"
+pf_evm_require_equal "$(supports_interface 0x80ac58cd)" true "IERC721 support"
+pf_evm_require_equal "$(supports_interface 0xd9b67a26)" false "IERC1155 is unsupported"
+
 sig_xfer="$(pf_evm_typed_event_sig "$abi" Transfer)"
 sig_appr="$(pf_evm_typed_event_sig "$abi" Approval)"
 pf_evm_require_equal "$sig_xfer" 'Transfer(address,address,uint256)' "ABI Transfer signature"

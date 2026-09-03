@@ -297,7 +297,8 @@ private def expectMultiTokenEvents : CommandElabM Unit := do
     | .ok program => pure program
     | .error reason => throwError reason
   expectMethodNames evm
-    #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "isApprovedForAll"]
+    #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "isApprovedForAll",
+      "supportsInterface"]
   expectTypedAbiYul evm
 
 private def expectCraftTokenEvents : CommandElabM Unit := do
@@ -333,7 +334,7 @@ private def expectCraftTokenEvents : CommandElabM Unit := do
     | .error reason => throwError reason
   expectMethodNames evm
     #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "supplyOf",
-      "isApprovedForAll"]
+      "isApprovedForAll", "supportsInterface"]
   expectTypedAbiYul evm
 
 private def expectErc1155 : CommandElabM Unit := do

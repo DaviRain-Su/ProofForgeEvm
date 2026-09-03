@@ -27,6 +27,7 @@ lean_lib ProofForgeEvmSdk where
     `ProofForge.Evm.Sdk,
     `ProofForge.Evm.Sdk.Access,
     `ProofForge.Evm.Sdk.Base,
+    `ProofForge.Evm.Sdk.Erc165,
     `ProofForge.Evm.Sdk.Erc1155,
     `ProofForge.Evm.Sdk.Erc721,
     `ProofForge.Evm.Sdk.Fungible,

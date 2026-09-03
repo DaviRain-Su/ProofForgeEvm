@@ -16,6 +16,7 @@ import Tests.EvmCallResultSpec
 import Tests.EvmCtxSpec
 import Tests.EvmEffectStateSpec
 import Tests.EvmEnvironmentSpec
+import Tests.EvmErc165Spec
 import Tests.EvmErc1155Spec
 import Tests.EvmErc721Spec
 import Tests.EvmExceptErgonomicsSpec
