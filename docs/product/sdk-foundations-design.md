@@ -240,7 +240,9 @@ protected/manual gate.
 Examples land in dependency order and each wave stays honest about its supported subset:
 
 1. **Wave A — policy events:** Ownable/Pausable/Roles examples adopt typed events and ERC-165 where
-   applicable.
+   applicable. *(S4b landed `OwnershipTransferred` + `Paused`/`Unpaused` on TwoStepCounter,
+   Credits, and Capped; not constructor logs, Ownable2Step `OwnershipTransferStarted`, Roles,
+   or ERC-165.)*
 2. **Wave B — ERC-721:** Collectible/Badge adopt `Transfer`, `Approval`, and `ApprovalForAll`;
    advertised interface IDs are limited to implemented functions.
 3. **Wave C — ERC-1155 single-id:** MultiToken/CraftToken adopt `TransferSingle` and

@@ -42,24 +42,28 @@ def mint (s : State) (value : UInt256) : Except Error (State × UInt64) :=
     .ok ({ paused := s.paused, cap := s.cap, supply := s.supply },
       Revert.unauthorized Context.caller)
 
-/-- 只有构造期 owner 能暂停。非 owner → `Unauthorized(caller)`。 -/
+/-- 只有构造期 owner 能暂停。非 owner → `Unauthorized(caller)`。
+    成功发出 `Paused(caller)`。 -/
 @[pf_entry]
 def pause (s : State) : Except Error (State × UInt64) :=
   if Address.eqImmutable Context.caller then
     if (0 : UInt64) ≠ 1 then
-      .ok ({ paused := Pausable.pause s.paused, cap := s.cap, supply := s.supply }, 1)
+      .ok ({ paused := Pausable.pause s.paused, cap := s.cap, supply := s.supply },
+        Pausable.Log.paused Context.caller)
     else
       .error .overflow
   else
     .ok ({ paused := s.paused, cap := s.cap, supply := s.supply },
       Revert.unauthorized Context.caller)
 
-/-- 只有构造期 owner 能恢复。非 owner → `Unauthorized(caller)`。 -/
+/-- 只有构造期 owner 能恢复。非 owner → `Unauthorized(caller)`。
+    成功发出 `Unpaused(caller)`。 -/
 @[pf_entry]
 def unpause (s : State) : Except Error (State × UInt64) :=
   if Address.eqImmutable Context.caller then
     if (0 : UInt64) ≠ 1 then
-      .ok ({ paused := Pausable.unpause s.paused, cap := s.cap, supply := s.supply }, 0)
+      .ok ({ paused := Pausable.unpause s.paused, cap := s.cap, supply := s.supply },
+        Pausable.Log.unpaused Context.caller)
     else
       .error .overflow
   else

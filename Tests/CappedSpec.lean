@@ -24,7 +24,7 @@ def zero256 : UInt256 := ⟨0, 0, 0, 0⟩
 
 #guard
   match pause (init sample) with
-  | .ok (st, ret) => ret == 1 && st.paused == 1 && pausedOf st == 1
+  | .ok (st, ret) => ret == 0 && st.paused == 1 && pausedOf st == 1
   | .error _ => false
 
 #guard

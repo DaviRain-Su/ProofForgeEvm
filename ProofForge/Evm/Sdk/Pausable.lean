@@ -7,16 +7,17 @@ namespace ProofForge.Evm.Sdk.Pausable
 
 Reusable O(1) policy over one explicit `UInt8` state field. `running` is `0`, `paused` is `1`,
 and every transition returns the replacement flag for the application to store visibly. The
-component does not own authorization, emit an event, hide a storage write, allocate a slot, or add
-a Runtime/Ops/IR/Component/Emit case.
+component does not own authorization, hide a storage write, allocate a slot, or add a
+Runtime/Ops/IR/Component/Emit case.
 
 Applications compose `isRunning` with their own owner/role policy, return `violation` on a blocked
 operation, and explicitly write `pause current` / `unpause current` into their typed State field.
 Values other than the two canonical flags fail closed as not running and not paused.
 
-Typed Paused/Unpaused events remain a later generic-event slice; reentrancy remains separate
-because it requires a storage write that is ordered before an external call and a matching clear
-after it. This module does not claim either behavior.
+Canonical `Paused` / `Unpaused` logs are reusable `Event.emit` wrappers (`Log.paused` /
+`Log.unpaused`): LOG1 with a non-indexed `account` data word (the caller). Reentrancy remains
+separate because it requires a storage write that is ordered before an external call and a matching
+clear after it. This module does not claim a drop-in OpenZeppelin clone.
 -/
 
 /-- Canonical state in which guarded operations may run. -/
@@ -45,6 +46,24 @@ after it. This module does not claim either behavior.
 @[pf_inline] def violation : UInt64 :=
   Revert.paused
 
+/-- Canonical OZ Pausable events. Constructor and field names are the ABI surface
+(`Paused` / `Unpaused`). The account is not indexed (LOG1 data word). -/
+inductive Notice where
+  | Paused (account : Address)
+  | Unpaused (account : Address)
+  deriving Repr, DecidableEq, Inhabited
+
+namespace Log
+
+/-- LOG1 `Paused(address account)`. -/
+@[pf_inline] def paused (account : Address) : UInt64 :=
+  Event.emit (Notice.Paused account)
+
+/-- LOG1 `Unpaused(address account)`. -/
+@[pf_inline] def unpaused (account : Address) : UInt64 :=
+  Event.emit (Notice.Unpaused account)
+
+end Log
 
 section Proofs
 
