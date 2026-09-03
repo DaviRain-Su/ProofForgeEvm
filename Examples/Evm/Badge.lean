@@ -2,7 +2,9 @@ import ProofForge.Evm.Sdk
 
 /-!
 Burnable ERC-721 consumer with operator approvals. Independently reuses the Erc721 ledger
-handles while owning burn authorization and setApprovalForAll policy.
+handles while owning burn authorization and setApprovalForAll policy. Successful mint/transfer
+emit canonical ERC-721 `Transfer`; successful operator writes emit `ApprovalForAll`; burn emits
+`Transfer` to the zero address.
 -/
 
 namespace Examples.Evm.Badge
@@ -38,7 +40,7 @@ def mint (s : State) (to : Address) (tokenId : UInt256) : Except Error (State ×
   if Address.eqImmutable Context.caller then
     if Erc721.canMint owners balances to tokenId then
       .ok ({ dummy := Erc721.mint owners balances to tokenId },
-        Event.transfer Address.zero to tokenId)
+        Erc721.Log.transfer Address.zero to tokenId)
     else if Address.isZero to then
       .ok (s, Revert.zeroAddress)
     else
@@ -53,12 +55,10 @@ def setApprovalForAll (s : State) (operator : Address) (approved : Bool) :
     .ok (s, Revert.zeroAddress)
   else if Address.eq operator Context.caller then
     .ok (s, Revert.unauthorized Context.caller)
-  else if (0 : UInt64) ≠ 1 then
-    -- ApprovalForAll has no ERC-20-shaped Event.approval encoding; logging stays app-owned.
-    .ok ({ dummy :=
-        Erc721.Operators.setApprovalForAll operators Context.caller operator approved }, 0)
   else
-    .error .overflow
+    .ok ({ dummy :=
+        Erc721.Operators.setApprovalForAll operators Context.caller operator approved },
+      Erc721.Log.approvalForAll Context.caller operator approved)
 
 @[pf_entry]
 def transferFrom (s : State) (source to : Address) (tokenId : UInt256) :
@@ -69,7 +69,7 @@ def transferFrom (s : State) (source to : Address) (tokenId : UInt256) :
     .ok (s, Revert.zeroAddress)
   else if Erc721.canTransfer owners balances source to tokenId then
     .ok ({ dummy := Erc721.transfer owners approvals balances source to tokenId },
-      Event.transfer source to tokenId)
+      Erc721.Log.transfer source to tokenId)
   else
     .ok (s, Revert.unauthorized Context.caller)
 
@@ -79,9 +79,8 @@ def burn (s : State) (tokenId : UInt256) : Except Error (State × UInt64) :=
   if !Erc721.isApprovedOrOwner owners approvals operators Context.caller tokenId then
     .ok (s, Revert.unauthorized Context.caller)
   else if Erc721.canBurn owners balances owner tokenId then
-    -- Avoid Event.transfer (... Address.zero ...); Address.zero in effect position has been
-    -- mis-lowered before. Burn success returns 0 and leaves Transfer logging to the app.
-    .ok ({ dummy := Erc721.burn owners approvals balances owner tokenId }, 0)
+    .ok ({ dummy := Erc721.burn owners approvals balances owner tokenId },
+      Erc721.Log.transfer owner Address.zero tokenId)
   else
     .ok (s, Revert.unauthorized Context.caller)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Collectible: owner mint, approve, transferFrom over Erc721 ledger. Darwin + Linux.
+# Receipts are ABI-decoded: ERC-721 Transfer/Approval are LOG4 (indexed tokenId, empty data).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,12 +22,14 @@ print(w0 | (w1 << 64) | (w2 << 128))
 
 pf_evm_evm_init evm-anvil-collectible
 bin="$root/build/evm/Collectible.bin"
-if [[ ! -f "$bin" ]]; then
+abi="$root/build/evm/Collectible.abi.json"
+if [[ ! -f "$bin" || ! -f "$abi" ]]; then
   echo "building Collectible.bin" >&2
   lake exe pf -- build --target evm --out "$root/build/evm" Collectible \
     || { echo "FAIL: pf build Collectible failed" >&2; exit 1; }
 fi
 [[ -f "$bin" ]] || { echo "FAIL: missing $bin" >&2; exit 1; }
+[[ -f "$abi" ]] || { echo "FAIL: missing $abi" >&2; exit 1; }
 pf_evm_start_anvil "${PF_EVM_PORT:-18570}" "$root/build/evm/anvil-collectible.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
@@ -39,6 +42,14 @@ other="$("$cast" wallet address --private-key "$other_key")"
 token_id=1
 sender_packed="$(pf_pack_addr_u256 "$sender")"
 other_packed="$(pf_pack_addr_u256 "$other")"
+zero="0x0000000000000000000000000000000000000000"
+
+sig_xfer="$(pf_evm_typed_event_sig "$abi" Transfer)"
+sig_appr="$(pf_evm_typed_event_sig "$abi" Approval)"
+pf_evm_require_equal "$sig_xfer" 'Transfer(address,address,uint256)' "ABI Transfer signature"
+pf_evm_require_equal "$sig_appr" 'Approval(address,address,uint256)' "ABI Approval signature"
+topic_xfer="$("$cast" keccak "$sig_xfer")"
+topic_appr="$("$cast" keccak "$sig_appr")"
 
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
@@ -67,8 +78,11 @@ pf_evm_require_unauthorized "$addr" "$other" \
   "$("$cast" calldata 'mint(address,uint256)' "$other" "$token_id")" "$other" \
   "non-owner mint"
 
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'mint(address,uint256)' "$sender" "$token_id" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256)' "$sender" "$token_id")"
+pf_evm_typed_event_check "$abi" "$receipt" Transfer "$topic_xfer" \
+  "{\"from\": \"$zero\", \"to\": \"$sender\", \"tokenId\": $token_id}" \
+  "mint Transfer LOG4"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'ownerOf(uint256)(uint256)' "$token_id")" \
   "$sender_packed" "owner after mint"
@@ -85,14 +99,20 @@ pf_evm_require_unauthorized "$addr" "$sender" \
   "$("$cast" calldata 'mint(address,uint256)' "$sender" "$token_id")" "$sender" \
   "duplicate mint"
 
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'approve(address,uint256)' "$other" "$token_id" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'approve(address,uint256)' "$other" "$token_id")"
+pf_evm_typed_event_check "$abi" "$receipt" Approval "$topic_appr" \
+  "{\"owner\": \"$sender\", \"approved\": \"$other\", \"tokenId\": $token_id}" \
+  "approve Approval LOG4"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'getApproved(uint256)(uint256)' "$token_id")" \
   "$other_packed" "approved spender"
 
-"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
-  "$addr" 'transferFrom(address,address,uint256)' "$sender" "$other" "$token_id" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'transferFrom(address,address,uint256)' "$sender" "$other" "$token_id")"
+pf_evm_typed_event_check "$abi" "$receipt" Transfer "$topic_xfer" \
+  "{\"from\": \"$sender\", \"to\": \"$other\", \"tokenId\": $token_id}" \
+  "transferFrom Transfer LOG4"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'ownerOf(uint256)(uint256)' "$token_id")" \
   "$other_packed" "owner after transfer"
@@ -131,4 +151,4 @@ pf_evm_require_unauthorized "$addr" "$sender" \
   "$("$cast" calldata 'transferFrom(address,address,uint256)' "$other" "$sender" "$token_id")" \
   "$sender" "unauthorized transfer"
 
-echo "evm-anvil-collectible: ok (mint/approve/transferFrom)"
+echo "evm-anvil-collectible: ok (mint/approve/transferFrom + ERC-721 Transfer/Approval LOG4)"

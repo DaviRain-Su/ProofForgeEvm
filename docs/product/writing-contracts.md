@@ -32,8 +32,8 @@ See `templates/evm-counter/MyContract/Counter.lean`, `Examples/Evm/TipJar.lean`,
 1. **Effect carrier** — many contracts still park effect results in a `dummy : UInt64` field and thread `hold s`.
 2. **Fake guards** — pure-effect methods may need a trivial branch so Extract treats the method as effectful.
 3. **Constructor effects** — deployment-time map writes / logs / value transfers are tightly constrained.
-4. **Events** — closed LOG helpers (`Event.tipped` / `Event.transfer`) plus typed constructors via `Event.emit` and `Event.Indexed` (S1b; see `Examples.Evm.EvmTypedEvents`). Dynamic/unbounded event payloads are still refused.
-5. **NFT modules** — use as bounded cores, not “ship ERC-721”.
+4. **Events** — closed LOG helpers (`Event.tipped` / `Event.transfer`) plus typed constructors via `Event.emit` and `Event.Indexed` (S1b; see `Examples.Evm.EvmTypedEvents`). `Collectible` / `Badge` emit canonical ERC-721 `Transfer` / `Approval` / `ApprovalForAll` through `Erc721.Log`. Dynamic/unbounded event payloads are still refused.
+5. **NFT modules** — bounded cores with the three canonical ERC-721 events on Collectible/Badge, not “ship ERC-721” (no ERC-165, safe callbacks, or metadata URI).
 6. **`Examples.Evm.Token` metadata** — `name` / `symbol` are packed `bytes32` (Anvil gates use that shape). Prefer `Erc20Meta` when external tools expect ERC-20 `string` metadata.
 
 These are product debts tracked in [roadmap.md](roadmap.md), not undocumented folklore.
