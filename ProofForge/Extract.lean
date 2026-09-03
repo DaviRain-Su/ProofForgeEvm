@@ -19,8 +19,8 @@ def decodeBody (env : Environment) (e : Expr) (preserveLocals : Bool := false)
   -- Canonicalize syntax-only aliases around control flow before shape decoding.
   -- A method with structured-State sequencing also retains adjacent scalar lets so `decodeExpr`
   -- can materialize bounded lookups instead of duplicating them through every later projection.
-  -- Account effects need the same lexical boundary: a value captured before a write or CPI must
-  -- not be substituted into that later effect and re-read after the mutation.
+  -- Storage effects need the same lexical boundary: a value captured before a write or external
+  -- call must not be substituted into that later effect and re-read after the mutation.
   let hasStructuredState := containsStructuredStateLet env 128 body
   let retainLets := hasStructuredState
   let fullySubstituted := if retainLets then body else substLets 256 body

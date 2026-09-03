@@ -6,13 +6,13 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=runtime-tests/evm/lib.sh
 source "$here/lib.sh"
 
-solana_lean_evm_init evm-anvil-find-index
+pf_evm_evm_init evm-anvil-find-index
 bin="$root/build/evm/EvmFindIndex.bin"
-solana_lean_ensure_bin "$bin"
-solana_lean_start_anvil "${PF_EVM_PORT:-18583}" "$root/build/evm/anvil-find-index.log"
+pf_evm_ensure_bin "$bin"
+pf_evm_start_anvil "${PF_EVM_PORT:-18583}" "$root/build/evm/anvil-find-index.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
-addr="$(solana_lean_deploy_ctor_u64 "$bytecode" 0)"
+addr="$(pf_evm_deploy_ctor_u64 "$bytecode" 0)"
 
 packed_pair_data() {
   local signature="$1"
@@ -47,7 +47,7 @@ require_option_result() {
   expected="$("$python" -I -S -c \
     "import sys; print('0x' + f'{int(sys.argv[1]):064x}{int(sys.argv[2]):064x}')" \
     "$present" "$value")"
-  solana_lean_require_equal "$result" "$expected" "bounded first-position $signature"
+  pf_evm_require_equal "$result" "$expected" "bounded first-position $signature"
 }
 
 for case in \

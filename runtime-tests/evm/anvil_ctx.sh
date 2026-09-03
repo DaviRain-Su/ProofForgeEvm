@@ -6,88 +6,88 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=runtime-tests/evm/lib.sh
 source "$here/lib.sh"
 
-solana_lean_evm_init evm-anvil-ctx
+pf_evm_evm_init evm-anvil-ctx
 bin="$root/build/evm/EvmCtx.bin"
-solana_lean_ensure_bin "$bin"
-solana_lean_start_anvil "${PF_EVM_PORT:-18551}" "$root/build/evm/anvil-ctx.log"
+pf_evm_ensure_bin "$bin"
+pf_evm_start_anvil "${PF_EVM_PORT:-18551}" "$root/build/evm/anvil-ctx.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
-addr="$(solana_lean_deploy_ctor_u64 "$bytecode" 0)"
+addr="$(pf_evm_deploy_ctor_u64 "$bytecode" 0)"
 
 sender="$("$cast" wallet address --private-key "$private_key")"
 want_caller="$("$python" -I -S -c "print(int('$sender', 16) & ((1<<64)-1))")"
 got_caller="$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" 'caller()(uint64)')"
-solana_lean_require_uint "$got_caller" "$want_caller" "caller low-8"
+pf_evm_require_uint "$got_caller" "$want_caller" "caller low-8"
 
 got_origin="$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" 'origin()(address)')"
-solana_lean_require_equal "$got_origin" "$sender" "ORIGIN full address"
+pf_evm_require_equal "$got_origin" "$sender" "ORIGIN full address"
 
 gas_price=2000000000
 got_gas_price="$("$cast" call --rpc-url "$rpc" --from "$sender" --gas-price "$gas_price" \
   "$addr" 'gasPrice()(uint256)')"
-solana_lean_require_uint "$got_gas_price" "$gas_price" "GASPRICE full word"
+pf_evm_require_uint "$got_gas_price" "$gas_price" "GASPRICE full word"
 
-blob_base_fee="$(solana_lean_to_dec "$("$cast" call --rpc-url "$rpc" "$addr" \
+blob_base_fee="$(pf_evm_to_dec "$("$cast" call --rpc-url "$rpc" "$addr" \
   'blobBaseFee()(uint256)')")"
 if [[ "$blob_base_fee" -le 0 ]]; then
   echo "FAIL: blobBaseFee must expose a positive Cancun BLOBBASEFEE, got $blob_base_fee" >&2
   exit 1
 fi
-solana_lean_require_equal \
+pf_evm_require_equal \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'blobHash(uint64)(bytes32)' 0)" \
   "0x0000000000000000000000000000000000000000000000000000000000000000" \
   "BLOBHASH absent transaction index"
 
 got_selector="$("$cast" call --rpc-url "$rpc" "$addr" 'selector()(bytes4)')"
 want_selector="$("$cast" sig 'selector()')"
-solana_lean_require_equal "$got_selector" "$want_selector" "msg.sig source-order bytes4"
+pf_evm_require_equal "$got_selector" "$want_selector" "msg.sig source-order bytes4"
 
 # A zero-argument ABI call carries exactly the four selector bytes.
-solana_lean_require_uint \
+pf_evm_require_uint \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'calldataSize()(uint64)')" \
   4 "CALLDATASIZE zero-argument selector"
 
 bn="$("$cast" block-number --rpc-url "$rpc")"
 got_h="$("$cast" call --rpc-url "$rpc" "$addr" 'height()(uint64)')"
-solana_lean_require_uint "$got_h" "$(solana_lean_to_dec "$bn")" "height == block number"
+pf_evm_require_uint "$got_h" "$(pf_evm_to_dec "$bn")" "height == block number"
 
-gas_left="$(solana_lean_to_dec "$("$cast" call --rpc-url "$rpc" "$addr" 'gasLeft()(uint256)')")"
+gas_left="$(pf_evm_to_dec "$("$cast" call --rpc-url "$rpc" "$addr" 'gasLeft()(uint256)')")"
 if [[ "$gas_left" -le 0 ]]; then
   echo "FAIL: gasLeft must expose a positive full-width GAS observation, got $gas_left" >&2
   exit 1
 fi
 
-previous="$(( $(solana_lean_to_dec "$bn") - 1 ))"
+previous="$(( $(pf_evm_to_dec "$bn") - 1 ))"
 previous_hash="$("$cast" block --rpc-url "$rpc" "$previous" --json |
   "$python" -I -S -c 'import json,sys; print(int(json.load(sys.stdin)["hash"], 16))')"
-solana_lean_require_uint \
+pf_evm_require_uint \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'blockHash(uint64)(uint256)' "$previous")" \
   "$previous_hash" "BLOCKHASH previous block"
 
-solana_lean_require_uint \
+pf_evm_require_uint \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'codeSize(address)(uint64)' "$addr")" \
   "$("$cast" codesize --rpc-url "$rpc" "$addr")" "EXTCODESIZE self"
-solana_lean_require_equal \
+pf_evm_require_equal \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'hasCode(address)(bool)' "$addr")" \
   true "hasCode deployed self"
-solana_lean_require_equal \
+pf_evm_require_equal \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'codeHash(address)(bytes32)' "$addr")" \
   "$("$cast" codehash --rpc-url "$rpc" "$addr")" "EXTCODEHASH self"
 empty_address="0x000000000000000000000000000000000000dead"
-solana_lean_require_uint \
+pf_evm_require_uint \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'codeSize(address)(uint64)' "$empty_address")" \
   0 "EXTCODESIZE nonexistent"
-solana_lean_require_equal \
+pf_evm_require_equal \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'hasCode(address)(bool)' "$empty_address")" \
   false "hasCode nonexistent"
-solana_lean_require_equal \
+pf_evm_require_equal \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'codeHash(address)(bytes32)' "$empty_address")" \
   "0x0000000000000000000000000000000000000000000000000000000000000000" \
   "EXTCODEHASH nonexistent"
-solana_lean_require_uint \
+pf_evm_require_uint \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'balance(address)(uint256)' "$sender")" \
   "$("$cast" balance --rpc-url "$rpc" "$sender")" "BALANCE funded sender"
-solana_lean_require_uint \
+pf_evm_require_uint \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'balance(address)(uint256)' "$empty_address")" \
   0 "BALANCE nonexistent"
 
@@ -95,19 +95,19 @@ solana_lean_require_uint \
 got_get="$("$cast" call --rpc-url "$rpc" "$addr" 'get()(uint64)')"
 bn2="$("$cast" block-number --rpc-url "$rpc")"
 # stamp mined in some block; stored value must be that block or the one just before get.
-stored="$(solana_lean_to_dec "$got_get")"
-now="$(solana_lean_to_dec "$bn2")"
+stored="$(pf_evm_to_dec "$got_get")"
+now="$(pf_evm_to_dec "$bn2")"
 if [[ "$stored" != "$now" && "$stored" != "$((now - 1))" ]]; then
   echo "FAIL: stamp stored $stored, block now $now" >&2
   exit 1
 fi
-solana_lean_require_storage "$addr" 0 "$stored" "stamp wrote dummy"
+pf_evm_require_storage "$addr" 0 "$stored" "stamp wrote dummy"
 
 aggregate="$("$cast" call --rpc-url "$rpc" "$addr" \
   'aggregate((uint64,(uint8,bool)),(uint32,uint64),uint16[3])((uint64,bool))' \
   '(11,(3,true))' '(13,17)' '[19,23,29]')"
 aggregate_values="$("$python" -I -S -c "import re; print(' '.join(re.findall(r'[0-9]+|true|false', '''$aggregate''')))" )"
-solana_lean_require_equal "$aggregate_values" "93 true" "static aggregate ABI"
+pf_evm_require_equal "$aggregate_values" "93 true" "static aggregate ABI"
 
 aggregate_selector="$("$cast" sig 'aggregate((uint64,(uint8,bool)),(uint32,uint64),uint16[3])')"
 bad_bool="${aggregate_selector}$("$python" -I -S -c \
@@ -119,20 +119,20 @@ fi
 
 option_none="$("$cast" call --rpc-url "$rpc" "$addr" \
   'optionValue((bool,uint64))(uint64)' '(false,0)')"
-solana_lean_require_uint "$option_none" 5 "Tagged Tuple v1 Option.none"
+pf_evm_require_uint "$option_none" 5 "Tagged Tuple v1 Option.none"
 option_some="$("$cast" call --rpc-url "$rpc" "$addr" \
   'optionValue((bool,uint64))(uint64)' '(true,37)')"
-solana_lean_require_uint "$option_some" 38 "Tagged Tuple v1 Option.some"
+pf_evm_require_uint "$option_some" 38 "Tagged Tuple v1 Option.some"
 
 tagged_idle="$("$cast" call --rpc-url "$rpc" "$addr" \
   'taggedValue((uint8,uint64,uint64))(uint64)' '(0,0,0)')"
-solana_lean_require_uint "$tagged_idle" 3 "Tagged Tuple v1 idle"
+pf_evm_require_uint "$tagged_idle" 3 "Tagged Tuple v1 idle"
 tagged_one="$("$cast" call --rpc-url "$rpc" "$addr" \
   'taggedValue((uint8,uint64,uint64))(uint64)' '(1,7,0)')"
-solana_lean_require_uint "$tagged_one" 17 "Tagged Tuple v1 one"
+pf_evm_require_uint "$tagged_one" 17 "Tagged Tuple v1 one"
 tagged_pair="$("$cast" call --rpc-url "$rpc" "$addr" \
   'taggedValue((uint8,uint64,uint64))(uint64)' '(2,11,29)')"
-solana_lean_require_uint "$tagged_pair" 40 "Tagged Tuple v1 pair"
+pf_evm_require_uint "$tagged_pair" 40 "Tagged Tuple v1 pair"
 
 option_selector="$("$cast" sig 'optionValue((bool,uint64))')"
 tagged_selector="$("$cast" sig 'taggedValue((uint8,uint64,uint64))')"
@@ -165,7 +165,7 @@ for case in \
   echoed="$("$cast" call --rpc-url "$rpc" "$addr" --data "$(word_data "$selector" $words)")"
   # shellcheck disable=SC2086
   expected="$(return_words $words)"
-  solana_lean_require_equal "$echoed" "$expected" "Tagged Tuple v1 result $words"
+  pf_evm_require_equal "$echoed" "$expected" "Tagged Tuple v1 result $words"
 done
 
 for malformed in \

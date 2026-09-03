@@ -2,13 +2,13 @@
 # Source after `set -euo pipefail`. Sets: root, anvil, cast, python, chain_id, private_key.
 # Missing tools → skip (exit 0), not pass. Unsupported OS → skip.
 
-solana_lean_evm_root() {
+pf_evm_evm_root() {
   local here
   here="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
   (cd "$here/../.." && pwd)
 }
 
-solana_lean_python() {
+pf_evm_python() {
   if command -v python3 >/dev/null 2>&1; then
     echo python3
   elif command -v python >/dev/null 2>&1; then
@@ -19,7 +19,7 @@ solana_lean_python() {
 }
 
 # Prefer FOUNDRY_BIN, then ~/.foundry/bin (foundryup on macOS and Linux), then PATH.
-solana_lean_find_tool() {
+pf_evm_find_tool() {
   local name="$1"
   local dir candidate
   if [[ -n "${FOUNDRY_BIN:-}" ]]; then
@@ -50,7 +50,7 @@ solana_lean_find_tool() {
   return 1
 }
 
-solana_lean_evm_init() {
+pf_evm_evm_init() {
   local label="${1:-evm-anvil}"
   case "$(uname -s)" in
     Darwin|Linux) ;;
@@ -59,17 +59,17 @@ solana_lean_evm_init() {
       exit 0
       ;;
   esac
-  root="$(solana_lean_evm_root)"
+  root="$(pf_evm_evm_root)"
   cd "$root"
-  python="$(solana_lean_python)" || {
+  python="$(pf_evm_python)" || {
     echo "$label: skip: python3/python not found" >&2
     exit 0
   }
-  anvil="$(solana_lean_find_tool anvil)" || {
+  anvil="$(pf_evm_find_tool anvil)" || {
     echo "$label: skip: anvil not found (install foundryup, or set FOUNDRY_BIN)" >&2
     exit 0
   }
-  cast="$(solana_lean_find_tool cast)" || {
+  cast="$(pf_evm_find_tool cast)" || {
     echo "$label: skip: cast not found (install foundryup, or set FOUNDRY_BIN)" >&2
     exit 0
   }
@@ -78,7 +78,7 @@ solana_lean_evm_init() {
   private_key="${PF_EVM_PRIVATE_KEY:-ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
 }
 
-solana_lean_to_dec() {
+pf_evm_to_dec() {
   local x="$1"
   x="${x//$'\n'/}"
   x="${x%%[*}"
@@ -94,7 +94,7 @@ solana_lean_to_dec() {
   fi
 }
 
-solana_lean_require_equal() {
+pf_evm_require_equal() {
   local actual="$1" expected="$2" message="$3"
   [[ "$actual" == "$expected" ]] || {
     echo "FAIL: $message (expected '$expected', got '$actual')" >&2
@@ -102,21 +102,21 @@ solana_lean_require_equal() {
   }
 }
 
-solana_lean_require_uint() {
+pf_evm_require_uint() {
   local raw="$1" expected="$2" message="$3"
-  solana_lean_require_equal "$(solana_lean_to_dec "$raw")" "$expected" "$message (raw='$raw')"
+  pf_evm_require_equal "$(pf_evm_to_dec "$raw")" "$expected" "$message (raw='$raw')"
 }
 
-solana_lean_require_storage() {
+pf_evm_require_storage() {
   local addr="$1" slot="$2" expected="$3" message="$4"
   local raw
   raw="$("$cast" storage --rpc-url "$rpc" "$addr" "$slot")"
-  solana_lean_require_uint "$raw" "$expected" "$message (slot $slot)"
+  pf_evm_require_uint "$raw" "$expected" "$message (slot $slot)"
 }
 
 # Anvil-only corruption probe: replace one full storage word so fail-closed malformed-state paths
 # can be exercised. Production/deployment scripts never call this helper.
-solana_lean_set_storage_word() {
+pf_evm_set_storage_word() {
   local addr="$1" slot="$2" value="$3"
   local slot_word value_word
   slot_word="$("$python" -I -S -c "print(f'0x{int(\"$slot\"):064x}')")"
@@ -125,11 +125,11 @@ solana_lean_set_storage_word() {
     "$addr" "$slot_word" "$value_word" >/dev/null
 }
 
-solana_lean_contract_address() {
+pf_evm_contract_address() {
   "$python" -I -S -c 'import json,sys; print(json.load(sys.stdin)["contractAddress"])'
 }
 
-solana_lean_ensure_bin() {
+pf_evm_ensure_bin() {
   local path="$1"
   if [[ ! -f "$path" ]]; then
     echo "assembling $path" >&2
@@ -140,7 +140,7 @@ solana_lean_ensure_bin() {
 }
 
 # Start anvil on $port. Sets rpc, anvil_pid. Traps cleanup.
-solana_lean_start_anvil() {
+pf_evm_start_anvil() {
   local port="$1"
   local log="$2"
   rpc="http://127.0.0.1:$port"
@@ -170,21 +170,21 @@ solana_lean_start_anvil() {
     sleep 0.1
   done
   [[ "$ready" == 1 ]] || { echo "FAIL: anvil failed to start; see $log" >&2; exit 1; }
-  solana_lean_require_equal "$("$cast" chain-id --rpc-url "$rpc")" "$chain_id" \
+  pf_evm_require_equal "$("$cast" chain-id --rpc-url "$rpc")" "$chain_id" \
     "launched Anvil chain identity mismatch"
 }
 
-solana_lean_deploy_ctor_u64() {
+pf_evm_deploy_ctor_u64() {
   local bytecode="$1"
   local initial="$2"
   local encoded receipt
   encoded="$("$cast" abi-encode 'constructor(uint64)' "$initial")"
   receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
     --create "0x${bytecode}${encoded#0x}")"
-  printf '%s' "$receipt" | solana_lean_contract_address
+  printf '%s' "$receipt" | pf_evm_contract_address
 }
 
-solana_lean_deploy_ctor_u64x3() {
+pf_evm_deploy_ctor_u64x3() {
   local bytecode="$1"
   local a="$2"
   local b="$3"
@@ -193,11 +193,11 @@ solana_lean_deploy_ctor_u64x3() {
   encoded="$("$cast" abi-encode 'constructor(uint64,uint64,uint64)' "$a" "$b" "$c")"
   receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
     --create "0x${bytecode}${encoded#0x}")"
-  printf '%s' "$receipt" | solana_lean_contract_address
+  printf '%s' "$receipt" | pf_evm_contract_address
 }
 
 # eth_call must revert with ABI error Insufficient(uint256,uint256).
-solana_lean_require_insufficient() {
+pf_evm_require_insufficient() {
   local addr="$1" from="$2" data="$3" have="$4" want="$5" message="$6"
   local sel
   sel="$("$cast" keccak 'Insufficient(uint256,uint256)')"
@@ -235,7 +235,7 @@ if have != int('$have') or want != int('$want'):
 }
 
 # eth_call must revert with ABI error Unauthorized(address).
-solana_lean_require_unauthorized() {
+pf_evm_require_unauthorized() {
   local addr="$1" from="$2" data="$3" who="$4" message="$5"
   local sel
   sel="$("$cast" keccak 'Unauthorized(address)')"
@@ -274,7 +274,7 @@ if got != '$who':
 }
 
 # eth_call must revert with the ABI error of the given signature (e.g. 'oob()'), no arguments.
-solana_lean_require_named_revert() {
+pf_evm_require_named_revert() {
   local addr="$1" from="$2" data="$3" signature="$4" message="$5"
   local sel
   sel="$("$cast" keccak "$signature")"
@@ -308,7 +308,7 @@ if len(blob) < 8 or not blob.startswith(sel):
 }
 
 # eth_call must revert with the exact selector and ordered ABI uint words supplied after message.
-solana_lean_require_word_revert() {
+pf_evm_require_word_revert() {
   local addr="$1" from="$2" data="$3" signature="$4" message="$5"
   shift 5
   local sel
@@ -350,7 +350,7 @@ PY
 }
 
 # eth_call must revert with ABI error CapExceeded().
-solana_lean_require_cap_exceeded() {
+pf_evm_require_cap_exceeded() {
   local addr="$1" from="$2" data="$3" message="$4"
   local sel
   sel="$("$cast" keccak 'CapExceeded()')"
@@ -384,7 +384,7 @@ if len(blob) < 8 or not blob.startswith(sel):
 }
 
 # eth_call must revert with ABI error Paused().
-solana_lean_require_paused() {
+pf_evm_require_paused() {
   local addr="$1" from="$2" data="$3" message="$4"
   local sel
   sel="$("$cast" keccak 'Paused()')"
@@ -418,7 +418,7 @@ if len(blob) < 8 or not blob.startswith(sel):
 }
 
 # eth_call must revert with ABI error ZeroAddress().
-solana_lean_require_zero_address() {
+pf_evm_require_zero_address() {
   local addr="$1" from="$2" data="$3" message="$4"
   local sel
   sel="$("$cast" keccak 'ZeroAddress()')"
@@ -451,12 +451,12 @@ if len(blob) < 8 or not blob.startswith(sel):
 "
 }
 
-solana_lean_deploy_ctor_address() {
+pf_evm_deploy_ctor_address() {
   local bytecode="$1"
   local addr="$2"
   local encoded receipt
   encoded="$("$cast" abi-encode 'constructor(address)' "$addr")"
   receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
     --create "0x${bytecode}${encoded#0x}")"
-  printf '%s' "$receipt" | solana_lean_contract_address
+  printf '%s' "$receipt" | pf_evm_contract_address
 }

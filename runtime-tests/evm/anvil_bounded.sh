@@ -6,29 +6,29 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=runtime-tests/evm/lib.sh
 source "$here/lib.sh"
 
-solana_lean_evm_init evm-anvil-bounded
+pf_evm_evm_init evm-anvil-bounded
 bin="$root/build/evm/EvmBounded.bin"
-solana_lean_ensure_bin "$bin"
-solana_lean_start_anvil "${PF_EVM_PORT:-18562}" "$root/build/evm/anvil-bounded.log"
+pf_evm_ensure_bin "$bin"
+pf_evm_start_anvil "${PF_EVM_PORT:-18562}" "$root/build/evm/anvil-bounded.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
-addr="$(solana_lean_deploy_ctor_u64 "$bytecode" 0)"
+addr="$(pf_evm_deploy_ctor_u64 "$bytecode" 0)"
 
 empty="$("$cast" call --rpc-url "$rpc" "$addr" \
   'boundedValues(uint64[])(uint64)' '[]')"
-solana_lean_require_uint "$empty" 0 "empty bounded array"
+pf_evm_require_uint "$empty" 0 "empty bounded array"
 
 short="$("$cast" call --rpc-url "$rpc" "$addr" \
   'boundedValues(uint64[])(uint64)' '[11,13]')"
-solana_lean_require_uint "$short" 13 "inactive bounded slots are zero"
+pf_evm_require_uint "$short" 13 "inactive bounded slots are zero"
 
 full="$("$cast" call --rpc-url "$rpc" "$addr" \
   'boundedValues(uint64[])(uint64)' '[11,13,17,19]')"
-solana_lean_require_uint "$full" 34 "full bounded array"
+pf_evm_require_uint "$full" 34 "full bounded array"
 
 combined="$("$cast" call --rpc-url "$rpc" "$addr" \
   'combine(uint32,uint64[],bool,uint16[])(uint64)' 7 '[11,13]' true '[17,19,23]')"
-solana_lean_require_uint "$combined" 49 "multiple canonical dynamic tails"
+pf_evm_require_uint "$combined" 49 "multiple canonical dynamic tails"
 
 packed_data() {
   local signature="$1"
@@ -99,7 +99,7 @@ for case in \
     0b0d) expected=13 ;;
     *) expected=56 ;;
   esac
-  solana_lean_require_uint "$result" "$expected" "canonical packed bytes $hex_bytes"
+  pf_evm_require_uint "$result" "$expected" "canonical packed bytes $hex_bytes"
 done
 
 for case in \
@@ -123,7 +123,7 @@ for case in \
   expected="${rest#*|}"
   result="$("$cast" call --rpc-url "$rpc" "$addr" \
     --data "$(packed_pair_data "$signature" "$left" "$right")")"
-  solana_lean_require_uint "$result" "$expected" "bounded active-prefix comparison $signature"
+  pf_evm_require_uint "$result" "$expected" "bounded active-prefix comparison $signature"
 done
 
 # Both dynamic tails are independently canonical and adjacent. Aliasing, gaps, and wrong first
@@ -162,7 +162,7 @@ for case in \
   hex_bytes="${case%%|*}"
   expected="${case#*|}"
   result="$(call_packed 'boundedString(string)' "$hex_bytes")"
-  solana_lean_require_uint "$result" "$expected" "strict UTF-8 string $hex_bytes"
+  pf_evm_require_uint "$result" "$expected" "strict UTF-8 string $hex_bytes"
 done
 
 selector="$("$cast" sig 'boundedValues(uint64[])')"
@@ -286,7 +286,7 @@ for case in \
   expected="${case#*|}"
   echo_array="$("$cast" call --rpc-url "$rpc" "$addr" \
     'echoBoundedValues(uint16[])(uint16[])' "$input")"
-  solana_lean_require_equal "$echo_array" "$expected" "bounded array dynamic result $input"
+  pf_evm_require_equal "$echo_array" "$expected" "bounded array dynamic result $input"
 done
 
 # Wide one-ABI-word elements: each uint128 occupies one dynamic tail word at the ABI boundary.
@@ -309,23 +309,23 @@ for case in \
   expected="${case#*|}"
   echo_pairs="$("$cast" call --rpc-url "$rpc" "$addr" \
     'echoBoundedPairs((uint64,uint16)[])((uint64,uint16)[])' "$input")"
-  solana_lean_require_equal "$echo_pairs" "$expected" "constructed bounded array dynamic result $input"
+  pf_evm_require_equal "$echo_pairs" "$expected" "constructed bounded array dynamic result $input"
 done
 
 for input in 0x 0x0b0d 0x0b0d1113171d1f25; do
   echo_bytes="$("$cast" call --rpc-url "$rpc" "$addr" \
     'echoBoundedBytes(bytes)(bytes)' "$input")"
-  solana_lean_require_equal "$echo_bytes" "$input" "bounded bytes dynamic result $input"
+  pf_evm_require_equal "$echo_bytes" "$input" "bounded bytes dynamic result $input"
 done
 
 echo_string="$("$cast" call --rpc-url "$rpc" "$addr" \
   'echoBoundedString(string)(string)' abc)"
-solana_lean_require_equal "$echo_string" '"abc"' "bounded string dynamic result"
+pf_evm_require_equal "$echo_string" '"abc"' "bounded string dynamic result"
 
 make_signature='makeBoundedString(uint32,uint8,uint8,uint8,uint8,uint8,uint8,uint8,uint8)(string)'
 made_string="$("$cast" call --rpc-url "$rpc" "$addr" "$make_signature" \
   3 97 98 99 0 0 0 0 0)"
-solana_lean_require_equal "$made_string" '"abc"' "constructed UTF-8 dynamic result"
+pf_evm_require_equal "$made_string" '"abc"' "constructed UTF-8 dynamic result"
 
 # Output capacity and UTF-8 are checked at publication even when no dynamic input decoder ran.
 if "$cast" call --rpc-url "$rpc" "$addr" "$make_signature" \

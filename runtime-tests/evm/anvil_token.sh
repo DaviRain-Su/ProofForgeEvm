@@ -7,43 +7,43 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=runtime-tests/evm/lib.sh
 source "$here/lib.sh"
 
-solana_lean_evm_init evm-anvil-token
+pf_evm_evm_init evm-anvil-token
 bin="$root/build/evm/Token.bin"
-solana_lean_ensure_bin "$bin"
-solana_lean_start_anvil "${PF_EVM_PORT:-18556}" "$root/build/evm/anvil-token.log"
+pf_evm_ensure_bin "$bin"
+pf_evm_start_anvil "${PF_EVM_PORT:-18556}" "$root/build/evm/anvil-token.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
 [[ -n "$bytecode" ]] || { echo "FAIL: empty Token.bin" >&2; exit 1; }
 
 sender="$("$cast" wallet address --private-key "$private_key")"
-addr="$(solana_lean_deploy_ctor_address "$bytecode" "$sender")"
+addr="$(pf_evm_deploy_ctor_address "$bytecode" "$sender")"
 
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 dest="$("$cast" wallet address --private-key "$other_key")"
 
 got_owner="$("$cast" call --rpc-url "$rpc" "$addr" 'ownerOf()(address)')"
-solana_lean_require_equal "${got_owner,,}" "${sender,,}" "ownerOf"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_equal "${got_owner,,}" "${sender,,}" "ownerOf"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'pausedOf()(uint8)')" \
   0 "initial paused"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'capOf()(uint256)')" \
   1000 "fixed mint cap"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   0 "absent sender balance"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   0 "absent total supply"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'decimals()(uint8)')" \
   18 "compile-time decimals"
 want_name="0x000000000000000000000000000000000000000000000000000000546f6b656e"
 want_symbol="0x0000000000000000000000000000000000000000000000000000000000005046"
 got_name="$("$cast" call --rpc-url "$rpc" "$addr" 'name()(bytes32)')"
 got_symbol="$("$cast" call --rpc-url "$rpc" "$addr" 'symbol()(bytes32)')"
-solana_lean_require_equal "${got_name,,}" "$want_name" "compile-time name"
-solana_lean_require_equal "${got_symbol,,}" "$want_symbol" "compile-time symbol"
+pf_evm_require_equal "${got_name,,}" "$want_name" "compile-time name"
+pf_evm_require_equal "${got_symbol,,}" "$want_symbol" "compile-time symbol"
 
 zero="0x0000000000000000000000000000000000000000"
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
@@ -51,19 +51,19 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: mint to zero unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_zero_address "$addr" "$sender" \
+pf_evm_require_zero_address "$addr" "$sender" \
   "$("$cast" calldata 'mint(address,uint256)' "$zero" 1)" \
   "mint to zero"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   0 "mint to zero holds supply"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'mint(address,uint256)' "$sender" 100 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   100 "minted sender"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "total supply after mint"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
@@ -71,10 +71,10 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: non-owner mint unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_unauthorized "$addr" "$dest" \
+pf_evm_require_unauthorized "$addr" "$dest" \
   "$("$cast" calldata 'mint(address,uint256)' "$dest" 1)" "$dest" \
   "non-owner mint"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "non-owner mint holds supply"
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
@@ -82,13 +82,13 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: mint over cap unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_cap_exceeded "$addr" "$sender" \
+pf_evm_require_cap_exceeded "$addr" "$sender" \
   "$("$cast" calldata 'mint(address,uint256)' "$sender" 901)" \
   "mint over cap"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "mint over cap holds supply"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   100 "mint over cap holds sender"
 wrap_amount="0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9c"
@@ -97,25 +97,25 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: wrapping mint unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_cap_exceeded "$addr" "$sender" \
+pf_evm_require_cap_exceeded "$addr" "$sender" \
   "$("$cast" calldata 'mint(address,uint256)' "$sender" "$wrap_amount")" \
   "wrapping mint"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "wrapping mint holds supply"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   100 "wrapping mint holds sender"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'capOf()(uint256)')" \
   1000 "cap holds after over-mint"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'decimals()(uint8)')" \
   18 "decimals holds after mint"
 got_name2="$("$cast" call --rpc-url "$rpc" "$addr" 'name()(bytes32)')"
 got_symbol2="$("$cast" call --rpc-url "$rpc" "$addr" 'symbol()(bytes32)')"
-solana_lean_require_equal "${got_name2,,}" "$want_name" "name holds after mint"
-solana_lean_require_equal "${got_symbol2,,}" "$want_symbol" "symbol holds after mint"
+pf_evm_require_equal "${got_name2,,}" "$want_name" "name holds after mint"
+pf_evm_require_equal "${got_symbol2,,}" "$want_symbol" "symbol holds after mint"
 
 topic_xfer="$("$cast" keccak 'Transfer(address,address,uint256)')"
 receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
@@ -146,13 +146,13 @@ data=int(hit.get('data') or '0x0', 16)
 if data!=30:
     raise SystemExit(f'FAIL: transfer log data {data} != 30')
 "
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   70 "sender after transfer"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "total supply holds after transfer"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$dest")" \
   30 "dest after transfer"
 
@@ -161,10 +161,10 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: transfer to zero unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_zero_address "$addr" "$sender" \
+pf_evm_require_zero_address "$addr" "$sender" \
   "$("$cast" calldata 'transfer(address,uint256)' "$zero" 1)" \
   "transfer to zero"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   70 "transfer to zero holds sender"
 
@@ -173,7 +173,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: approve zero unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_zero_address "$addr" "$sender" \
+pf_evm_require_zero_address "$addr" "$sender" \
   "$("$cast" calldata 'approve(address,uint256)' "$zero" 1)" \
   "approve zero"
 
@@ -182,13 +182,13 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: overdraw transfer unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_insufficient "$addr" "$sender" \
+pf_evm_require_insufficient "$addr" "$sender" \
   "$("$cast" calldata 'transfer(address,uint256)' "$dest" 1000)" \
   70 1000 "overdraw transfer"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   70 "overdraw holds sender"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$dest")" \
   30 "overdraw holds dest"
 
@@ -221,19 +221,19 @@ data=int(hit.get('data') or '0x0', 16)
 if data!=20:
     raise SystemExit(f'FAIL: approval log data {data} != 20')
 "
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   20 "allowance after approve"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'increaseAllowance(address,uint256)' "$dest" 5 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   25 "allowance after increase"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'decreaseAllowance(address,uint256)' "$dest" 10 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   15 "allowance after decrease"
 
@@ -242,22 +242,22 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: over-decrease unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_insufficient "$addr" "$sender" \
+pf_evm_require_insufficient "$addr" "$sender" \
   "$("$cast" calldata 'decreaseAllowance(address,uint256)' "$dest" 100)" \
   15 100 "over-decrease allowance"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   15 "over-decrease holds remaining"
 
 "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'transferFrom(address,address,uint256)' "$sender" "$dest" 5 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   65 "owner after transferFrom"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$dest")" \
   35 "dest after transferFrom"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   10 "allowance after transferFrom"
 
@@ -266,25 +266,25 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: over-allowance transferFrom unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_insufficient "$addr" "$dest" \
+pf_evm_require_insufficient "$addr" "$dest" \
   "$("$cast" calldata 'transferFrom(address,address,uint256)' "$sender" "$dest" 100)" \
   10 100 "over-allowance transferFrom"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   65 "over-allowance holds owner"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   10 "over-allowance holds remaining"
 
 "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'burnFrom(address,uint256)' "$sender" 5 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   60 "owner after burnFrom"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   5 "allowance after burnFrom"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   95 "total supply after burnFrom"
 
@@ -293,16 +293,16 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: over-allowance burnFrom unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_insufficient "$addr" "$dest" \
+pf_evm_require_insufficient "$addr" "$dest" \
   "$("$cast" calldata 'burnFrom(address,uint256)' "$sender" 100)" \
   5 100 "over-allowance burnFrom"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   60 "over-allowance burnFrom holds owner"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   5 "over-allowance burnFrom holds remaining"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   95 "over-allowance burnFrom holds supply"
 
@@ -349,34 +349,34 @@ wrong_s="0x${wrong_sig:66:64}"
 wrong_v="$((16#${wrong_sig:130:2}))"
 wrong_data="$("$cast" calldata 'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)' \
   "$sender" "$dest" 10 "$deadline" "$wrong_v" "$wrong_r" "$wrong_s")"
-solana_lean_require_unauthorized "$addr" "$dest" "$wrong_data" "$dest" \
+pf_evm_require_unauthorized "$addr" "$dest" "$wrong_data" "$dest" \
   "permit signed by spender"
 
 "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)' \
   "$sender" "$dest" 10 "$deadline" "$v" "$r" "$s" >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   10 "allowance after permit"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'nonceOf(address)(uint256)' "$sender")" \
   1 "nonce after permit"
 
 "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'transferFrom(address,address,uint256)' "$sender" "$dest" 10 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   50 "owner after permit transferFrom"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   0 "allowance after permit transferFrom"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'burn(uint256)' 10 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   40 "owner after burn"
-  solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   85 "total supply after burn"
 
@@ -385,13 +385,13 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: overdraw burn unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_insufficient "$addr" "$sender" \
+pf_evm_require_insufficient "$addr" "$sender" \
   "$("$cast" calldata 'burn(uint256)' 1000)" \
   40 1000 "overdraw burn"
-  solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   40 "overdraw burn holds owner"
-  solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   85 "overdraw burn holds supply"
 
@@ -408,11 +408,11 @@ if [[ ! "$got_dom" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
   exit 1
 fi
 got_dom2="$("$cast" call --rpc-url "$rpc" "$addr" 'DOMAIN_SEPARATOR()(bytes32)')"
-solana_lean_require_equal "${got_dom2,,}" "${got_dom,,}" "DOMAIN_SEPARATOR holds after permit"
+pf_evm_require_equal "${got_dom2,,}" "${got_dom,,}" "DOMAIN_SEPARATOR holds after permit"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'pause()' >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'pausedOf()(uint8)')" \
   1 "paused after pause"
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
@@ -420,13 +420,13 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: transfer while paused unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_paused "$addr" "$sender" \
+pf_evm_require_paused "$addr" "$sender" \
   "$("$cast" calldata 'transfer(address,uint256)' "$dest" 1)" \
   "transfer while paused"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   40 "pause holds owner"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   85 "pause holds supply"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
@@ -434,12 +434,12 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: non-owner unpause unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_unauthorized "$addr" "$dest" \
+pf_evm_require_unauthorized "$addr" "$dest" \
   "$("$cast" calldata 'unpause()')" "$dest" \
   "non-owner unpause"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'unpause()' >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'pausedOf()(uint8)')" \
   0 "unpaused"
 
@@ -449,19 +449,19 @@ third="$("$cast" wallet address --private-key "$third_key")"
   "$addr" 'mint(address,uint256)' "$third" 6 >/dev/null
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'mint(address,uint256)' "$third" 9 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$third")" \
   15 "repeated mint adds to recipient balance"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "repeated mint adds to supply"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'transfer(address,uint256)' "$sender" 10 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   40 "same-address transfer preserves balance"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "same-address transfer preserves supply"
 
@@ -469,10 +469,10 @@ solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   "$addr" 'approve(address,uint256)' "$dest" 5 >/dev/null
 "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'transferFrom(address,address,uint256)' "$sender" "$sender" 5 >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   40 "delegated same-address transfer preserves balance"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
   0 "delegated same-address transfer spends allowance"
 
@@ -484,8 +484,8 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: wrapping allowance increase unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowanceOf(address,address)(uint256)' "$sender" "$dest")" \
-  "$(solana_lean_to_dec "$max_uint")" "wrapping increase holds allowance"
+  "$(pf_evm_to_dec "$max_uint")" "wrapping increase holds allowance"
 
 echo "evm-anvil-token: ok (checked mint/transfer/allowance/owner/pause/cap/LOG3/Insufficient/permit/domain/burn/metadata; engineering only)"

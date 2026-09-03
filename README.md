@@ -1,5 +1,7 @@
 # ProofForge EVM
 
+[![CI](https://github.com/DaviRain-Su/ProofForgeEvm/actions/workflows/ci.yml/badge.svg)](https://github.com/DaviRain-Su/ProofForgeEvm/actions/workflows/ci.yml)
+
 Lean 4 编写的 EVM 合约编译器：从带 `@[pf_entry]` 标记的 Lean 源码抽取 IR，
 经 Yul 生成 EVM 字节码与 ABI。本仓库是 ProofForge 的 EVM 单链分支 —— 只维护
 EVM target（SVM / NEAR / XRPL / Wasm 实现已移除，留在上游多链仓库）。

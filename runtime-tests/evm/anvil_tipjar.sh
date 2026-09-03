@@ -6,24 +6,24 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=runtime-tests/evm/lib.sh
 source "$here/lib.sh"
 
-solana_lean_evm_init evm-anvil-tipjar
+pf_evm_evm_init evm-anvil-tipjar
 bin="$root/build/evm/TipJar.bin"
-solana_lean_ensure_bin "$bin"
-solana_lean_start_anvil "${PF_EVM_PORT:-18552}" "$root/build/evm/anvil-tipjar.log"
+pf_evm_ensure_bin "$bin"
+pf_evm_start_anvil "${PF_EVM_PORT:-18552}" "$root/build/evm/anvil-tipjar.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
 [[ -n "$bytecode" ]] || { echo "FAIL: empty TipJar.bin" >&2; exit 1; }
 
-addr="$(solana_lean_deploy_ctor_u64 "$bytecode" 0)"
+addr="$(pf_evm_deploy_ctor_u64 "$bytecode" 0)"
 sender="$("$cast" wallet address --private-key "$private_key")"
 
-solana_lean_require_uint "$("$cast" chain-id --rpc-url "$rpc")" "$chain_id" "anvil chain-id"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'chainId()(uint64)')" \
+pf_evm_require_uint "$("$cast" chain-id --rpc-url "$rpc")" "$chain_id" "anvil chain-id"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'chainId()(uint64)')" \
   "$chain_id" "evmChainId"
 
 ts="$("$cast" block --rpc-url "$rpc" latest --json | "$python" -I -S -c 'import json,sys; print(json.load(sys.stdin)["timestamp"])')"
 got_ts="$("$cast" call --rpc-url "$rpc" "$addr" 'timestamp()(uint64)')"
-solana_lean_require_uint "$got_ts" "$(solana_lean_to_dec "$ts")" "evmTimestamp"
+pf_evm_require_uint "$got_ts" "$(pf_evm_to_dec "$ts")" "evmTimestamp"
 
 block_env="$("$cast" block --rpc-url "$rpc" latest --json)"
 read -r block_base_fee block_gas_limit block_randao <<<"$(printf '%s' "$block_env" |
@@ -39,11 +39,11 @@ print(value("baseFeePerGas", "base_fee_per_gas"),
       value("gasLimit", "gas_limit"),
       value("mixHash", "mix_hash", "prevRandao", "prev_randao"))
 ')"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'baseFee()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'baseFee()(uint256)')" \
   "$block_base_fee" "BASEFEE"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'gasLimit()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'gasLimit()(uint256)')" \
   "$block_gas_limit" "GASLIMIT"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'prevRandao()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'prevRandao()(uint256)')" \
   "$block_randao" "PREVRANDAO"
 
 block_coinbase="$(printf '%s' "$block_env" | "$python" -I -S -c '
@@ -52,10 +52,10 @@ b = json.load(sys.stdin)
 print((b.get("miner") or b.get("beneficiary") or b.get("author")).lower())
 ')"
 got_coinbase="$("$cast" call --rpc-url "$rpc" "$addr" 'coinbase()(address)' | tr '[:upper:]' '[:lower:]')"
-solana_lean_require_equal "$got_coinbase" "$block_coinbase" "COINBASE"
+pf_evm_require_equal "$got_coinbase" "$block_coinbase" "COINBASE"
 
 self_low="$("$python" -I -S -c "print(int('$addr', 16) & ((1<<64)-1))")"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfLow()(uint64)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfLow()(uint64)')" \
   "$self_low" "evmSelf low-8"
 
 words="$("$python" -I -S -c "
@@ -66,11 +66,11 @@ def word(start, n):
 print(word(0,8), word(8,8), word(16,4))
 ")"
 w0="${words%% *}"; rest="${words#* }"; w1="${rest%% *}"; w2="${rest#* }"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" 'callerW0()(uint64)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" 'callerW0()(uint64)')" \
   "$w0" "callerW0"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" 'callerW1()(uint64)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" 'callerW1()(uint64)')" \
   "$w1" "callerW1"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" 'callerW2()(uint64)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" 'callerW2()(uint64)')" \
   "$w2" "callerW2"
 
 self_words="$("$python" -I -S -c "
@@ -81,14 +81,14 @@ def word(start, n):
 print(word(0,8), word(8,8), word(16,4))
 ")"
 sw0="${self_words%% *}"; srest="${self_words#* }"; sw1="${srest%% *}"; sw2="${srest#* }"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfW0()(uint64)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfW0()(uint64)')" \
   "$sw0" "selfW0"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfW1()(uint64)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfW1()(uint64)')" \
   "$sw1" "selfW1"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfW2()(uint64)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfW2()(uint64)')" \
   "$sw2" "selfW2"
 
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'callValue()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'callValue()(uint256)')" \
   0 "view callValue is 0"
 
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" --value 1 \
@@ -102,18 +102,18 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" --value 3 \
   echo "FAIL: wrong-value deposit unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_equal "$(solana_lean_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
+pf_evm_require_equal "$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
   0 "wrong deposit must not keep ETH"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" --value 7 \
   "$addr" 'deposit(uint256)' 7 >/dev/null
-solana_lean_require_equal "$(solana_lean_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
+pf_evm_require_equal "$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
   7 "exact deposit must credit contract"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfBal()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfBal()(uint256)')" \
   7 "evmSelfBalance after deposit"
 
 recipient="$("$cast" wallet address --private-key 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d)"
-before="$(solana_lean_to_dec "$("$cast" balance --rpc-url "$rpc" "$recipient")")"
+before="$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$recipient")")"
 rw="$("$python" -I -S -c "
 addr=int('$recipient', 16)
 b=addr.to_bytes(20, 'big')
@@ -124,10 +124,10 @@ print(word(0,8), word(8,8), word(16,4))
 rw0="${rw%% *}"; rrest="${rw#* }"; rw1="${rrest%% *}"; rw2="${rrest#* }"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'payout(address,uint256)' "$recipient" 3 >/dev/null
-after="$(solana_lean_to_dec "$("$cast" balance --rpc-url "$rpc" "$recipient")")"
+after="$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$recipient")")"
 want="$("$python" -I -S -c "print(int('$before') + 3)")"
-solana_lean_require_equal "$after" "$want" "payout must credit recipient"
-solana_lean_require_equal "$(solana_lean_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
+pf_evm_require_equal "$after" "$want" "payout must credit recipient"
+pf_evm_require_equal "$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
   4 "payout must debit contract"
 
 topic="$("$cast" keccak 'Tipped(uint64)')"
@@ -151,7 +151,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: unknown selector unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_equal "$(solana_lean_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
+pf_evm_require_equal "$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
   4 "unknown selector must not keep ETH"
 
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" --value 1 \
@@ -159,13 +159,13 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" --value 1 \
   echo "FAIL: short calldata unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_equal "$(solana_lean_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
+pf_evm_require_equal "$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
   4 "short calldata must not keep ETH"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" --value 2 --data 0x "$addr" >/dev/null
-solana_lean_require_equal "$(solana_lean_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
+pf_evm_require_equal "$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$addr")")" \
   6 "empty-calldata receive must credit contract"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfBal()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'selfBal()(uint256)')" \
   6 "evmSelfBalance after receive"
 
 echo "evm-anvil-tipjar: ok (env/deposit/payout/log/receive; engineering only)"

@@ -7,7 +7,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=runtime-tests/evm/lib.sh
 source "$here/lib.sh"
 
-solana_lean_evm_init evm-anvil
+pf_evm_evm_init evm-anvil
 echo "evm-anvil: host=$(uname -s)-$(uname -m) anvil=$anvil cast=$cast" >&2
 
 failed=0

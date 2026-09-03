@@ -18,7 +18,7 @@ print(w0 | (w1 << 64) | (w2 << 128))
 "
 }
 
-solana_lean_evm_init evm-anvil-badge
+pf_evm_evm_init evm-anvil-badge
 bin="$root/build/evm/Badge.bin"
 if [[ ! -f "$bin" ]]; then
   echo "building Badge.bin" >&2
@@ -26,13 +26,13 @@ if [[ ! -f "$bin" ]]; then
     || { echo "FAIL: pf build Badge failed" >&2; exit 1; }
 fi
 [[ -f "$bin" ]] || { echo "FAIL: missing $bin" >&2; exit 1; }
-solana_lean_start_anvil "${PF_EVM_PORT:-18571}" "$root/build/evm/anvil-badge.log"
+pf_evm_start_anvil "${PF_EVM_PORT:-18571}" "$root/build/evm/anvil-badge.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
 [[ -n "$bytecode" ]] || { echo "FAIL: empty Badge.bin" >&2; exit 1; }
 
 sender="$("$cast" wallet address --private-key "$private_key")"
-addr="$(solana_lean_deploy_ctor_address "$bytecode" "$sender")"
+addr="$(pf_evm_deploy_ctor_address "$bytecode" "$sender")"
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
 token_id=42
@@ -41,10 +41,10 @@ other_packed="$(pf_pack_addr_u256 "$other")"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'mint(address,uint256)' "$sender" "$token_id" >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'ownerOf(uint256)(uint256)' "$token_id")" \
   "$sender_packed" "owner after mint"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$sender")" \
   1 "balance after mint"
 
@@ -66,19 +66,19 @@ fi
 
 "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'transferFrom(address,address,uint256)' "$sender" "$other" "$token_id" >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'ownerOf(uint256)(uint256)' "$token_id")" \
   "$other_packed" "owner after operator transfer"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$other")" \
   1 "operator recipient balance"
 
 "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'burn(uint256)' "$token_id" >/dev/null
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'ownerOf(uint256)(uint256)' "$token_id")" \
   0 "owner cleared after burn"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$other")" \
   0 "balance after burn"
 
@@ -92,16 +92,16 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: non-approved burn unexpectedly succeeded" >&2
   exit 1
 fi
-solana_lean_require_unauthorized "$addr" "$other" \
+pf_evm_require_unauthorized "$addr" "$other" \
   "$("$cast" calldata 'burn(uint256)' "$token_id2")" "$other" \
   "non-approved burn"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'ownerOf(uint256)(uint256)' "$token_id2")" \
   "$sender_packed" "non-approved burn holds owner"
 
 # tokenKey drops w3; views/auth must not treat id+2^192 as the minted token.
 alias_id="$("$python" -I -S -c "print($token_id2 + (1 << 192))")"
-solana_lean_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'ownerOf(uint256)(uint256)' "$alias_id")" \
   0 "ownerOf rejects unencodable alias"
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
