@@ -156,4 +156,24 @@ theorem canIncrease_ge (allowances : Allowances) (owner spender : Address)
 
 end Allowances
 
+/-- Canonical ERC-20 events. Constructor names and field names are the ABI surface (`Transfer` /
+`Approval`). Indexed flags produce LOG3 (one `uint256` data word) for both. Prefer these over
+closed `Event.transfer` / `Event.approval` when ABI event discovery should follow typed frames. -/
+inductive Notice where
+  | Transfer («from» : Event.Indexed Address) (to : Event.Indexed Address) (value : UInt256)
+  | Approval (owner : Event.Indexed Address) (spender : Event.Indexed Address) (value : UInt256)
+  deriving Repr, DecidableEq, Inhabited
+
+namespace Log
+
+/-- LOG3 `Transfer(address indexed from, address indexed to, uint256 value)`. -/
+@[pf_inline] def transfer (source destination : Address) (amount : UInt256) : UInt64 :=
+  Event.emit (Notice.Transfer (Event.indexed source) (Event.indexed destination) amount)
+
+/-- LOG3 `Approval(address indexed owner, address indexed spender, uint256 value)`. -/
+@[pf_inline] def approval (owner spender : Address) (amount : UInt256) : UInt64 :=
+  Event.emit (Notice.Approval (Event.indexed owner) (Event.indexed spender) amount)
+
+end Log
+
 end ProofForge.Evm.Sdk.Fungible

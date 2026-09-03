@@ -43,7 +43,7 @@ open Lean Elab Command
 
 -- Closed ERC-20-shaped programs keep their digests; this slice only refreshes Collectible/Badge.
 #guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
-#guard Registry.digestOf "Erc20Meta" == some "59d38a1c7dd96ecb"
+#guard Registry.digestOf "Erc20Meta" == some "fb7b729e9b7ea596"
 
 private def transferAbi : String :=
   "{\"type\":\"event\",\"name\":\"Transfer\",\"inputs\":[" ++

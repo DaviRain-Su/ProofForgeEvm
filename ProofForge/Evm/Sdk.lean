@@ -2,6 +2,7 @@ import ProofForge.Core.SafeCast
 import ProofForge.Core.Math
 import ProofForge.Evm.Sdk.Base
 import ProofForge.Evm.Sdk.Fungible
+import ProofForge.Evm.Sdk.Erc20Meta
 import ProofForge.Evm.Sdk.Erc165
 import ProofForge.Evm.Sdk.Erc2981
 import ProofForge.Evm.Sdk.Erc721

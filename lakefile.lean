@@ -32,6 +32,7 @@ lean_lib ProofForgeEvmSdk where
     `ProofForge.Evm.Sdk.Erc1155,
     `ProofForge.Evm.Sdk.Erc721,
     `ProofForge.Evm.Sdk.Fungible,
+    `ProofForge.Evm.Sdk.Erc20Meta,
     `ProofForge.Evm.Sdk.MetadataUri,
     `ProofForge.Evm.Sdk.Eip712Domain,
     `ProofForge.Evm.Sdk.Vesting,
