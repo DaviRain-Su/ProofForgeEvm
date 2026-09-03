@@ -16,7 +16,7 @@
 
 ## Next
 
-6. **Init smoke in CI** — empty-dir `pf init` → `lake build` → `pf build` (solc) for the counter template.
+6. **Init smoke in CI** — empty-dir `pf init` → `lake build` → `lake env pf build` (solc) for the counter template. *(landed in CI `evm` job)*
 7. **Release v0.1** — tagged `pf` binary + template `require … @ tag` path; stop rewriting absolute checkout paths as the only story.
 8. **Website artifact honesty** — generate Forge panel excerpts from real `pf build` output, or keep them clearly labeled illustrative.
 9. **Standard ERC-20 example profile** — ABI/metadata that external tools recognize, without over-claiming NFT standards.

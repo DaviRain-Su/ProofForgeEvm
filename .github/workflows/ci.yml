@@ -74,6 +74,7 @@ jobs:
               - 'ProofForge/Extract.lean'
               - 'ProofForge/Extract/**'
               - 'ProofForge/Core/**'
+              - 'templates/**'
 
       - name: Publish lane gates
         id: gate
@@ -216,6 +217,38 @@ jobs:
 
       - name: Check EVM artifact manifest
         run: python3 scripts/check_artifact_manifest.py --target evm --out build/evm
+
+      # Product gate: empty-dir `pf init` → `lake build` → `lake env pf build` (solc).
+      # Uses the real CLI surface in ProofForge/Cli.lean + templates/evm-counter.
+      # `lake env` is required so LEAN_PATH includes the user project's .oleans.
+      - name: Init smoke (pf init → lake build → pf build)
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          PF_BIN="$ROOT/.lake/build/bin/pf"
+          test -x "$PF_BIN"
+          export PATH="$(dirname "$PF_BIN"):$PATH"
+
+          SMOKE_ROOT="$(mktemp -d)"
+          cleanup() { rm -rf "$SMOKE_ROOT"; }
+          trap cleanup EXIT
+
+          pf init "$SMOKE_ROOT/demo"
+          test -f "$SMOKE_ROOT/demo/pf.toml"
+          test -f "$SMOKE_ROOT/demo/lakefile.lean"
+          if grep -E 'from "\.\." / "\.\."|from "\.\./\.\."' "$SMOKE_ROOT/demo/lakefile.lean"; then
+            echo "pf init left the template path-require unrewritten" >&2
+            exit 1
+          fi
+          grep -q 'require «proofforge» from' "$SMOKE_ROOT/demo/lakefile.lean"
+
+          cd "$SMOKE_ROOT/demo"
+          lake build
+          lake env pf build --out build/out
+          test -s build/out/Counter.bin
+          test -s build/out/Counter.yul
+          test -s build/out/Counter.abi.json
+          echo "init smoke ok: $(wc -c < build/out/Counter.bin) byte Counter.bin"
 
       - name: Run Anvil integration suite
         run: runtime-tests/evm/anvil.sh

@@ -58,10 +58,11 @@ From repo root after toolchain setup:
 
 ```bash
 lake build pf
+export PATH="$PWD/.lake/build/bin:$PATH"
 lake exe pf -- init demo
 cd demo
 lake build
-../.lake/build/bin/pf build
+lake env pf build
 ```
 
 `pf init` currently requires the checkout (template path + require rewrite). A standalone installer / release tarball is roadmap work, not v0.

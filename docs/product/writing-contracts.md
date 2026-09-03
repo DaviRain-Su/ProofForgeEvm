@@ -38,9 +38,9 @@ These are product debts tracked in [roadmap.md](roadmap.md), not undocumented fo
 ## Build
 
 ```bash
-# in a pf init project, from repo checkout
+# in a pf init project; pf from the checkout `.lake/build/bin` on PATH
 lake build
-../.lake/build/bin/pf build
+lake env pf build
 ```
 
 Artifacts: `Name.bin`, `Name.yul`, `Name.abi.json`.

@@ -64,10 +64,11 @@ runtime-tests/evm/anvil.sh     # full Anvil gate suite (skips when Foundry is ab
 
 ```text
 lake build pf
+export PATH="$PWD/.lake/build/bin:$PATH"
 lake exe pf -- init demo
 cd demo
 lake build
-../.lake/build/bin/pf build
+lake env pf build
 ```
 
 `pf init` currently requires a repo checkout (copies `templates/evm-counter` and
