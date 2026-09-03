@@ -20,6 +20,7 @@ import ProofForge.Evm.Sdk.StorageEnumerableMap
 import ProofForge.Evm.Sdk.StorageCheckpoints
 import ProofForge.Evm.Sdk.Roles
 import ProofForge.Evm.Sdk.Nonces
+import ProofForge.Evm.Sdk.RateLimit
 import ProofForge.Evm.Sdk.Reentrancy
 
 /-!
