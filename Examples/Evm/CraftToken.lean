@@ -5,7 +5,8 @@ Open-mint bounded ERC-1155 consumer with an application-owned per-id supply cap.
 reuses the Erc1155 balance/operator core while owning its mint policy (any caller, per-id supply
 capped at `maxPerId`), burn accounting (supply moves with the balance), and error ordering.
 The supply map is a separate `Storage.AddressMap256` namespace keyed by `tokenKey`, so it shares
-the same 192-bit key envelope and never aliases the balance/operator namespaces.
+the same 192-bit key envelope and never aliases the balance/operator namespaces. Successful mint,
+burn, and transfer emit canonical ERC-1155 `TransferSingle`; operator writes emit `ApprovalForAll`.
 -/
 
 namespace Examples.Evm.CraftToken
@@ -53,7 +54,7 @@ def mint (s : State) (tokenId : UInt256) (amount : UInt256) :
       .ok ({ dummy :=
           supply.put (Erc1155.tokenKey tokenId) (nextSupply tokenId amount) |||
             Erc1155.mint balances Context.caller tokenId amount },
-        Event.transfer Address.zero Context.caller amount)
+        Erc1155.Log.transferSingle Context.caller Address.zero Context.caller tokenId amount)
     else
       .ok (s, Revert.capExceeded)
   else if !Erc1155.canEncode tokenId then
@@ -69,7 +70,8 @@ def burn (s : State) (tokenId : UInt256) (amount : UInt256) :
     .ok ({ dummy :=
         Erc1155.burn balances Context.caller tokenId amount |||
           supply.put (Erc1155.tokenKey tokenId)
-            (supply.nextSub (Erc1155.tokenKey tokenId) amount) }, 0)
+            (supply.nextSub (Erc1155.tokenKey tokenId) amount) },
+      Erc1155.Log.transferSingle Context.caller Context.caller Address.zero tokenId amount)
   else if !Erc1155.canEncode tokenId then
     .ok (s, Revert.unauthorized Context.caller)
   else
@@ -82,11 +84,10 @@ def setApprovalForAll (s : State) (operator : Address) (approved : Bool) :
     .ok (s, Revert.zeroAddress)
   else if Address.eq operator Context.caller then
     .ok (s, Revert.unauthorized Context.caller)
-  else if (0 : UInt64) ≠ 1 then
-    .ok ({ dummy :=
-        Erc1155.Operators.setApprovalForAll operators Context.caller operator approved }, 0)
   else
-    .error .overflow
+    .ok ({ dummy :=
+        Erc1155.Operators.setApprovalForAll operators Context.caller operator approved },
+      Erc1155.Log.approvalForAll Context.caller operator approved)
 
 @[pf_entry]
 def transferFrom (s : State) (source to : Address) (tokenId : UInt256) (amount : UInt256) :
@@ -97,7 +98,7 @@ def transferFrom (s : State) (source to : Address) (tokenId : UInt256) (amount :
     .ok (s, Revert.zeroAddress)
   else if Erc1155.Balances.canTransfer balances source to tokenId amount then
     .ok ({ dummy := Erc1155.Balances.transfer balances source to tokenId amount },
-      Event.transfer source to amount)
+      Erc1155.Log.transferSingle Context.caller source to tokenId amount)
   else
     .ok (s, Erc1155.Balances.insufficient balances source tokenId amount)
 

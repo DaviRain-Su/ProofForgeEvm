@@ -1,12 +1,14 @@
 import ProofForge
+import ProofForge.Evm.Commands
+import ProofForge.Evm.Emit
 import Examples.Evm.MultiToken
 import Examples.Evm.CraftToken
 
 /-!
 EVM-SDK-8 focused suite: bounded ERC-1155 key envelope, predicate surface, and two independent
-consumers with stable extracted digests. Live mint/burn/transfer/operator matrices live in
-`runtime-tests/evm/anvil_multitoken.sh` and `anvil_crafttoken.sh`; the aggregate EVM gate builds and
-runs both consumers.
+consumers. MultiToken/CraftToken emit canonical ERC-1155 typed events (LOG4 TransferSingle with
+two data words, LOG3 ApprovalForAll). Live mint/burn/transfer/operator matrices live in
+`runtime-tests/evm/anvil_multitoken.sh` and `anvil_crafttoken.sh`.
 -/
 
 namespace Tests.EvmErc1155Spec
@@ -44,6 +46,12 @@ end UnsupportedConditionFixture
 #guard !Erc1155.canEncode ⟨1, 0, 0, 1⟩
 #guard Erc1155.tokenKey ⟨7, 8, 9, 0⟩ == (⟨7, 8, 9⟩ : Address)
 #guard Erc1155.tokenKey ⟨7, 8, 9, 1⟩ == (⟨7, 8, 9⟩ : Address)
+#guard Erc1155.Log.transferSingle ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 8, 9⟩ ⟨10, 0, 0, 0⟩ ⟨11, 0, 0, 0⟩ == 0
+#guard Erc1155.Log.approvalForAll ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ true == 0
+
+-- Closed ERC-20-shaped programs keep their digests; this slice only refreshes MultiToken/CraftToken.
+#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
+#guard Registry.digestOf "Erc20Meta" == some "59d38a1c7dd96ecb"
 
 def specBalances : Erc1155.Balances := Storage.Layout.root.addressPairMap256.handle
 def specOperators : Erc1155.Operators :=
@@ -170,6 +178,62 @@ private partial def hasNamedCapGate (ops : Array ProofForge.Extract.IR.Op) : Boo
     | .forBody _ body => hasNamedCapGate body
     | _ => false
 
+private def transferSingleAbi : String :=
+  "{\"type\":\"event\",\"name\":\"TransferSingle\",\"inputs\":[" ++
+    "{\"name\":\"operator\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"from\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"to\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"id\",\"type\":\"uint256\",\"indexed\":false}," ++
+    "{\"name\":\"value\",\"type\":\"uint256\",\"indexed\":false}],\"anonymous\":false}"
+
+private def approvalForAllAbi : String :=
+  "{\"type\":\"event\",\"name\":\"ApprovalForAll\",\"inputs\":[" ++
+    "{\"name\":\"account\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"operator\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"approved\",\"type\":\"bool\",\"indexed\":false}],\"anonymous\":false}"
+
+private def erc20TransferAbi : String :=
+  "{\"type\":\"event\",\"name\":\"Transfer\",\"inputs\":[" ++
+    "{\"name\":\"from\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"to\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"value\",\"type\":\"uint256\",\"indexed\":false}],\"anonymous\":false}"
+
+private def transferSingleTopic : String :=
+  ProofForge.Crypto.Keccak.keccak256HexOfString
+    "TransferSingle(address,address,address,uint256,uint256)"
+
+private def approvalForAllTopic : String :=
+  ProofForge.Crypto.Keccak.keccak256HexOfString "ApprovalForAll(address,address,bool)"
+
+private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
+    Array (ProofForge.Core.Ops.EventFrame ProofForge.Extract.IR.Val) :=
+  ops.foldl (init := #[]) fun frames op =>
+    let frames := match op with
+      | .ext (.evm (.component (.nativeFx (.logTyped frame)))) => frames.push frame
+      | _ => frames
+    match op with
+    | .ite _ _ _ yes no => frames ++ sourceTypedFrames yes ++ sourceTypedFrames no
+    | .forBody _ body => frames ++ sourceTypedFrames body
+    | _ => frames
+
+private def eventMatches (frame : ProofForge.Core.Ops.EventFrame V)
+    (constructor : String) (fields : Array (String × Bool)) : Bool :=
+  frame.constructor == constructor &&
+    frame.args.size == fields.size &&
+    (List.zip frame.args.toList fields.toList).all fun
+      | (arg, (name, indexed)) => arg.name == name && arg.indexed == indexed
+
+private def methodOps (source : ProofForge.Extract.IR.Program) (name : String) :
+    CommandElabM (Array ProofForge.Extract.IR.Op) := do
+  let some method := source.methods.find? (·.ixName == name)
+    | throwError s!"method {name} missing"
+  return method.ops
+
+private def expectMethodNames (program : IR.Program) (names : Array String) : CommandElabM Unit := do
+  let got := program.entries.map (·.ixName)
+  unless got.size == names.size && names.all (got.contains ·) && got.all (names.contains ·) do
+    throwError s!"{program.name} method ABI diverged: {got}"
+
 private def expectDigest (moduleName : Name) (digest : String) : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -183,9 +247,100 @@ private def expectDigest (moduleName : Name) (digest : String) : CommandElabM Un
   unless IR.digestHex program == digest do
     throwError s!"{moduleName} digest drifted: {IR.digestHex program}"
 
+private def expectTypedAbiYul (evm : IR.Program) : CommandElabM Unit := do
+  let abi ←
+    match Emit.emitAbiChecked evm with
+    | .ok abi => pure abi
+    | .error reason => throwError reason
+  unless abi.contains transferSingleAbi && abi.contains approvalForAllAbi &&
+      !abi.contains erc20TransferAbi && !abi.contains "TransferBatch" do
+    throwError s!"{evm.name} ABI lost ERC-1155 TransferSingle/ApprovalForAll:\n{abi}"
+  let yul ←
+    match Emit.emitYul evm with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless yul.contains s!"log4(0, 64, 0x{transferSingleTopic}" &&
+      yul.contains s!"log3(0, 32, 0x{approvalForAllTopic}" do
+    throwError s!"{evm.name} Yul omitted LOG4 TransferSingle or LOG3 ApprovalForAll"
+
+private def expectMultiTokenEvents : CommandElabM Unit := do
+  let env ← getEnv
+  let source ←
+    match ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken with
+    | .ok source => pure source
+    | .error reason => throwError reason
+  let mintFrames := sourceTypedFrames (← methodOps source "mint")
+  let operatorFrames := sourceTypedFrames (← methodOps source "setApprovalForAll")
+  let transferFrames := sourceTypedFrames (← methodOps source "transferFrom")
+  let burnFrames := sourceTypedFrames (← methodOps source "burn")
+  unless mintFrames.size == 1 &&
+      eventMatches mintFrames[0]! "TransferSingle"
+        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] &&
+      mintFrames[0]!.args[3]!.type == .uint256 &&
+      mintFrames[0]!.args[4]!.type == .uint256 do
+    throwError s!"MultiToken.mint TransferSingle frame diverged: {repr mintFrames}"
+  unless operatorFrames.size == 1 &&
+      eventMatches operatorFrames[0]! "ApprovalForAll"
+        #[("account", true), ("operator", true), ("approved", false)] &&
+      operatorFrames[0]!.args[2]!.type == .boolean do
+    throwError s!"MultiToken.setApprovalForAll frame diverged: {repr operatorFrames}"
+  unless transferFrames.size == 1 &&
+      eventMatches transferFrames[0]! "TransferSingle"
+        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
+    throwError s!"MultiToken.transferFrom TransferSingle frame diverged: {repr transferFrames}"
+  unless burnFrames.size == 1 &&
+      eventMatches burnFrames[0]! "TransferSingle"
+        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
+    throwError s!"MultiToken.burn TransferSingle frame diverged: {repr burnFrames}"
+  let evm ←
+    match IR.fromExtracted source with
+    | .ok program => pure program
+    | .error reason => throwError reason
+  expectMethodNames evm
+    #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "isApprovedForAll"]
+  expectTypedAbiYul evm
+
+private def expectCraftTokenEvents : CommandElabM Unit := do
+  let env ← getEnv
+  let source ←
+    match ProofForge.Extract.extractModuleIR env `Examples.Evm.CraftToken with
+    | .ok source => pure source
+    | .error reason => throwError reason
+  let mintFrames := sourceTypedFrames (← methodOps source "mint")
+  let operatorFrames := sourceTypedFrames (← methodOps source "setApprovalForAll")
+  let transferFrames := sourceTypedFrames (← methodOps source "transferFrom")
+  let burnFrames := sourceTypedFrames (← methodOps source "burn")
+  unless mintFrames.size == 1 &&
+      eventMatches mintFrames[0]! "TransferSingle"
+        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
+    throwError s!"CraftToken.mint TransferSingle frame diverged: {repr mintFrames}"
+  unless operatorFrames.size == 1 &&
+      eventMatches operatorFrames[0]! "ApprovalForAll"
+        #[("account", true), ("operator", true), ("approved", false)] &&
+      operatorFrames[0]!.args[2]!.type == .boolean do
+    throwError s!"CraftToken.setApprovalForAll frame diverged: {repr operatorFrames}"
+  unless transferFrames.size == 1 &&
+      eventMatches transferFrames[0]! "TransferSingle"
+        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
+    throwError s!"CraftToken.transferFrom TransferSingle frame diverged: {repr transferFrames}"
+  unless burnFrames.size == 1 &&
+      eventMatches burnFrames[0]! "TransferSingle"
+        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
+    throwError s!"CraftToken.burn TransferSingle frame diverged: {repr burnFrames}"
+  let evm ←
+    match IR.fromExtracted source with
+    | .ok program => pure program
+    | .error reason => throwError reason
+  expectMethodNames evm
+    #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "supplyOf",
+      "isApprovedForAll"]
+  expectTypedAbiYul evm
+
 private def expectErc1155 : CommandElabM Unit := do
-  expectDigest `Examples.Evm.MultiToken "c688769941bd4cfe"
-  expectDigest `Examples.Evm.CraftToken "2e6738a3705bc7dd"
+  expectMultiTokenEvents
+  expectCraftTokenEvents
+  expectDigest `Examples.Evm.MultiToken "6792ca0e2ed8f217"
+  expectDigest `Examples.Evm.CraftToken "138f8b80bb24975b"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!
   let balanceOps := (multi.methods.find? (·.ixName == "balanceOf")).get!.ops
@@ -204,5 +359,8 @@ private def expectErc1155 : CommandElabM Unit := do
 elab "#pf_guard_evm_erc1155" : command => expectErc1155
 
 #pf_guard_evm_erc1155
+
+#pf_evm_build Examples.Evm.MultiToken
+#pf_evm_build Examples.Evm.CraftToken
 
 end Tests.EvmErc1155Spec
