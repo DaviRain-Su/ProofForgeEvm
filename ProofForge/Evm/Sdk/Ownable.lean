@@ -6,8 +6,9 @@ namespace ProofForge.Evm.Sdk.Ownable
 # EVM SDK Ownable event helper
 
 Canonical OpenZeppelin `OwnershipTransferred` and Ownable2Step `OwnershipTransferStarted` as
-reusable `Event.emit` wrappers. Authorization, storage of the owner handle, and two-step
-nomination remain in `Sdk.Access` / the application.
+reusable `Event.emit` wrappers. Authorization, storage of the owner handle, two-step nomination,
+and the explicit owner/pending-state clear used by `renounceOwnership` remain in `Sdk.Access` /
+the application.
 
 Constructor policy that *is* extractable: applications store a nonzero owner argument into an
 explicit `State` field and start with `Access.Ownership.none`. Constructor logs and constructor

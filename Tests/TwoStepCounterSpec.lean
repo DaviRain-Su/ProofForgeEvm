@@ -83,6 +83,12 @@ def other : Addr20 := ⟨4, 5, 6⟩
   | .ok (_, ret) => ret == 0
   | .error _ => false
 
+#guard
+  match renounceOwnership (init sample) with
+  | .ok (st, ret) =>
+      ret == 0 && st.owner == Address.zero && st.ownership == Access.Ownership.none
+  | .error _ => false
+
 #pf_evm_build Examples.Evm.TwoStepCounter
 
 open Lean Elab Command
@@ -99,7 +105,7 @@ elab "#pf_guard_twostep_counter" : command => do
     | .ok program => pure program
     | .error reason => throwError reason
   let entryNames := program.entries.map (·.ixName)
-  for name in #["transferOwnership", "cancelOwnership", "acceptOwnership", "bump",
+  for name in #["transferOwnership", "cancelOwnership", "acceptOwnership", "renounceOwnership", "bump",
       "pause", "unpause", "ownerOf", "pendingOwner", "pendingOf", "pausedOf", "get"] do
     unless entryNames.contains name do
       throwError s!"missing TwoStepCounter entry {name}"
@@ -153,6 +159,12 @@ elab "#pf_guard_twostep_counter" : command => do
   for field in #["ownership_w0", "ownership_w1", "ownership_w2"] do
     unless storesZero 16 field acceptM.ops do
       throwError s!"TwoStepCounter acceptOwnership did not clear {field}"
+  let some renounceM := program.entries.find? (·.ixName == "renounceOwnership")
+    | throwError "missing TwoStepCounter renounceOwnership"
+  for field in #["owner_w0", "owner_w1", "owner_w2", "ownership_w0", "ownership_w1",
+      "ownership_w2"] do
+    unless storesZero 16 field renounceM.ops do
+      throwError s!"TwoStepCounter renounceOwnership did not clear {field}"
   let expectView (name : String) (widths : Array Nat) : CommandElabM Unit := do
     let some m := program.entries.find? (·.ixName == name)
       | throwError s!"missing TwoStepCounter view {name}"
@@ -176,7 +188,7 @@ elab "#pf_guard_twostep_counter" : command => do
   let abi := ProofForge.Evm.Emit.emitAbi program
   for name in #["\"name\":\"Unauthorized\"", "\"name\":\"Paused\"", "\"name\":\"ZeroAddress\"",
       "\"name\":\"transferOwnership\"", "\"name\":\"cancelOwnership\"",
-      "\"name\":\"acceptOwnership\"", "\"name\":\"bump\"", "\"name\":\"pendingOf\"",
+      "\"name\":\"acceptOwnership\"", "\"name\":\"renounceOwnership\"", "\"name\":\"bump\"", "\"name\":\"pendingOf\"",
       "\"name\":\"pendingOwner\""] do
     unless abi.contains name do
       throwError s!"TwoStepCounter abi missing {name}"
