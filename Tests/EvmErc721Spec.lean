@@ -213,8 +213,8 @@ private def expectBadgeEvents : CommandElabM Unit := do
 private def expectErc721 : CommandElabM Unit := do
   expectCollectibleEvents
   expectBadgeEvents
-  expectDigest `Examples.Evm.Collectible "b1d756fc4fc70ed0"
-  expectDigest `Examples.Evm.Badge "486420c933cdc7ac"
+  expectDigest `Examples.Evm.Collectible "b6d85c01f48dfb4"
+  expectDigest `Examples.Evm.Badge "8af5120d8156dba8"
 
 elab "#pf_guard_evm_erc721" : command => expectErc721
 

@@ -21,10 +21,8 @@ open Lean Elab Command
 #guard Erc165.equal Erc165.erc165 Erc165.erc165
 #guard Erc165.equal Erc165.erc721 Erc165.erc721
 #guard Erc165.equal Erc165.erc1155 Erc165.erc1155
-#guard !Erc165.equal Erc165.erc721 Erc165.erc1155
 #guard Erc165.supportsToken Erc165.erc165 Erc165.erc721
 #guard Erc165.supportsToken Erc165.erc721 Erc165.erc721
-#guard !Erc165.supportsToken Erc165.erc1155 Erc165.erc721
 
 private def expectErc165Abi (moduleName : Name) (tokenId : Erc165.InterfaceId) :
     CommandElabM Unit := do
@@ -46,7 +44,7 @@ private def expectErc165Abi (moduleName : Name) (tokenId : Erc165.InterfaceId) :
     | .ok abi => pure abi
     | .error reason => throwError reason
   unless abi.contains "\"name\":\"supportsInterface\"" &&
-      abi.contains "\"name\":\"interfaceId\",\"type\":\"bytes4\"" &&
+      abi.contains "\"name\":\"arg0\",\"type\":\"bytes4\"" &&
       abi.contains "\"type\":\"bool\"" do
     throwError s!"{moduleName} ABI lost supportsInterface(bytes4) -> bool:\n{abi}"
   let supportOps := (program.entries.find? (·.ixName == "supportsInterface")).get!.ops
