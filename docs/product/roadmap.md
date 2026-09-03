@@ -26,7 +26,7 @@
 
 11. Effect representation rewrite (remove `dummy` / `hold` / fake guards).
 12. Reference `World` semantics + Lean↔Anvil differential.
-13. Generic typed events; richer constructors. *(S1a target-local frames landed; S1b extractor/SDK/Anvil path in flight)*
+13. Generic typed events; richer constructors. *(S1a frames + S1b `Event.emit` extract/SDK/Anvil path landed)*
 14. Decide yulc: full second backend vs permanent experimental subset.
 15. Formal powdr bridge beyond probe status.
 

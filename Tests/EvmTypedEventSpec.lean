@@ -336,7 +336,7 @@ private def countOccurrences (haystack needle : String) : Nat :=
 -- Registry / golden digests for existing programs stay pinned (no closed-union spelling change).
 #guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
 #guard Registry.digestOf "EvmTypedErrors" == some "499001a31fb4d9e7"
-#guard Registry.digestOf "EvmTypedEvents" == some "0"
+#guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
 #guard Registry.digestOf "Counter" == some "254202356ee921d6"
 #guard IR.digestHex ProofForge.Evm.Golden.extractedToken == "59f8696f9b0e06db"
 #guard IR.digestHex ProofForge.Evm.Golden.extractedVault == "a3ea1b5b2a69c0e3"
@@ -351,6 +351,8 @@ open Examples.Evm.EvmTypedEvents
 
 #guard Event.emit (Notice.Ticked 3) == 0
 #guard (Event.indexed (⟨1, 2, 3⟩ : Address)).value == ⟨1, 2, 3⟩
+
+#pf_evm_build Examples.Evm.EvmTypedEvents
 
 private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     Array (ProofForge.Core.Ops.EventFrame ProofForge.Extract.IR.Val) :=
