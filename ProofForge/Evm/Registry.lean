@@ -29,6 +29,7 @@ def entries : Array Entry := #[
   { name := "GuardedPayout", digest := "359f6025f96aa432" },
   { name := "ArtLink", digest := "e95d5b45be20b193" },
   { name := "PackLink", digest := "58b4fe91408c541e" },
+  { name := "DomainLink", digest := "91defc704d253605" },
   { name := "Collectible", digest := "df29360114f22d5f" },
   { name := "Badge", digest := "ef61792f697edbd3" },
   { name := "TipJar", digest := "33bcabf27f5b9523" },

@@ -1264,6 +1264,32 @@ private def asCmp (env : Environment) (e : Expr) : Option (Ops.Cmp × Ops.Val ×
       else none
 
 /-- Normalize pure Boolean syntax to a 0/1 value so compound guards do not duplicate branches. -/
+private def staticBoundedStringLengthLit? (env : Environment) (e : Expr) : Option Nat :=
+  let e := strip (unfoldUserHelpers env 16 e)
+  match e.getAppFn.constName? with
+  | some ctor =>
+    match env.find? ctor with
+    | some (.ctorInfo info) =>
+      if info.induct != boundedStringName then none
+      else
+        let args := e.getAppArgs
+        if args.size < 2 then none
+        else
+          let lengthE := strip args[args.size - 2]!
+          match lengthE with
+          | .lit (.natVal n) => some n
+          | _ =>
+            match val env lengthE with
+            | some (.lit n) => some n.toNat
+            | _ => none
+    | _ => none
+  | none => none
+
+private def boundedCanPublishVal (env : Environment) (nameE versionE : Expr) : Option Ops.Val := do
+  let nameLen ← staticBoundedStringLengthLit? env nameE
+  let verLen ← staticBoundedStringLengthLit? env versionE
+  if nameLen > 0 && verLen > 0 then return .lit 1 else return .lit 0
+
 private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
   match fuel with
   | 0 => none
@@ -1299,6 +1325,8 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       | _, _, _ => none
     else if isConstNamed e ``Decidable.decide && args.size ≥ 2 then
       asBoolVal env fuel' args[args.size - 2]!
+    else if endsWith e ".canPublish" && args.size ≥ 2 then
+      boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
     else if isConstNamed e ``Eq && args.size ≥ 2 then
       let lhs := strip args[args.size - 2]!
       let rhs := strip args[args.size - 1]!
@@ -2162,6 +2190,8 @@ private partial def boundedMetadataGateVal (env : Environment) (fuel : Nat) (e :
       boundedIsMinted721Val env args[args.size - 2]! args[args.size - 1]!
     else if endsWith raw ".canEncode" && args.size ≥ 1 then
       boundedCanEncode721Val env args[args.size - 1]!
+    else if endsWith raw ".canPublish" && args.size ≥ 2 then
+      boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
     else if (isConstNamed raw ``Bool.and || isConstNamed raw ``HAnd.hAnd || endsWith raw ".hAnd") &&
         args.size ≥ 2 then
       match boundedMetadataGateVal env fuel' args[args.size - 2]!,
