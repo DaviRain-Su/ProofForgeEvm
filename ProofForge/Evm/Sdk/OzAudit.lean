@@ -5,14 +5,18 @@ namespace ProofForge.Evm.Sdk.OzAudit
 /-!
 # EVM SDK OZ completion-audit inventory
 
-Compile-time counters for the bounded coverage table in `docs/product/oz-sdk-backlog.md` and the
-authority snapshot of OpenZeppelin `contracts/` tree paths. This is an audit witness, not runtime
-interface discovery: unknown rows fail closed via `isComplete` and `treeMatchesAuthority`.
+Compile-time counters and bounded static table for the coverage inventory in
+`docs/product/oz-sdk-backlog.md` and the authority snapshot of OpenZeppelin `contracts/` tree paths.
+This is an audit witness, not runtime interface discovery: unknown rows fail closed via
+`isComplete`, `allRowsClassified`, and `treeMatchesAuthority`.
 
 Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - tree SHA `641ba990cad2f7f70878e0d66be1bfbef95710e8`
 - 452 `contracts/` tree paths, 367 Solidity sources
-- 32 backlog coverage rows: 2 DONE, 16 PARTIAL, 14 ABSENT
+- 32 backlog coverage rows: 2 DONE, 16 PARTIAL, 14 ABSENT (14 blocked by non-goals)
+
+Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
+and a blocker bit (`true` when the row is ABSENT because of a documented permanent non-goal).
 -/
 
 /-- Rows in the coverage table (`oz-sdk-backlog.md`). -/
@@ -27,11 +31,122 @@ def partialCount : UInt64 := 16
 /-- Rows marked ABSENT (no profile shipped). -/
 def absentCount : UInt64 := 14
 
+/-- Rows whose remaining gap is blocked by a documented permanent non-goal. -/
+def blockedCount : UInt64 := 14
+
 /-- Authority snapshot: `contracts/` tree paths. -/
 def authorityTreePaths : UInt64 := 452
 
 /-- Authority snapshot: Solidity sources under `contracts/`. -/
 def authoritySoliditySources : UInt64 := 367
+
+/-- Unclassified / out-of-range row status. -/
+def statusUnknown : UInt8 := 0
+
+/-- Bounded capability shipped. -/
+def statusDone : UInt8 := 1
+
+/-- Named restricted profile exists. -/
+def statusPartial : UInt8 := 2
+
+/-- No corresponding profile shipped (blocked by non-goal). -/
+def statusAbsent : UInt8 := 3
+
+/-- Path tag: `access/Ownable.sol`, `Ownable2Step.sol`. -/
+def tagAccessOwnable : UInt8 := 1
+
+/-- Path tag: `access/AccessControl.sol`, `IAccessControl.sol`. -/
+def tagAccessControl : UInt8 := 2
+
+/-- Path tag: `access/extensions/*`, `access/manager/*`. -/
+def tagAccessExt : UInt8 := 3
+
+/-- Path tag: `account/**`. -/
+def tagAccount : UInt8 := 4
+
+/-- Path tag: `crosschain/**`. -/
+def tagCrosschain : UInt8 := 5
+
+/-- Path tag: `finance/VestingWallet*.sol`. -/
+def tagFinanceVesting : UInt8 := 6
+
+/-- Path tag: `governance/**`. -/
+def tagGovernance : UInt8 := 7
+
+/-- Path tag: `interfaces/IERC165.sol`. -/
+def tagIface165 : UInt8 := 8
+
+/-- Path tag: `interfaces/IERC20*.sol`, `IERC2612.sol`. -/
+def tagIface20 : UInt8 := 9
+
+/-- Path tag: `interfaces/IERC721*.sol`, `IERC4906.sol`, `IERC2309.sol`. -/
+def tagIface721 : UInt8 := 10
+
+/-- Path tag: `interfaces/IERC1155*.sol`. -/
+def tagIface1155 : UInt8 := 11
+
+/-- Path tag: `interfaces/IERC2981.sol`. -/
+def tagIface2981 : UInt8 := 12
+
+/-- Path tag: `interfaces/IERC1271.sol`. -/
+def tagIface1271 : UInt8 := 13
+
+/-- Path tag: `interfaces/IERC3156*.sol`, `IERC4626.sol`, `IERC6909.sol`, `IERC777*.sol`, `IERC1363*.sol`. -/
+def tagIfaceFinance : UInt8 := 14
+
+/-- Path tag: `interfaces/IERC1820*.sol`, `IERC1967.sol`, `IERC1822.sol`. -/
+def tagIfaceProxy : UInt8 := 15
+
+/-- Path tag: `interfaces/IERC5267.sol`, `IERC5313.sol`, `IERC6372.sol`, `IERC5805.sol`. -/
+def tagIfaceVotes : UInt8 := 16
+
+/-- Path tag: `interfaces/draft-IERC3009.sol`, `IERC7674.sol`, `IERC7751.sol`, `IERC7786.sol`, `IERC7802.sol`, `IERC7821.sol`. -/
+def tagIfaceDraft : UInt8 := 17
+
+/-- Path tag: `metatx/ERC2771*.sol`. -/
+def tagMetatx : UInt8 := 18
+
+/-- Path tag: `proxy/**`, `interfaces/IERC1967.sol`. -/
+def tagProxy : UInt8 := 19
+
+/-- Path tag: `token/ERC20/**`. -/
+def tagToken20 : UInt8 := 20
+
+/-- Path tag: `token/ERC721/**`. -/
+def tagToken721 : UInt8 := 21
+
+/-- Path tag: `token/ERC1155/**`. -/
+def tagToken1155 : UInt8 := 22
+
+/-- Path tag: `token/ERC6909/**`. -/
+def tagToken6909 : UInt8 := 23
+
+/-- Path tag: `token/common/ERC2981.sol`, `ERC1363Utils.sol`. -/
+def tagTokenCommon : UInt8 := 24
+
+/-- Path tag: `utils/Context.sol`, `Pausable.sol`, `ReentrancyGuard*.sol`. -/
+def tagUtilsGuard : UInt8 := 25
+
+/-- Path tag: `utils/Address.sol`, `LowLevelCall.sol`, `Multicall.sol`, `RelayedCall.sol`, `SimulateCall.sol`, `Calldata.sol`, `Memory.sol`. -/
+def tagUtilsCall : UInt8 := 26
+
+/-- Path tag: `utils/cryptography/**`. -/
+def tagUtilsCrypto : UInt8 := 27
+
+/-- Path tag: `utils/math/**`, `SafeCast.sol`, `Panic.sol`, `Errors.sol`, `Comparators.sol`. -/
+def tagUtilsMath : UInt8 := 28
+
+/-- Path tag: `utils/structs/**`, `Arrays.sol`, `Bytes.sol`, `Strings.sol`, `Base*`, `RLP.sol`, `Packing.sol`, `ShortStrings.sol`. -/
+def tagUtilsStruct : UInt8 := 29
+
+/-- Path tag: `utils/Create2.sol`, `Create3.sol`, `StorageSlot.sol`, `SlotDerivation.sol`, `TransientSlot.sol`, `draft-InteroperableAddress.sol`. -/
+def tagUtilsSlot : UInt8 := 30
+
+/-- Path tag: `utils/Blockhash.sol`, `BlockHeader.sol`, `ERC6372Utils.sol`, `Nonces*.sol`, `RateLimiter.sol`. -/
+def tagUtilsBlock : UInt8 := 31
+
+/-- Path tag: `vendor/**`, `mocks/**`. -/
+def tagVendor : UInt8 := 32
 
 /-- Sum of classified backlog rows. -/
 @[pf_inline] def classifiedCount : UInt64 :=
@@ -41,6 +156,106 @@ def authoritySoliditySources : UInt64 := 367
 @[pf_inline] def isComplete : Bool :=
   classifiedCount == coverageRows
 
+/-- True when `status` is one of DONE/PARTIAL/ABSENT. -/
+def isKnownStatus (status : UInt8) : Bool :=
+  status == statusDone || status == statusPartial || status == statusAbsent
+
+/-- Stable path tag for backlog row `row` (`0..31`); `0` when out of range. -/
+def pathTagOf (row : UInt64) : UInt8 :=
+  if row == 0 then tagAccessOwnable
+  else if row == 1 then tagAccessControl
+  else if row == 2 then tagAccessExt
+  else if row == 3 then tagAccount
+  else if row == 4 then tagCrosschain
+  else if row == 5 then tagFinanceVesting
+  else if row == 6 then tagGovernance
+  else if row == 7 then tagIface165
+  else if row == 8 then tagIface20
+  else if row == 9 then tagIface721
+  else if row == 10 then tagIface1155
+  else if row == 11 then tagIface2981
+  else if row == 12 then tagIface1271
+  else if row == 13 then tagIfaceFinance
+  else if row == 14 then tagIfaceProxy
+  else if row == 15 then tagIfaceVotes
+  else if row == 16 then tagIfaceDraft
+  else if row == 17 then tagMetatx
+  else if row == 18 then tagProxy
+  else if row == 19 then tagToken20
+  else if row == 20 then tagToken721
+  else if row == 21 then tagToken1155
+  else if row == 22 then tagToken6909
+  else if row == 23 then tagTokenCommon
+  else if row == 24 then tagUtilsGuard
+  else if row == 25 then tagUtilsCall
+  else if row == 26 then tagUtilsCrypto
+  else if row == 27 then tagUtilsMath
+  else if row == 28 then tagUtilsStruct
+  else if row == 29 then tagUtilsSlot
+  else if row == 30 then tagUtilsBlock
+  else if row == 31 then tagVendor
+  else 0
+
+/-- DONE/PARTIAL/ABSENT status for backlog row `row`; `statusUnknown` when out of range. -/
+def statusOf (row : UInt64) : UInt8 :=
+  if row == 0 then statusPartial
+  else if row == 1 then statusPartial
+  else if row == 2 then statusAbsent
+  else if row == 3 then statusAbsent
+  else if row == 4 then statusAbsent
+  else if row == 5 then statusPartial
+  else if row == 6 then statusAbsent
+  else if row == 7 then statusDone
+  else if row == 8 then statusPartial
+  else if row == 9 then statusPartial
+  else if row == 10 then statusPartial
+  else if row == 11 then statusDone
+  else if row == 12 then statusAbsent
+  else if row == 13 then statusAbsent
+  else if row == 14 then statusAbsent
+  else if row == 15 then statusPartial
+  else if row == 16 then statusAbsent
+  else if row == 17 then statusAbsent
+  else if row == 18 then statusAbsent
+  else if row == 19 then statusPartial
+  else if row == 20 then statusPartial
+  else if row == 21 then statusPartial
+  else if row == 22 then statusAbsent
+  else if row == 23 then statusPartial
+  else if row == 24 then statusPartial
+  else if row == 25 then statusAbsent
+  else if row == 26 then statusPartial
+  else if row == 27 then statusPartial
+  else if row == 28 then statusPartial
+  else if row == 29 then statusAbsent
+  else if row == 30 then statusPartial
+  else if row == 31 then statusAbsent
+  else statusUnknown
+
+/-- Blocker bit for backlog row `row`: `true` when ABSENT due to a permanent non-goal. -/
+def isBlocked (row : UInt64) : Bool :=
+  statusOf row == statusAbsent
+
+/-- True when `row` is in range and carries a known status. -/
+def isClassified (row : UInt64) : Bool :=
+  row < coverageRows && isKnownStatus (statusOf row)
+
+private def classifyRow (row : UInt64) : Bool :=
+  isClassified row && pathTagOf row != 0 &&
+    (isBlocked row == (statusOf row == statusAbsent))
+
+/-- True when every in-range row is classified with a consistent blocker bit. -/
+def allRowsClassified : Bool :=
+  classifyRow 0 && classifyRow 1 && classifyRow 2 && classifyRow 3 &&
+  classifyRow 4 && classifyRow 5 && classifyRow 6 && classifyRow 7 &&
+  classifyRow 8 && classifyRow 9 && classifyRow 10 && classifyRow 11 &&
+  classifyRow 12 && classifyRow 13 && classifyRow 14 && classifyRow 15 &&
+  classifyRow 16 && classifyRow 17 && classifyRow 18 && classifyRow 19 &&
+  classifyRow 20 && classifyRow 21 && classifyRow 22 && classifyRow 23 &&
+  classifyRow 24 && classifyRow 25 && classifyRow 26 && classifyRow 27 &&
+  classifyRow 28 && classifyRow 29 && classifyRow 30 && classifyRow 31 &&
+  !isClassified 32
+
 /-- True when caller-supplied tree counts match the pinned authority snapshot. -/
 @[pf_inline] def treeMatchesAuthority (paths sources : UInt64) : Bool :=
   paths == authorityTreePaths && sources == authoritySoliditySources
@@ -48,5 +263,9 @@ def authoritySoliditySources : UInt64 := 367
 /-- Fail-closed audit gate: inventory complete and authority counts match. -/
 @[pf_inline] def auditOk (paths sources : UInt64) : Bool :=
   isComplete && treeMatchesAuthority paths sources
+
+/-- Compile-time audit gate including per-row classification (not lowered to EVM). -/
+def auditOkClassified (paths sources : UInt64) : Bool :=
+  auditOk paths sources && allRowsClassified
 
 end ProofForge.Evm.Sdk.OzAudit
