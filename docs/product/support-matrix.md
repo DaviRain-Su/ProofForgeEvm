@@ -11,7 +11,7 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | Backend | Product status | CI posture | Notes |
 |---|---|---|---|
 | `solc` 0.8.34 (pinned) | **Supported default** | Required merge gate | Emits `.bin` / `.yul` / `.abi.json` |
-| powdr `yulc` | **Experimental** | Weekly / manual only | Same Yul input; may refuse `gas()` / some CALL shapes; dual-backend Anvil covers Counter / Capped / Const / Flag / Phase / Wide / TipJar |
+| powdr `yulc` | **Experimental** | Weekly / manual only | Same Yul input; may refuse `gas()` / some CALL shapes; dual-backend Anvil covers Counter / Capped / Const / Flag / Phase / Wide / TipJar. **S2 `CallResult`:** every CALL/STATICCALL already emits `gas()`, so yulc rejects the established ClosedCall path; opt-in `FailMode.bubble` additionally uses dynamic `returndatacopy(0, 0, returndatasize())` / `revert(0, returndatasize())`, which is outside the verified fragment and not dual-backend gated. Multiword `mload` itself is ordinary Yul. Default `FailMode.revert0` keeps ClosedCall spellings. |
 
 ## CLI surface
 
@@ -32,6 +32,7 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | Checked arithmetic, `ite`, bounded `for`, bit ops, narrow ABI, tuples | Supported |
 | Env / Addr20 / payable / closed ETH send / typed errors / typed events (`Event.emit`) | Supported |
 | Hashed maps + closed ERC-20 / WETH / UniswapV2 / Permit calls | Supported |
+| CallResult S2 (`exactWords n`, `strictBool`, `magicBytes4`, typed `words`) | **Plan + Yul emit** (≤4 ABI words); ClosedCall still uses the original three policies. No OpenCall consumer yet (S3). Default fail mode is `revert(0, 0)` |
 | Effect ergonomics without `dummy` / `hold` / fake guards | **Debt** (see roadmap) |
 | Dynamic callee / `delegatecall` / `create2` / proxy / unbounded loops | **Out of scope** |
 
