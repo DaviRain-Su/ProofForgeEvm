@@ -26,7 +26,7 @@ private def expectQuotaEntries : CommandElabM Unit := do
     | .ok program => pure program
     | .error reason => throwError reason
   let entries := program.entries.toList.map (·.ixName)
-  for entry in ["act", "noncesOf", "availableOf", "totalActionsOf"] do
+  for entry in ["act", "noncesOf", "capacityOf", "windowOf", "lastUsedOf", "lastTimepointOf", "totalActionsOf"] do
     unless entries.contains entry do
       throwError s!"EvmQuota: missing extracted entry {entry} in {entries}"
 
@@ -44,7 +44,7 @@ private def expectQuotaDigest : CommandElabM Unit := do
     match ProofForge.Evm.IR.fromExtracted source with
     | .ok program => pure program
     | .error reason => throwError reason
-  unless ProofForge.Evm.IR.digestHex program == "1402cba49e9a0d63" do
+  unless ProofForge.Evm.IR.digestHex program == "dfaddd984ddb8e8e" do
     throwError s!"EvmQuota digest drifted: {ProofForge.Evm.IR.digestHex program}"
 
 elab "#pf_guard_evm_quota_digest" : command => expectQuotaDigest

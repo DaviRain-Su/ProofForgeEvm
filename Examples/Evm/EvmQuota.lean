@@ -1,7 +1,7 @@
-import ProofForge.Evm.Sdk
+import ProofForge
 
 /-!
-W3 quota consumer: bounded per-address nonces plus a refilling-bucket rate limiter.
+W3 quota consumer: bounded per-address nonces plus a fixed-window rate limiter.
 
 The SDK owns pure nonce and rate-limit decisions; this contract owns three disjoint hashed-map
 namespaces (`nonces`, `lastUsed`, `lastTimepoint`), authorization, and typed failure terminals.
@@ -32,7 +32,6 @@ attribute [pf_inline] QuotaMaps.nonces QuotaMaps.lastUsed QuotaMaps.lastTimepoin
       |>.addressMap |>.handle }
 
 inductive Error where
-  | invalidNonce (current : UInt256) (expected : UInt256)
   | rateLimitExceeded
   deriving Repr, DecidableEq, Inhabited, BEq
 
@@ -52,16 +51,20 @@ def noncesOf (_s : State) (who : Address) : UInt256 :=
   Nonces.current maps.nonces who
 
 @[pf_entry]
-def availableOf (s : State) (who : Address) : UInt64 :=
-  let lastUsed := maps.lastUsed.get who
-  let lastTime := maps.lastTimepoint.get who
-  let usedNow :=
-    if Context.timestamp > lastTime &&
-        Context.timestamp - lastTime ≥ RateLimit.FixedWindow.effectiveWindow s.window then
-      (0 : UInt64)
-    else
-      lastUsed
-  if usedNow ≥ s.capacity then 0 else s.capacity - usedNow
+def capacityOf (s : State) : UInt64 :=
+  s.capacity
+
+@[pf_entry]
+def windowOf (s : State) : UInt64 :=
+  s.window
+
+@[pf_entry]
+def lastUsedOf (_s : State) (who : Address) : UInt64 :=
+  maps.lastUsed.get who
+
+@[pf_entry]
+def lastTimepointOf (_s : State) (who : Address) : UInt64 :=
+  maps.lastTimepoint.get who
 
 @[pf_entry]
 def totalActionsOf (s : State) : UInt64 :=
@@ -69,18 +72,20 @@ def totalActionsOf (s : State) : UInt64 :=
 
 @[pf_entry]
 def act (s : State) (nonce : UInt256) (amount : UInt64) : Except Error (State × UInt64) :=
-  if Nonces.useChecked maps.nonces Context.caller nonce then
-    let bucket := entryOf Context.caller
-    if RateLimit.FixedWindow.canConsume (config s) bucket Context.timestamp amount then
-      let _ := maps.nonces.put Context.caller (Nonces.useNext maps.nonces Context.caller)
-      let nextBucket :=
-        RateLimit.FixedWindow.consume (config s) bucket Context.timestamp amount
-      let _ := maps.lastUsed.put Context.caller nextBucket.lastUsed
-      let _ := maps.lastTimepoint.put Context.caller nextBucket.lastTimepoint
-      .ok ({ s with totalActions := s.totalActions + 1 }, s.totalActions + 1)
-    else
-      .error .rateLimitExceeded
+  if !Nonces.useChecked maps.nonces Context.caller nonce then
+    .ok (s, Revert.insufficient (Nonces.current maps.nonces Context.caller) nonce)
+  else if !RateLimit.FixedWindow.canConsume (config s) (entryOf Context.caller) Context.timestamp amount then
+    .error .rateLimitExceeded
   else
-    .error (.invalidNonce nonce (Nonces.current maps.nonces Context.caller))
+    let bucket := entryOf Context.caller
+    let now := Context.timestamp
+    let elapsed :=
+      RateLimit.FixedWindow.windowElapsed (config s) bucket now
+    let nextUsed :=
+      if elapsed then amount else bucket.lastUsed + amount
+    .ok ({ s with totalActions := s.totalActions + 1 },
+      maps.nonces.put Context.caller (Nonces.useNext maps.nonces Context.caller)
+        ||| maps.lastUsed.put Context.caller nextUsed
+        ||| maps.lastTimepoint.put Context.caller now)
 
 end Examples.Evm.EvmQuota
