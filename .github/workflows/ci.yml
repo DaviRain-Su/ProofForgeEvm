@@ -66,6 +66,7 @@ jobs:
               - 'runtime-tests/evm/**'
               - 'scripts/check_artifact_manifest.py'
               - 'scripts/ci_pf_init_named_project.sh'
+              - 'scripts/deploy_evm.sh'
               - 'lakefile.lean'
               - 'lean-toolchain'
               - 'lake-manifest.json'

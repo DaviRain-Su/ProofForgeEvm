@@ -1,11 +1,31 @@
-# Shared Anvil helpers for Darwin and Linux.
-# Source after `set -euo pipefail`. Sets: root, anvil, cast, python, chain_id, private_key.
-# Missing tools → skip (exit 0), not pass. Unsupported OS → skip.
+# Shared Anvil / RPC helpers for Darwin and Linux.
+# Source after `set -euo pipefail`. Sets: root, anvil, cast, python, chain_id, private_key,
+# rpc (after start), anvil_mode (1 = locally launched Anvil).
+#
+# Env:
+#   PF_EVM_RPC_URL      If set, skip launching Anvil and use this JSON-RPC URL.
+#                       PF_EVM_CHAIN_ID is then required (fail-closed; no 31338 default).
+#   PF_EVM_CHAIN_ID     Expected chain id. Local Anvil default: 31338.
+#   PF_EVM_PRIVATE_KEY  Signing key (never written to disk). Required for external RPC;
+#                       local Anvil default: account 0.
+#   PF_EVM_PORT         Preferred loopback port for a locally launched Anvil.
+#   FOUNDRY_BIN         Optional directory containing `anvil` / `cast`.
+#
+# Missing tools on the local-Anvil path → skip (exit 0), not pass. Unsupported OS → skip.
+# Configured external RPC that mismatches chain-id or is unreachable → fail (exit 1).
 
 pf_evm_evm_root() {
-  local here
-  here="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
-  (cd "$here/../.." && pwd)
+  local dir
+  dir="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
+  while [[ "$dir" != "/" ]]; do
+    if [[ -f "$dir/lakefile.lean" ]]; then
+      echo "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  echo "FAIL: cannot locate ProofForge repo root from ${BASH_SOURCE[1]}" >&2
+  return 1
 }
 
 pf_evm_python() {
@@ -65,17 +85,35 @@ pf_evm_evm_init() {
     echo "$label: skip: python3/python not found" >&2
     exit 0
   }
-  anvil="$(pf_evm_find_tool anvil)" || {
-    echo "$label: skip: anvil not found (install foundryup, or set FOUNDRY_BIN)" >&2
-    exit 0
-  }
   cast="$(pf_evm_find_tool cast)" || {
     echo "$label: skip: cast not found (install foundryup, or set FOUNDRY_BIN)" >&2
     exit 0
   }
-  chain_id="${PF_EVM_CHAIN_ID:-31338}"
-  # Anvil default account 0.
-  private_key="${PF_EVM_PRIVATE_KEY:-ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+  anvil=""
+  anvil_pid=""
+  if [[ -n "${PF_EVM_RPC_URL:-}" ]]; then
+    anvil_mode=0
+    rpc="$PF_EVM_RPC_URL"
+    if [[ -z "${PF_EVM_CHAIN_ID:-}" ]]; then
+      echo "$label: FAIL: PF_EVM_RPC_URL is set but PF_EVM_CHAIN_ID is missing (fail-closed)" >&2
+      exit 1
+    fi
+    if [[ -z "${PF_EVM_PRIVATE_KEY:-}" ]]; then
+      echo "$label: FAIL: PF_EVM_RPC_URL is set but PF_EVM_PRIVATE_KEY is missing (fail-closed)" >&2
+      exit 1
+    fi
+    chain_id="$PF_EVM_CHAIN_ID"
+    private_key="$PF_EVM_PRIVATE_KEY"
+  else
+    anvil_mode=1
+    anvil="$(pf_evm_find_tool anvil)" || {
+      echo "$label: skip: anvil not found (install foundryup, or set FOUNDRY_BIN)" >&2
+      exit 0
+    }
+    chain_id="${PF_EVM_CHAIN_ID:-31338}"
+    # Public Anvil account 0 is safe only for the local node this helper launches.
+    private_key="${PF_EVM_PRIVATE_KEY:-ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+  fi
 }
 
 pf_evm_to_dec() {
@@ -114,11 +152,28 @@ pf_evm_require_storage() {
   pf_evm_require_uint "$raw" "$expected" "$message (slot $slot)"
 }
 
+# Observed JSON-RPC chain id must equal $chain_id before any signing/deploy.
+pf_evm_require_rpc_chain_id() {
+  local message="${1:-RPC chain identity mismatch}"
+  local observed
+  observed="$("$cast" chain-id --rpc-url "$rpc")" || {
+    echo "FAIL: cannot read chain-id from $rpc" >&2
+    exit 1
+  }
+  pf_evm_require_equal "$observed" "$chain_id" "$message"
+}
+
 # Anvil-only corruption probe: replace one full storage word so fail-closed malformed-state paths
-# can be exercised. Production/deployment scripts never call this helper.
+# can be exercised. Production/deployment scripts never call this helper. Disabled on any RPC we
+# did not launch locally (including an external Anvil) because anvil_setStorageAt is not a
+# JSON-RPC contract.
 pf_evm_set_storage_word() {
   local addr="$1" slot="$2" value="$3"
   local slot_word value_word
+  if [[ "${anvil_mode:-1}" != 1 ]]; then
+    echo "FAIL: anvil_setStorageAt is disabled on non-Anvil RPC ($rpc)" >&2
+    exit 1
+  fi
   slot_word="$("$python" -I -S -c "print(f'0x{int(\"$slot\"):064x}')")"
   value_word="$("$python" -I -S -c "print(f'0x{int(\"$value\"):064x}')")"
   "$cast" rpc --rpc-url "$rpc" anvil_setStorageAt \
@@ -139,11 +194,36 @@ pf_evm_ensure_bin() {
   [[ -f "$path" ]] || { echo "FAIL: missing $path" >&2; exit 1; }
 }
 
-# Start anvil on $port. Sets rpc, anvil_pid. Traps cleanup.
+pf_evm_stop_anvil() {
+  if [[ "${anvil_mode:-1}" != 1 ]]; then
+    return 0
+  fi
+  if [[ -n "${anvil_pid:-}" ]]; then
+    kill "$anvil_pid" 2>/dev/null || true
+    wait "$anvil_pid" 2>/dev/null || true
+    anvil_pid=""
+  fi
+}
+
+# Attach to PF_EVM_RPC_URL, or start Anvil on $port. Sets rpc, anvil_pid (local only).
+# Traps cleanup for a locally launched node. Safe to call again to restart with a new chain_id.
 pf_evm_start_anvil() {
   local port="$1"
   local log="$2"
+  if [[ "${anvil_mode:-1}" != 1 ]]; then
+    rpc="${PF_EVM_RPC_URL:-$rpc}"
+    pf_evm_require_rpc_chain_id "external RPC chain identity mismatch"
+    return 0
+  fi
+  pf_evm_stop_anvil
   rpc="http://127.0.0.1:$port"
+  local wait_i
+  for wait_i in $(seq 1 20); do
+    if ! "$cast" chain-id --rpc-url "$rpc" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.1
+  done
   if "$cast" chain-id --rpc-url "$rpc" >/dev/null 2>&1; then
     echo "FAIL: RPC endpoint $rpc is already occupied" >&2
     exit 1
@@ -170,14 +250,14 @@ pf_evm_start_anvil() {
     sleep 0.1
   done
   [[ "$ready" == 1 ]] || { echo "FAIL: anvil failed to start; see $log" >&2; exit 1; }
-  pf_evm_require_equal "$("$cast" chain-id --rpc-url "$rpc")" "$chain_id" \
-    "launched Anvil chain identity mismatch"
+  pf_evm_require_rpc_chain_id "launched Anvil chain identity mismatch"
 }
 
 pf_evm_deploy_ctor_u64() {
   local bytecode="$1"
   local initial="$2"
   local encoded receipt
+  pf_evm_require_rpc_chain_id "refusing to sign deploy: chain identity mismatch"
   encoded="$("$cast" abi-encode 'constructor(uint64)' "$initial")"
   receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
     --create "0x${bytecode}${encoded#0x}")"
@@ -190,6 +270,7 @@ pf_evm_deploy_ctor_u64x3() {
   local b="$3"
   local c="$4"
   local encoded receipt
+  pf_evm_require_rpc_chain_id "refusing to sign deploy: chain identity mismatch"
   encoded="$("$cast" abi-encode 'constructor(uint64,uint64,uint64)' "$a" "$b" "$c")"
   receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
     --create "0x${bytecode}${encoded#0x}")"
@@ -455,6 +536,7 @@ pf_evm_deploy_ctor_address() {
   local bytecode="$1"
   local addr="$2"
   local encoded receipt
+  pf_evm_require_rpc_chain_id "refusing to sign deploy: chain identity mismatch"
   encoded="$("$cast" abi-encode 'constructor(address)' "$addr")"
   receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
     --create "0x${bytecode}${encoded#0x}")"

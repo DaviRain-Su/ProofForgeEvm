@@ -8,6 +8,10 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$here/lib.sh"
 
 pf_evm_evm_init evm-anvil
+if [[ -n "${PF_EVM_RPC_URL:-}" ]]; then
+  echo "evm-anvil: FAIL: full suite is Anvil-local; unset PF_EVM_RPC_URL or run a single anvil_*.sh" >&2
+  exit 1
+fi
 echo "evm-anvil: host=$(uname -s)-$(uname -m) anvil=$anvil cast=$cast" >&2
 
 failed=0
@@ -17,7 +21,7 @@ for case in counter pair flag maybe ctx bounded search find_index static_counter
     aggregate_storage ordered_storage \
     vec_log vec_stack bitmap_flags bitmap_claims ring_mailbox ring_history reentrancy \
     allowlist id_registry config_map score_map checkpoint_book checkpoint_trace \
-    safe_cast_accumulator safe_cast_config typed_errors typed_events \
+    safe_cast_accumulator safe_cast_config typed_errors typed_events chain_guard \
     math_price_band \
     collectible badge tipjar lang vault \
     ownable token window phase wide const capped multitoken crafttoken twostep_counter credits; do
