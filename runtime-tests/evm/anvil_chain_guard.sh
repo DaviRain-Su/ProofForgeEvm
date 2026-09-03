@@ -62,8 +62,8 @@ run_guard_on_chain() {
     0 "wrong-chain ping is atomic"
 
   local saved_mode="${anvil_mode}"
-  anvil_mode=0
-  if pf_evm_set_storage_word "$addr" 0 1 >/dev/null 2>&1; then
+  # `exit` inside the helper would kill this script; the subshell contains it.
+  if (anvil_mode=0; pf_evm_set_storage_word "$addr" 0 1); then
     echo "FAIL: anvil_setStorageAt helper unexpectedly ran off Anvil mode" >&2
     exit 1
   fi
