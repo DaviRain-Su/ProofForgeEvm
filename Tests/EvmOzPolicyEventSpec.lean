@@ -168,8 +168,8 @@ private def expectOzPolicy : CommandElabM Unit := do
   expectPolicyEvents `Examples.Evm.TwoStepCounter true
   expectPolicyEvents `Examples.Evm.Credits true
   expectPolicyEvents `Examples.Evm.Capped false
-  expectDigest `Examples.Evm.TwoStepCounter "e23c2f54e43c0be1"
-  expectDigest `Examples.Evm.Credits "bb01c32165d42b5d"
+  expectDigest `Examples.Evm.TwoStepCounter "9e20eb417583ce6e"
+  expectDigest `Examples.Evm.Credits "c2ceddddbf415d40"
   expectDigest `Examples.Evm.Capped "b0b0b7244ebb8aed"
 
 elab "#pf_guard_evm_oz_policy_events" : command => expectOzPolicy
