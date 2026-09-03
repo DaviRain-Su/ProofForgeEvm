@@ -6,9 +6,10 @@ import ProofForge.Evm.Commands
 import Examples.Evm.EvmTypedEvents
 
 /-!
-S1a: target-local typed events. Core owns `EventArg`/`EventFrame` (mirroring typed errors, plus
+S1a+S1b: target-local typed events. Core owns `EventArg`/`EventFrame` (mirroring typed errors, plus
 `indexed`); EVM lowers `NativeFx.Call.logTyped` to the existing `LogPlan` (≤4 topics, ≤4 data
-words) and emits ABI JSON without rewriting Transfer/Approval bytes.
+words) and emits ABI JSON without rewriting Transfer/Approval bytes. S1b extracts `Event.emit`
+constructors (with `Event.Indexed` topics) through IR and Anvil receipts.
 -/
 
 namespace Tests.EvmTypedEventSpec
