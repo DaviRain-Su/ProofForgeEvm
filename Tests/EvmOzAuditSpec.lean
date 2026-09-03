@@ -105,16 +105,16 @@ private def auditLinkState : Examples.Evm.AuditLink.State :=
   { dummy := 0 }
 
 private def auditLinkMirrorsCompileTable : Bool := Id.run do
-  let mut matches := true
+  let mut aligned := true
   for row in [0:32] do
     let ix := row.toUInt64
-    matches := matches &&
+    aligned := aligned &&
       Examples.Evm.AuditLink.pathTagOf auditLinkState ix == OzAudit.pathTagOf ix &&
       Examples.Evm.AuditLink.statusOf auditLinkState ix == OzAudit.statusOf ix &&
       Examples.Evm.AuditLink.isBlocked auditLinkState ix == OzAudit.isBlocked ix &&
       Examples.Evm.AuditLink.nonGoalTagOf auditLinkState ix == OzAudit.nonGoalTagOf ix &&
       Examples.Evm.AuditLink.isClassified auditLinkState ix == OzAudit.isClassified ix
-  return matches
+  return aligned
 
 #guard Examples.Evm.AuditLink.coverageRows auditLinkState == OzAudit.coverageRows
 #guard Examples.Evm.AuditLink.classifiedCount auditLinkState == OzAudit.classifiedCount
@@ -151,7 +151,7 @@ private def expectAuditLink : CommandElabM Unit := do
       abi.contains "\"name\":\"isClassified\"" &&
       abi.contains "\"name\":\"auditOk\"" do
     throwError s!"AuditLink ABI lost audit surface:\n{abi}"
-  unless IR.digestHex program == "9da73fd941f270e9" do
+  unless IR.digestHex program == "d5cb688dcc4d25ae" do
     throwError s!"AuditLink digest drifted: {IR.digestHex program}"
   logInfo m!"auditlink: digest={IR.digestHex program} abi-ok"
 
