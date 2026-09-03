@@ -1,3 +1,6 @@
+import ProofForge.Core.Ops
+import ProofForge.Evm.LogError
+
 namespace ProofForge.Evm.NativeFx
 
 /-- Transitive effects for one native ETH / LOG / revert / receive call. -/
@@ -17,6 +20,8 @@ inductive Call (V : Type) where
   | log (name : String) (amount : V)
   | logTransfer256 (f0 f1 f2 t0 t1 t2 a0 a1 a2 a3 : V)
   | logApproval256 (o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 : V)
+  /-- Typed event frame lowered to one `LogPlan` (topic0 + ≤3 indexed topics, ≤4 data words). -/
+  | logTyped (frame : Core.Ops.EventFrame V)
   | revertInsufficient (h0 h1 h2 h3 w0 w1 w2 w3 : V)
   | revertUnauthorized (w0 w1 w2 : V)
   | revertZeroAddress
@@ -43,6 +48,7 @@ def Call.mapValues (mapValue : α → β) : Call α → Call β
       .logApproval256 (mapValue o0) (mapValue o1) (mapValue o2)
         (mapValue s0) (mapValue s1) (mapValue s2)
         (mapValue a0) (mapValue a1) (mapValue a2) (mapValue a3)
+  | .logTyped frame => .logTyped (frame.mapValues mapValue)
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       .revertInsufficient (mapValue h0) (mapValue h1) (mapValue h2) (mapValue h3)
         (mapValue w0) (mapValue w1) (mapValue w2) (mapValue w3)
@@ -71,6 +77,7 @@ def Call.mapValuesM [Monad m] (mapValue : α → m β) : Call α → m (Call β)
       return .logApproval256 (← mapValue o0) (← mapValue o1) (← mapValue o2)
         (← mapValue s0) (← mapValue s1) (← mapValue s2)
         (← mapValue a0) (← mapValue a1) (← mapValue a2) (← mapValue a3)
+  | .logTyped frame => return .logTyped (← frame.mapValuesM mapValue)
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       return .revertInsufficient (← mapValue h0) (← mapValue h1) (← mapValue h2)
         (← mapValue h3) (← mapValue w0) (← mapValue w1) (← mapValue w2) (← mapValue w3)
@@ -90,6 +97,7 @@ def Call.values : Call V → Array V
       #[f0, f1, f2, t0, t1, t2, a0, a1, a2, a3]
   | .logApproval256 o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 =>
       #[o0, o1, o2, s0, s1, s2, a0, a1, a2, a3]
+  | .logTyped frame => frame.values
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       #[h0, h1, h2, h3, w0, w1, w2, w3]
   | .revertUnauthorized w0 w1 w2 => #[w0, w1, w2]
@@ -104,13 +112,22 @@ def Call.allValues (predicate : V → Bool) (call : Call V) : Bool :=
 def Call.effects : Call V → EffectSummary
   | .deposit _ | .deposit256 .. => { payable := true }
   | .sendEth .. | .sendEth256 .. => { externalCall := true }
-  | .log .. | .logTransfer256 .. | .logApproval256 .. => { logs := true }
+  | .log .. | .logTransfer256 .. | .logApproval256 .. | .logTyped .. => { logs := true }
   | .revertInsufficient .. | .revertUnauthorized .. | .revertZeroAddress | .revertPaused
   | .revertCapExceeded => {}
   | .receive => { payable := true, receive := true }
 
-def Call.wellFormed (valueWellFormed : V → Bool) (call : Call V) : Bool :=
-  call.allValues valueWellFormed
+/-- Fail-closed shape gate for a typed event: generic frame invariant plus the EVM `LogPlan`
+bounds (topic0 plus at most three indexed topics; at most four data words). -/
+def Call.logTypedWellFormed (valueWellFormed : V → Bool)
+    (frame : Core.Ops.EventFrame V) : Bool :=
+  frame.wellFormed valueWellFormed &&
+    frame.indexedCount + 1 ≤ LogError.maxTopics &&
+    frame.dataCount ≤ LogError.maxLogDataWords
+
+def Call.wellFormed (valueWellFormed : V → Bool) : Call V → Bool
+  | .logTyped frame => Call.logTypedWellFormed valueWellFormed frame
+  | call => call.allValues valueWellFormed
 
 def Call.isDeposit : Call V → Bool
   | .deposit _ | .deposit256 .. => true
@@ -140,10 +157,13 @@ def Call.emitsCapExceeded : Call V → Bool
   | .revertCapExceeded => true
   | _ => false
 
+/-- Closed uint64 / Transfer256 / Approval256 names keep their existing ABI spelling. Typed
+frames are collected separately so `eventAbi` cannot rewrite Transfer/Approval JSON. -/
 def Call.logName : Call V → Option String
   | .log name _ => some name
   | .logTransfer256 .. => some "Transfer256"
   | .logApproval256 .. => some "Approval256"
+  | .logTyped .. => none
   | _ => none
 
 /-- Preserve the closed-union digest spelling (`edep` / `elog3.Transfer` / `err.ZeroAddress`). -/
@@ -160,6 +180,11 @@ def Call.canonical (renderValue : V → String) : Call V → String
       s!"elog3.Transfer({renderValue f0},{renderValue f1},{renderValue f2},{renderValue t0},{renderValue t1},{renderValue t2},{renderValue a0},{renderValue a1},{renderValue a2},{renderValue a3})"
   | .logApproval256 o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 =>
       s!"elog3.Approval({renderValue o0},{renderValue o1},{renderValue o2},{renderValue s0},{renderValue s1},{renderValue s2},{renderValue a0},{renderValue a1},{renderValue a2},{renderValue a3})"
+  | .logTyped frame =>
+      let args := frame.args.toList.map fun arg =>
+        let tag := if arg.indexed then "i" else "d"
+        s!"{arg.name}:{repr arg.type}:{tag}({String.intercalate "," (arg.parts.map renderValue).toList})"
+      s!"elogT.{frame.constructor}({String.intercalate "," args})"
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       s!"err.Insufficient({renderValue h0},{renderValue h1},{renderValue h2},{renderValue h3},{renderValue w0},{renderValue w1},{renderValue w2},{renderValue w3})"
   | .revertUnauthorized w0 w1 w2 =>

@@ -225,6 +225,8 @@ partial def toLegacyOp : Op → Except String ProofForge.Ops.Op
       throw "extract/unsupported: legacy adapter cannot represent LOG3 Transfer"
   | .ext (.evm (.component (.nativeFx (.logApproval256 ..)))) =>
       throw "extract/unsupported: legacy adapter cannot represent LOG3 Approval"
+  | .ext (.evm (.component (.nativeFx (.logTyped ..)))) =>
+      throw "extract/unsupported: legacy adapter cannot represent typed events"
   | .ext (.evm (.component (.nativeFx (.revertInsufficient ..)))) =>
       throw "extract/unsupported: legacy adapter cannot represent parameterized Insufficient"
   | .ext (.evm (.component (.nativeFx (.revertUnauthorized ..)))) =>

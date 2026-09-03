@@ -2,6 +2,8 @@ import ProofForge.Evm.NativeFx
 import ProofForge.Evm.LogError.Emit
 import ProofForge.Evm.Payable.Emit
 import ProofForge.Evm.Ops
+import ProofForge.Evm.Codec
+import ProofForge.Core.Ops
 import ProofForge.Crypto.Keccak
 
 namespace ProofForge.Evm.NativeFx.Emit
@@ -136,6 +138,79 @@ private def emitLogTransfer256 (context : Context σ)
     logTxt
   return (txt, z0, s12)
 
+/-- ABI type list for one typed event. Indexed is not part of the keccak signature. -/
+private def typedEventAbiTypes (frame : Core.Ops.EventFrame Ops.Val) :
+    Except String (Array String) := do
+  unless NativeFx.Call.logTypedWellFormed (·.wellFormed Ops.ValKind.arity) frame do
+    throw "extract/unsupported: malformed typed event frame"
+  let mut types := #[]
+  for arg in frame.args do
+    unless arg.parts.size == Codec.limbCount arg.type do
+      throw "extract/unsupported: typed event field limb count"
+    types := types.push (← Codec.abiType arg.type)
+  return types
+
+/-- Pack one event field into a single ABI word. Addresses and fixed bytes go through the
+shared memory helpers; wide integers use the little-endian `packU256` spelling. -/
+private def packEventWord (context : Context σ) (arg : Core.Ops.EventArg Ops.Val) (st : σ) :
+    Except String (String × String × σ) := do
+  let indent := context.indent
+  let mut prelude := ""
+  let mut parts : Array String := #[]
+  let mut st := st
+  for part in arg.parts do
+    let (pre, expr, st') ← context.materialize part st
+    prelude := prelude ++ pre
+    parts := parts.push expr
+    st := st'
+  if parts.isEmpty then
+    throw "extract/unsupported: typed event field has no limbs"
+  if Codec.isAddressCarrier arg.type then
+    let (word, st') := context.fresh st
+    let txt := prelude ++
+      indent ++ "mstore(0, 0)" ++ nl ++
+      packAddrMstore8 indent (parts[0]!) ((parts[1]?).getD "0") ((parts[2]?).getD "0") ++
+      indent ++ "let " ++ word ++ " := mload(0)" ++ nl
+    return (txt, word, st')
+  else if Codec.isFixedBytesCarrier arg.type then
+    let (word, st') := context.fresh st
+    let txt := prelude ++
+      indent ++ "mstore(0, 0)" ++ nl ++
+      indent ++ "pf_store_fixed_bytes(0, " ++ (parts[0]?).getD "0" ++ ", " ++
+        (parts[1]?).getD "0" ++ ", " ++ (parts[2]?).getD "0" ++ ", " ++
+        (parts[3]?).getD "0" ++ ", " ++ toString arg.type.byteWidth ++ ")" ++ nl ++
+      indent ++ "let " ++ word ++ " := mload(0)" ++ nl
+    return (txt, word, st')
+  else if Codec.isWideIntegerCarrier arg.type then
+    let (word, st') := context.fresh st
+    let packed := packU256 (parts[0]!) ((parts[1]?).getD "0") ((parts[2]?).getD "0")
+      ((parts[3]?).getD "0")
+    let txt := prelude ++ indent ++ "let " ++ word ++ " := " ++ packed ++ nl
+    return (txt, word, st')
+  else
+    return (prelude, parts[0]!, st)
+
+private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops.Val) (st : σ) :
+    Except String (String × String × σ) := do
+  let abiTypes ← typedEventAbiTypes frame
+  let mut prelude := ""
+  let mut topics : Array String :=
+    #["0x" ++ Keccak.keccak256HexOfString (Keccak.signature frame.constructor abiTypes)]
+  let mut data : Array String := #[]
+  let mut st := st
+  let mut last : String := "0"
+  for arg in frame.args do
+    let (pre, word, st') ← packEventWord context arg st
+    prelude := prelude ++ pre
+    st := st'
+    last := word
+    if arg.indexed then
+      topics := topics.push word
+    else
+      data := data.push word
+  let logTxt ← LogError.Emit.emitLog context.logError { data, topics }
+  return (prelude ++ logTxt, last, st)
+
 private def emitLogApproval256 (context : Context σ)
     (o0 o1 o2 sp0 sp1 sp2 a0 a1 a2 a3 : Ops.Val) (st : σ) :
     Except String (String × String × σ) := do
@@ -235,6 +310,7 @@ def emitCall (context : Context σ) (call : NativeFx.Call Ops.Val) (st : σ) :
       emitLogTransfer256 context f0 f1 f2 t0 t1 t2 a0 a1 a2 a3 st
   | .logApproval256 o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 =>
       emitLogApproval256 context o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 st
+  | .logTyped frame => emitLogTyped context frame st
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       emitRevertInsufficient context h0 h1 h2 h3 w0 w1 w2 w3 st
   | .revertUnauthorized w0 w1 w2 => emitRevertUnauthorized context w0 w1 w2 st

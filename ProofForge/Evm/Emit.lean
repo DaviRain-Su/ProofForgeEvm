@@ -1611,6 +1611,37 @@ private def eventAbi (name : String) : String :=
     "{\"type\":\"event\",\"name\":\"" ++ escapeJson name ++
       "\",\"inputs\":[{\"name\":\"amt\",\"type\":\"uint64\",\"indexed\":false}],\"anonymous\":false}"
 
+/-- Validate one typed event frame. Indexed fields occupy LOG topics after topic0; each field
+is one ABI word. Existing Transfer256/Approval256 JSON is not rewritten here. -/
+private def typedEventAbiTypes (frame : Core.Ops.EventFrame Ops.Val) :
+    Except String (Array String) := do
+  unless NativeFx.Call.logTypedWellFormed (·.wellFormed Ops.ValKind.arity) frame do
+    throw "extract/unsupported: malformed typed event frame"
+  let mut types := #[]
+  for arg in frame.args do
+    unless arg.parts.size == Codec.limbCount arg.type do
+      throw "extract/unsupported: typed event field limb count"
+    types := types.push (← Codec.abiType arg.type)
+  return types
+
+private def typedEventIdentity (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
+  let types ← typedEventAbiTypes frame
+  let mut parts := #[]
+  for i in [0:frame.args.size] do
+    let suffix := if frame.args[i]!.indexed then " indexed" else ""
+    parts := parts.push (types[i]! ++ suffix)
+  return frame.constructor ++ "(" ++ String.intercalate "," parts.toList ++ ")"
+
+private def eventAbiTyped (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
+  let types ← typedEventAbiTypes frame
+  let mut inputs := #[]
+  for i in [0:frame.args.size] do
+    let indexed := if frame.args[i]!.indexed then "true" else "false"
+    inputs := inputs.push ("{\"name\":\"" ++ escapeJson frame.args[i]!.name ++
+      "\",\"type\":\"" ++ types[i]! ++ "\",\"indexed\":" ++ indexed ++ "}")
+  return "{\"type\":\"event\",\"name\":\"" ++ escapeJson frame.constructor ++
+    "\",\"inputs\":[" ++ String.intercalate "," inputs.toList ++ "],\"anonymous\":false}"
+
 private def errorAbiInsufficient : String :=
   "{\"type\":\"error\",\"name\":\"Insufficient\",\"inputs\":[" ++
     "{\"name\":\"have\",\"type\":\"uint256\"}," ++
@@ -1690,6 +1721,19 @@ private partial def collectTypedErrorFrames (ops : Array IR.Op) :
     | .forBody _ body => acc ++ collectTypedErrorFrames body
     | _ => acc
 
+/-- Collect typed event frames through the same structured control-flow tree as emission. -/
+private partial def collectTypedEventFrames (ops : Array IR.Op) :
+    Array (Core.Ops.EventFrame Ops.Val) :=
+  ops.foldl (init := #[]) fun acc op =>
+    let acc :=
+      match op with
+      | .component (.nativeFx (.logTyped frame)) => acc.push frame
+      | _ => acc
+    match op with
+    | .ite _ _ _ t f => acc ++ collectTypedEventFrames t ++ collectTypedEventFrames f
+    | .forBody _ body => acc ++ collectTypedEventFrames body
+    | _ => acc
+
 private partial def hasErrorLeaf (pred : IR.Op → Bool) (ops : Array IR.Op) : Bool :=
   ops.any fun op =>
     pred op ||
@@ -1718,6 +1762,14 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
       unless typedErrorIds.contains identity do
         typedErrorIds := typedErrorIds.push identity
         typedErrors := typedErrors.push frame
+  let mut typedEvents := #[]
+  let mut typedEventIds := #[]
+  for method in p.entries do
+    for frame in collectTypedEventFrames method.ops do
+      let identity ← typedEventIdentity frame
+      unless typedEventIds.contains identity do
+        typedEventIds := typedEventIds.push identity
+        typedEvents := typedEvents.push frame
   let needIns := p.entries.any (fun m =>
     hasErrorLeaf (fun
       | .component call => call.emitsInsufficient
@@ -1749,6 +1801,7 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
       entryItems := entryItems.push (← entryAbi method)
   let items :=
     #[← ctorAbi p] ++ evs.map eventAbi ++
+      (← typedEvents.mapM eventAbiTyped) ++
       (if needIns then #[errorAbiInsufficient] else #[]) ++
       (if needUnauth then #[errorAbiUnauthorized] else #[]) ++
       (if needZero then #[errorAbiZeroAddress] else #[]) ++
