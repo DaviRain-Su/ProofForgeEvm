@@ -24,6 +24,7 @@ See `templates/evm-counter/MyContract/Counter.lean`, `Examples/Evm/TipJar.lean`,
 - Checked math / bit ops / bounded loops / narrow + wide ABI
 - Ownable / roles / pause / reentrancy helpers
 - Closed ETH + ERC-20/WETH calls
+- Typed OpenCall to a dynamic `Address` with a static ABI constructor (see sharp edge 5)
 - BoundedString returns as ABI `string` (see `Erc20Meta.name` / `symbol`)
 - Kernel proofs about the Lean `def` (not about bytecode)
 
@@ -33,8 +34,9 @@ See `templates/evm-counter/MyContract/Counter.lean`, `Examples/Evm/TipJar.lean`,
 2. **Fake guards** — pure-effect methods may need a trivial branch so Extract treats the method as effectful.
 3. **Constructor effects** — deployment-time map writes / logs / value transfers are tightly constrained.
 4. **Events** — closed LOG helpers (`Event.tipped` / `Event.transfer`) plus typed constructors via `Event.emit` and `Event.Indexed` (S1b; see `Examples.Evm.EvmTypedEvents`). `Collectible` / `Badge` emit canonical ERC-721 `Transfer` / `Approval` / `ApprovalForAll` through `Erc721.Log`. Dynamic/unbounded event payloads are still refused.
-5. **NFT modules** — bounded cores with the three canonical ERC-721 events on Collectible/Badge, not “ship ERC-721” (no ERC-165, safe callbacks, or metadata URI).
-6. **`Examples.Evm.Token` metadata** — `name` / `symbol` are packed `bytes32` (Anvil gates use that shape). Prefer `Erc20Meta` when external tools expect ERC-20 `string` metadata.
+5. **Typed external CALL** — `OpenCall.call` / `callSuccess` / `callValue` / `staticWord` / `staticWords2` take a typed `Address` and an inductive constructor (name = ABI function, fields = args). The compiler assembles calldata and applies one `CallResult` policy. This is not raw CALL: no selector string, bytes buffer, `delegatecall`, or CREATE2. Reentrancy is visible to the callee; OpenCall does not insert a guard (see `Examples.Evm.EvmOpenCall`).
+6. **NFT modules** — bounded cores with the three canonical ERC-721 events on Collectible/Badge, not “ship ERC-721” (no ERC-165, safe callbacks, or metadata URI).
+7. **`Examples.Evm.Token` metadata** — `name` / `symbol` are packed `bytes32` (Anvil gates use that shape). Prefer `Erc20Meta` when external tools expect ERC-20 `string` metadata.
 
 These are product debts tracked in [roadmap.md](roadmap.md), not undocumented folklore.
 

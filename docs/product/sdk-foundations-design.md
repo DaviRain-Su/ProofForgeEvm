@@ -183,6 +183,20 @@ application-visible risk; `OpenCall` does not silently add a guard.
 primitive or migrate it only with byte-equivalence tests; it must not create a third result-policy
 interpreter.
 
+**Implementation note (S3):** `Evm.OpenCall` is a `Component` sibling of `ClosedCall`. Source
+helpers `Sdk.OpenCall.call` / `callSuccess` / `callValue` / `staticWord` / `staticWords2` erase to
+Runtime stubs; the extractor rebuilds a `Plan` from the payload constructor (name + named closed
+scalars, ≤8 words) plus a typed `Addr20` target and optional `UInt256` CALL value. Calldata is
+assembled in `OpenCall.Emit`; every result gate is `CallResult.Emit.emitBound` (no third
+interpreter). `NativeFx.sendEth` stays the zero-calldata primitive. Reentrancy is documented as
+application-visible; OpenCall does not add a guard. `delegatecall`, CREATE2, proxy dispatch, raw
+calldata, and unbounded argument lists remain refused.
+
+Exit evidence on this slice: `Tests/EvmOpenCallSpec.lean` (plan/golden/extract/fail-closed + existing
+Token/Vault/TipJar digest pins) and `runtime-tests/evm/anvil_opencall.sh` (parameter- and
+state-supplied targets, two-word return, CALL value, EOA rejection, malformed returndata, CALL
+before `sstore`).
+
 ### S4 — OZ adoption and coverage / OpenZeppelin 对齐
 
 “OZ adoption” means compatible signatures, indexed flags, ABI metadata, and observable behavior

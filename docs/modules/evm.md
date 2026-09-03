@@ -10,7 +10,7 @@
 | 模块 | 拥有 | 不拥有 |
 |---|---|---|
 | `Evm.Sdk` | 合同侧 `Address` / `UInt256`、静态 storage layout、typed map、checked fungible ledger、explicit reentrancy policy、bounded persistent vector/bitmap/ring/enumerable-set policy、context / immutable / event / revert / closed-call facade | 业务协议、运行时 layout 对象 |
-| `Evm.Runtime` | 环境 opcode、`Addr20` / `UInt256`、LOG、hashed Map、封闭 ERC-20 | 任意 CALL |
+| `Evm.Runtime` | 环境 opcode、`Addr20` / `UInt256`、LOG、hashed Map、封闭 ERC-20、typed OpenCall stub | 任意 bytes CALL |
 | `Crypto.Keccak` | Ethereum Keccak-256、ABI selector（公共库） | 链上 opcode |
 | `Evm.IR` | EVM-only `Op`、typed storage slot/Vector stride、constructor、selector、digest | 非 EVM 物理布局 |
 | `Evm.Component` | 稳定 Query/Call 桥、effects/value 遍历、component-owned emitter | 业务协议语义、任意 CALL |
@@ -29,11 +29,11 @@ source semantic helper
 
 因此 generic `Evm.Ops.ValKind/OpExt`、`Evm.IR.Op`、CFG payload traversal 和主 `Evm.Emit`
 各自只保留一个 `.component` case。hashed-map 读写、packed 256-bit 比较/算术、以及封闭 ERC-20 / WETH / Uniswap / permit
-已经迁进 `Evm.HashedMap` / `Evm.WideWord` / `Evm.ClosedCall` / `Evm.NativeFx`。合同默认只打开
+已经迁进 `Evm.HashedMap` / `Evm.WideWord` / `Evm.ClosedCall` / `Evm.OpenCall` / `Evm.NativeFx`。合同默认只打开
 `Evm.Sdk`：`Storage.Layout` 用编译期 cursor 分配互不重叠的 map namespace；
 `AddressMap256` / `AddressPairMap256` 提供 `get` / `put` / `containsAtLeast` /
 `nextAdd` / `nextSub` / `revertInsufficient`；`Context`、`Immutable`、`Event`、`Revert`、
-`ERC20`、`WETH`、`UniswapV2`、`Permit` 隔离 runtime 名字。layout descriptor 只在
+`OpenCall`、`ERC20`、`WETH`、`UniswapV2`、`Permit` 隔离 runtime 名字。layout descriptor 只在
 抽取期存在，不进 EVM storage，也没有魔数泄漏进合同源代码。
 
 `Sdk.Fungible.Balances` 把显式 `AddressMap256` handle 组合成 O(1) checked balance movement；
