@@ -18,6 +18,7 @@ open Lean Elab Command
 #guard SafeErc20.transfer ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨9, 0, 0, 0⟩ == 9
 #guard SafeErc20.approve ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨9, 0, 0, 0⟩ == 9
 #guard SafeErc20.transferFrom ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 8, 9⟩ ⟨9, 0, 0, 0⟩ == 9
+#guard SafeErc20.forceApprove ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨9, 0, 0, 0⟩ == 9
 #guard SafeErc20.allowanceOfSelf ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ == UInt256.zero
 #guard SafeErc20.nextIncrease ⟨9, 0, 0, 0⟩ ⟨1, 0, 0, 0⟩ == ⟨9, 0, 0, 0⟩
 #guard SafeErc20.nextDecrease ⟨9, 0, 0, 0⟩ ⟨1, 0, 0, 0⟩ == ⟨9, 0, 0, 0⟩
@@ -25,6 +26,11 @@ open Lean Elab Command
 example (token destination : Address) (amount : UInt256) :
     SafeErc20.transfer token destination amount = ERC20.transfer token destination amount :=
   SafeErc20.transfer_eq token destination amount
+
+example (token spender : Address) (amount : UInt256) :
+    SafeErc20.forceApprove token spender amount
+      = (ERC20.approve token spender UInt256.zero ||| ERC20.approve token spender amount) :=
+  SafeErc20.forceApprove_eq token spender amount
 
 private def expectSafePay : CommandElabM Unit := do
   let env ← getEnv
@@ -51,8 +57,8 @@ private def expectSafePay : CommandElabM Unit := do
       throwError s!"SafePay ABI lost {name}:\n{abi}"
   unless !abi.contains "calldata" do
     throwError s!"SafePay ABI unexpectedly mentions calldata:\n{abi}"
-  unless Registry.digestOf "SafePay" == some "cf69a0c64840876c" do
-    throwError "SafePay digest drifted"
+  unless IR.digestHex program == "3971d7ce6eb18141" do
+    throwError s!"SafePay digest drifted: {IR.digestHex program}"
   unless Registry.digestOf "Vault" == some "bb2f93cb28d7501" do
     throwError "Vault digest drifted while adding SafePay"
   logInfo m!"safepay: digest={IR.digestHex program}"

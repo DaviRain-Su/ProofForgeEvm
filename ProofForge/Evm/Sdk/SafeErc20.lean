@@ -60,14 +60,10 @@ a failed CALL cannot be caught and retried.
 @[pf_inline] def decreaseAllowance (token spender : Address) (subtracted : UInt256) : UInt64 :=
   ERC20.approve token spender (nextDecrease (allowanceOfSelf token spender) subtracted)
 
-/-- USDT-safe approve: if the current allowance and the new value are both nonzero, write zero
-first, then `amount`. Precondition: `canSend spender`. -/
+/-- USDT-safe approve: write zero, then `amount`. Always two closed CALLs so a nonzero-to-nonzero
+token cannot trap a single `approve`. Precondition: `canSend spender`. -/
 @[pf_inline] def forceApprove (token spender : Address) (amount : UInt256) : UInt64 :=
-  let current := allowanceOfSelf token spender
-  if UInt256.eq current UInt256.zero || UInt256.eq amount UInt256.zero then
-    ERC20.approve token spender amount
-  else
-    ERC20.approve token spender UInt256.zero ||| ERC20.approve token spender amount
+  ERC20.approve token spender UInt256.zero ||| ERC20.approve token spender amount
 
 section Proofs
 
@@ -83,6 +79,10 @@ theorem transferFrom_eq (token owner destination : Address) (amount : UInt256) :
 
 theorem allowanceOfSelf_eq (token spender : Address) :
     allowanceOfSelf token spender = ERC20.allowance token Context.self spender := rfl
+
+theorem forceApprove_eq (token spender : Address) (amount : UInt256) :
+    forceApprove token spender amount
+      = (ERC20.approve token spender UInt256.zero ||| ERC20.approve token spender amount) := rfl
 
 end Proofs
 

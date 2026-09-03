@@ -84,7 +84,7 @@ def drop (s : State) (token spender : Address) (subtracted : UInt256) :
   else
     .error .overflow
 
-/-- USDT-safe approve: zero then `amt` when both the current allowance and `amt` are nonzero. -/
+/-- USDT-safe approve: zero then `amt`. -/
 @[pf_entry]
 def force (s : State) (token spender : Address) (amt : UInt256) :
     Except Error (State × UInt64) :=
