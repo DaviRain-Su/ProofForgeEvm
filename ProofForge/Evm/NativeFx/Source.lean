@@ -41,6 +41,9 @@ main-emitter case is introduced.
 @[pf_inline] def logApproval256 (owner spender : Addr20) (amt : UInt256) : UInt64 :=
   evmLogApproval256 owner spender amt
 
+@[pf_inline] def logTyped {α : Type} (event : α) : UInt64 :=
+  evmLogTyped event
+
 @[pf_inline] def revertInsufficient (held want : UInt256) : UInt64 :=
   evmRevertInsufficient held want
 

@@ -35,6 +35,7 @@
   失败 revert。重入不进参考语义。
 - `evmLogTipped` / `evmLogIncremented` / `evmLogTransfer` / `evmLogApproval` — LOG1。
 - `evmLogTransfer256` / `evmLogApproval256` — LOG3，indexed address + `uint256` data。
+- `evmLogTyped` — typed event constructor; extractor keeps name / types / `Indexed` flags.
 - `evmRevertInsufficient` / `evmRevertUnauthorized` / `evmRevertZeroAddress` /
   `evmRevertPaused` / `evmRevertCapExceeded` — 命名错误。
 - `evmReceive` — 无 calldata 的 payable `receive()`。

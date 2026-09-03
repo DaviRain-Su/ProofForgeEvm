@@ -30,7 +30,7 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | Ordinary `def` / `structure` / `Except` entries with `@[pf_entry]` | Supported |
 | Profile refuse IO / partial / sorry / extern / unbounded recursion | Supported |
 | Checked arithmetic, `ite`, bounded `for`, bit ops, narrow ABI, tuples | Supported |
-| Env / Addr20 / payable / closed ETH send / typed errors | Supported |
+| Env / Addr20 / payable / closed ETH send / typed errors / typed events (`Event.emit`) | Supported |
 | Hashed maps + closed ERC-20 / WETH / UniswapV2 / Permit calls | Supported |
 | CallResult S2 (`exactWords n`, `strictBool`, `magicBytes4`, typed `words`) | **Plan + Yul emit** (≤4 ABI words); ClosedCall still uses the original three policies. No OpenCall consumer yet (S3). Default fail mode is `revert(0, 0)` |
 | Effect ergonomics without `dummy` / `hold` / fake guards | **Debt** (see roadmap) |
@@ -42,7 +42,7 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 |---|---|---|
 | `Examples.Evm.Erc20Meta` | ERC-20-shaped ABI: `string` name/symbol, standard `allowance` / `transfer` / `approve` selectors | “Audited EIP-20” / mainnet token factory |
 | Fungible + `Examples.Evm.Token` | ERC-20-style ledger / allowance policy; **`name`/`symbol` are packed `bytes32`**, and several views use `*Of` names | “Full ERC-20” / drop-in for MetaMask token import without checking ABI |
-| `Erc721` / `Erc1155` | Bounded ownership/balance **core** | Full ERC-721/1155 (events, safe callbacks, metadata) |
+| `Erc721` / `Erc1155` | Bounded ownership/balance **core**; typed events are available via `Event.emit` for app-owned logs | Full ERC-721/1155 (safe callbacks, metadata, complete event surface) |
 | Roles / Pausable / Reentrancy | Explicit policy helpers | Drop-in OpenZeppelin clone |
 
 ## Networks / deploy
