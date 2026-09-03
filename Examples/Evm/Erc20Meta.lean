@@ -1,4 +1,5 @@
-import ProofForge
+import ProofForge.Evm.Sdk
+import ProofForge.Core.Value
 
 namespace Examples.Evm.Erc20Meta
 open ProofForge.Evm.Sdk
