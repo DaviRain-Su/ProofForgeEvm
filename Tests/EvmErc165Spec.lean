@@ -24,7 +24,7 @@ open Lean Elab Command
 #guard Erc165.supportsToken Erc165.erc165 Erc165.erc721
 #guard Erc165.supportsToken Erc165.erc721 Erc165.erc721
 
-private partial def valueContainsBytes4Equality : IR.Val → Bool
+private partial def valueContainsBytes4Equality : ProofForge.Extract.IR.Val → Bool
   | .arg _ | .local _ | .lit _ | .loopIx => false
   | .field base _ | .bitNot base => valueContainsBytes4Equality base
   | .bitAnd lhs rhs | .bitOr lhs rhs | .bitXor lhs rhs
