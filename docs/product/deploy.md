@@ -28,7 +28,7 @@ Typical local pattern (after a green `pf build`):
 anvil --chain-id 31338
 
 # terminal B — same entry point as a configured Base-style RPC
-scripts/deploy_evm.sh build/evm/Counter.bin -- constructor(uint64) 7
+scripts/deploy_evm.sh build/evm/Counter.bin -- 'constructor(uint64)' 7
 ```
 
 `scripts/deploy_evm.sh` runs `cast send --create`, then prints `chain-id`, `address`, `tx`, and `digest: sha256:…`. It reads the observed chain id and **refuses to sign** on mismatch. Private keys stay in the environment (`PF_EVM_PRIVATE_KEY`; default Anvil account 0) and are never written to generated config.

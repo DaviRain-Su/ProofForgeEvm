@@ -79,9 +79,9 @@ jobs:
           test "$ready" = 1
           export PF_EVM_RPC_URL=http://127.0.0.1:8545
           export PF_EVM_CHAIN_ID=84532
-          ./scripts/deploy_evm.sh build/evm/EvmChainGuard.bin -- constructor(uint64) 84532
+          ./scripts/deploy_evm.sh build/evm/EvmChainGuard.bin -- 'constructor(uint64)' 84532
           if PF_EVM_CHAIN_ID=8453 ./scripts/deploy_evm.sh build/evm/EvmChainGuard.bin \
-              -- constructor(uint64) 84532; then
+              -- 'constructor(uint64)' 84532; then
             echo "FAIL: chain-id mismatch unexpectedly signed" >&2
             exit 1
           fi

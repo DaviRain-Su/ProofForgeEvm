@@ -11,7 +11,7 @@
 #
 # Usage:
 #   scripts/deploy_evm.sh path/to/Name.bin
-#   scripts/deploy_evm.sh path/to/Name.bin -- constructor(uint64) 84532
+#   scripts/deploy_evm.sh path/to/Name.bin -- 'constructor(uint64)' 84532
 #
 # Prints chain-id, address, tx hash, and sha256 of the artifact. Refuses to sign
 # when the observed chain id differs from PF_EVM_CHAIN_ID.
