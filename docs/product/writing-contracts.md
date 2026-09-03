@@ -39,7 +39,7 @@ See `templates/evm-counter/MyContract/Counter.lean`, `Examples/Evm/TipJar.lean`,
 6. **NFT modules** — bounded cores with the three canonical ERC-721 events on Collectible/Badge and the two canonical single-id ERC-1155 events on MultiToken/CraftToken. These advertise IERC165 only; incomplete ERC-721/1155 method surfaces must not claim the standard token ids. Not “ship ERC-721/1155” (no safe callbacks, metadata URI, or `TransferBatch`).
 7. **`Examples.Evm.Token` metadata** — `name` / `symbol` are packed `bytes32` (Anvil gates use that shape). Prefer `Erc20Meta` when external tools expect ERC-20 `string` metadata.
 8. **ERC-20 consumers** — `SafeErc20` / `SafePay` wrap the closed token CALLs. They are not a raw-calldata escape hatch and do not catch-and-retry a failed CALL. `forceApprove` always emits `approve(0)` then `approve(amount)`.
-9. **ERC-2981** — `RoyaltyArt` is a static receiver + basis-point quote. `tokenId` is ignored; there is no per-token royalty map or metadata URI.
+9. **ERC-2981** — `RoyaltyArt` is a static receiver + basis-point quote over the full UInt256 sale-price range. `tokenId` is ignored; a zero receiver disables royalties, and there is no per-token royalty map or metadata URI.
 
 These are product debts tracked in [roadmap.md](roadmap.md), not undocumented folklore.
 

@@ -66,6 +66,18 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: grant to zero unexpectedly succeeded" >&2
   exit 1
 fi
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'force(address,address,uint256)' "$token" "$zero" 1 >/dev/null 2>&1; then
+  echo "FAIL: forceApprove to zero unexpectedly succeeded" >&2
+  exit 1
+fi
+
+# CALL success plus empty returndata from a non-contract must still fail closed.
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'pull(address,address,uint256)' "$zero" "$recipient" 1 >/dev/null 2>&1; then
+  echo "FAIL: zero token address unexpectedly succeeded" >&2
+  exit 1
+fi
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'grant(address,address,uint256)' "$token" "$recipient" 40 >/dev/null
@@ -149,5 +161,16 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
 fi
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'held(address)(uint256)' "$token")" \
   850 "false-returning transfer rolls back"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$token" 'setReturnFalse(bool)' false >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$token" 'setReturnTwo(bool)' true >/dev/null
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'pull(address,address,uint256)' "$token" "$recipient" 10 >/dev/null 2>&1; then
+  echo "FAIL: noncanonical true token transfer unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'held(address)(uint256)' "$token")" \
+  850 "noncanonical-return transfer rolls back"
 
-echo "evm-anvil-safepay: ok (zero-address/increase/decrease/forceApprove/fail-closed return)"
+echo "evm-anvil-safepay: ok (zero-address/increase/decrease/forceApprove/fail-closed returns)"

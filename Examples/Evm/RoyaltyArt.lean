@@ -1,9 +1,9 @@
 import ProofForge.Evm.Sdk
 
 /-!
-Static ERC-2981 consumer. The constructor immutable is the royalty receiver. The fee is a
-compile-time 2.5% (250 / 10000). `tokenId` is ignored: there is no per-token royalty map,
-metadata URI, or receiver callback.
+Static ERC-2981 consumer. The constructor immutable is the royalty receiver; zero disables
+royalties and returns `(address(0), 0)`. The fee is a compile-time 2.5% (250 / 10000).
+`tokenId` is ignored: there is no per-token royalty map, metadata URI, or receiver callback.
 
 IERC2981's required surface is exactly `royaltyInfo`, so this profile advertises IERC165 and
 IERC2981. It does not advertise IERC721.
@@ -46,7 +46,8 @@ def receiver (_s : State) : Address :=
 def feeNumeratorOf (_s : State) : UInt256 :=
   feeNumerator
 
-/-- EIP-2981 `royaltyInfo(uint256,uint256) → (address,uint256)`. The token id is unused. -/
+/-- EIP-2981 `royaltyInfo(uint256,uint256) → (address,uint256)`. The token id is unused, and a
+zero immutable receiver returns the no-royalty tuple. -/
 @[pf_entry]
 def royaltyInfo (_s : State) (_tokenId salePrice : UInt256) : Address × UInt256 :=
   Erc2981.royaltyInfo Immutable.address feeNumerator salePrice

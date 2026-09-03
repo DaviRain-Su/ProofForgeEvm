@@ -47,10 +47,30 @@ pf_evm_require_equal "$recv" "$receiver" "royalty receiver"
 pf_evm_require_uint "$amt" 250 "2.5% of 10000"
 
 quote2="$("$cast" call --rpc-url "$rpc" "$addr" \
-  'royaltyInfo(uint256,uint256)(address,uint256)' 99 20000)"
+  'royaltyInfo(uint256,uint256)(address,uint256)' 99 10000)"
 recv2="$(printf '%s\n' "$quote2" | awk 'NR==1 {print}')"
 amt2="$(printf '%s\n' "$quote2" | awk 'NR==2 {print}')"
 pf_evm_require_equal "$recv2" "$receiver" "token id ignored"
-pf_evm_require_uint "$amt2" 500 "2.5% of 20000"
+pf_evm_require_uint "$amt2" 250 "same sale price ignores token id"
 
-echo "evm-anvil-royaltyart: ok (IERC165+IERC2981 + static 2.5% royaltyInfo)"
+# Full-range quote must not overflow or round through a truncated intermediate product.
+max_uint="0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+max_royalty="2894802230932904885589274625217197696331749616641014100986439600197828240998"
+max_quote="$("$cast" call --rpc-url "$rpc" "$addr" \
+  'royaltyInfo(uint256,uint256)(address,uint256)' 7 "$max_uint")"
+max_recv="$(printf '%s\n' "$max_quote" | awk 'NR==1 {print}')"
+max_amt="$(printf '%s\n' "$max_quote" | awk 'NR==2 {print}')"
+pf_evm_require_equal "$max_recv" "$receiver" "maximum sale-price receiver"
+pf_evm_require_uint "$max_amt" "$max_royalty" "2.5% of maximum uint256"
+
+# A zero static receiver represents no royalty and must never quote a positive amount.
+zero="0x0000000000000000000000000000000000000000"
+zero_addr="$(pf_evm_deploy_ctor_address "$bytecode" "$zero")"
+zero_quote="$("$cast" call --rpc-url "$rpc" "$zero_addr" \
+  'royaltyInfo(uint256,uint256)(address,uint256)' 7 10000)"
+zero_recv="$(printf '%s\n' "$zero_quote" | awk 'NR==1 {print}')"
+zero_amt="$(printf '%s\n' "$zero_quote" | awk 'NR==2 {print}')"
+pf_evm_require_equal "$zero_recv" "$zero" "zero receiver disables royalties"
+pf_evm_require_uint "$zero_amt" 0 "zero receiver returns zero royalty"
+
+echo "evm-anvil-royaltyart: ok (IERC165+IERC2981 + static full-range 2.5% royaltyInfo)"
