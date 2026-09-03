@@ -1,4 +1,5 @@
 import ProofForge.Core.Ops
+import ProofForge.Evm.Codec
 import ProofForge.Evm.LogError
 
 namespace ProofForge.Evm.NativeFx
@@ -117,13 +118,32 @@ def Call.effects : Call V → EffectSummary
   | .revertCapExceeded => {}
   | .receive => { payable := true, receive := true }
 
-/-- Fail-closed shape gate for a typed event: generic frame invariant plus the EVM `LogPlan`
-bounds (topic0 plus at most three indexed topics; at most four data words). -/
+/-- Closed EVM type vocabulary for one typed event field: exactly the static one-word ABI forms
+the emitter can materialize from little-endian source limbs. `uint96`-style widths that are not
+whole 64-bit limbs and non-20-byte addresses have no carrier and fail closed here, before Yul. -/
+def eventScalarSupported (type : Core.Codec.Scalar) : Bool :=
+  Codec.isNarrowIntegerCarrier type || Codec.isWideIntegerCarrier type ||
+    Codec.isAddressCarrier type || Codec.isFixedBytesCarrier type
+
+/-- Fail-closed shape gate for a typed event: generic frame invariant, the closed EVM type
+vocabulary with exact limb counts, plus the EVM `LogPlan` bounds (topic0 plus at most three
+indexed topics; at most four data words). -/
 def Call.logTypedWellFormed (valueWellFormed : V → Bool)
     (frame : Core.Ops.EventFrame V) : Bool :=
   frame.wellFormed valueWellFormed &&
+    frame.args.all (fun arg =>
+      eventScalarSupported arg.type && arg.parts.size == Codec.limbCount arg.type) &&
     frame.indexedCount + 1 ≤ LogError.maxTopics &&
     frame.dataCount ≤ LogError.maxLogDataWords
+
+/-- ABI parameter types of a validated typed event, in declaration order. This is the single
+owner consumed by both the Yul emitter (topic0 signature) and the ABI JSON generator, so both
+artifacts derive from one descriptor. `indexed` is not part of the keccak signature. -/
+def Call.logTypedAbiTypes (valueWellFormed : V → Bool) (frame : Core.Ops.EventFrame V) :
+    Except String (Array String) := do
+  unless Call.logTypedWellFormed valueWellFormed frame do
+    throw "extract/unsupported: malformed typed event frame"
+  frame.args.mapM fun arg => Codec.abiType arg.type
 
 def Call.wellFormed (valueWellFormed : V → Bool) : Call V → Bool
   | .logTyped frame => Call.logTypedWellFormed valueWellFormed frame

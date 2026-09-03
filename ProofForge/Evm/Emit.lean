@@ -1611,26 +1611,24 @@ private def eventAbi (name : String) : String :=
     "{\"type\":\"event\",\"name\":\"" ++ escapeJson name ++
       "\",\"inputs\":[{\"name\":\"amt\",\"type\":\"uint64\",\"indexed\":false}],\"anonymous\":false}"
 
-/-- Validate one typed event frame. Indexed fields occupy LOG topics after topic0; each field
-is one ABI word. Existing Transfer256/Approval256 JSON is not rewritten here. -/
+/-- ABI types of one validated typed event frame; the same owner the Yul emitter uses for
+topic0, so ABI JSON and LOG geometry cannot drift apart. Existing Transfer256/Approval256 JSON
+is not rewritten here. -/
 private def typedEventAbiTypes (frame : Core.Ops.EventFrame Ops.Val) :
-    Except String (Array String) := do
-  unless NativeFx.Call.logTypedWellFormed (·.wellFormed Ops.ValKind.arity) frame do
-    throw "extract/unsupported: malformed typed event frame"
-  let mut types := #[]
-  for arg in frame.args do
-    unless arg.parts.size == Codec.limbCount arg.type do
-      throw "extract/unsupported: typed event field limb count"
-    types := types.push (← Codec.abiType arg.type)
-  return types
+    Except String (Array String) :=
+  NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame
 
+/-- Canonical event identity is the topic0 signature `Name(type,...)`. Two frames sharing it must
+agree on names and indexed flags, since receipts cannot distinguish them. -/
 private def typedEventIdentity (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
   let types ← typedEventAbiTypes frame
-  let mut parts := #[]
-  for i in [0:frame.args.size] do
-    let suffix := if frame.args[i]!.indexed then " indexed" else ""
-    parts := parts.push (types[i]! ++ suffix)
-  return frame.constructor ++ "(" ++ String.intercalate "," parts.toList ++ ")"
+  return Keccak.signature frame.constructor types
+
+/-- Topic0 signature of a closed `NativeFx.logName` event, mirroring `eventAbi`. -/
+private def closedEventIdentity (name : String) : String :=
+  if name == "Transfer256" then "Transfer(address,address,uint256)"
+  else if name == "Approval256" then "Approval(address,address,uint256)"
+  else name ++ "(uint64)"
 
 private def eventAbiTyped (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
   let types ← typedEventAbiTypes frame
@@ -1762,14 +1760,30 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
       unless typedErrorIds.contains identity do
         typedErrorIds := typedErrorIds.push identity
         typedErrors := typedErrors.push frame
+  -- Typed events dedupe on topic0 identity. A second frame with the same identity must carry
+  -- byte-identical ABI metadata; a collision with a closed `logName` event is accepted only when
+  -- the typed JSON equals the closed spelling, so Transfer/Approval bytes are never rewritten.
+  let closedEventIds := evs.map closedEventIdentity
   let mut typedEvents := #[]
-  let mut typedEventIds := #[]
+  let mut typedEventIds : Array String := #[]
+  let mut typedEventJson : Array String := #[]
   for method in p.entries do
     for frame in collectTypedEventFrames method.ops do
       let identity ← typedEventIdentity frame
-      unless typedEventIds.contains identity do
-        typedEventIds := typedEventIds.push identity
-        typedEvents := typedEvents.push frame
+      let json ← eventAbiTyped frame
+      match typedEventIds.idxOf? identity with
+      | some i =>
+          unless typedEventJson[i]! == json do
+            throw s!"extract/unsupported: conflicting typed event metadata for {identity}"
+      | none =>
+          match closedEventIds.idxOf? identity with
+          | some i =>
+              unless eventAbi evs[i]! == json do
+                throw s!"extract/unsupported: typed event conflicts with closed event {identity}"
+          | none =>
+              typedEventIds := typedEventIds.push identity
+              typedEventJson := typedEventJson.push json
+              typedEvents := typedEvents.push frame
   let needIns := p.entries.any (fun m =>
     hasErrorLeaf (fun
       | .component call => call.emitsInsufficient

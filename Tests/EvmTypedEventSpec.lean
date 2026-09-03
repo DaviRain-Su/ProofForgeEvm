@@ -100,6 +100,48 @@ private def fiveData : ProofForge.Core.Ops.EventFrame Ops.Val := {
 #guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped fourIndexed)
 #guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped fiveData)
 
+-- Closed EVM type vocabulary: Core-well-formed scalars without a one-word EVM carrier
+-- (`uint96` spans two limbs but is not whole 64-bit limbs; `address32`) fail before Yul.
+private def uint96Frame : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "Wide"
+  args := #[{ name := "x", type := .uint 96, parts := #[.lit 1, .lit 2] }]
+}
+
+private def address32Frame : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "Bad"
+  args := #[{ name := "a", type := .address32, parts := #[.lit 1, .lit 2, .lit 3, .lit 4] }]
+}
+
+private def boolFrame : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "Flag"
+  args := #[{ name := "on", type := .boolean, parts := #[.lit 1] }]
+}
+
+private def bytes32Frame : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "Digest"
+  args := #[{ name := "h", type := .bytes32, parts := #[.lit 1, .lit 2, .lit 3, .lit 4],
+              indexed := true }]
+}
+
+private def emptyFrame : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "Ping", args := #[] }
+
+#guard uint96Frame.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard address32Frame.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped uint96Frame)
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped address32Frame)
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped boolFrame)
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped bytes32Frame)
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped emptyFrame)
+#guard
+  match NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) transferFrame with
+  | .ok types => types == #["address", "address", "uint256"]
+  | .error _ => false
+#guard
+  match NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) uint96Frame with
+  | .error reason => reason.contains "typed event"
+  | .ok _ => false
+
 #guard Keccak.signature "Transfer" #["address", "address", "uint256"] ==
   "Transfer(address,address,uint256)"
 #guard Keccak.signature "Approval" #["address", "address", "uint256"] ==
@@ -158,6 +200,28 @@ private def mockLogCtx : LogError.Emit.Context := { indent := "  " }
   | .error reason => reason.contains "typed event"
   | .ok _ => false
 
+-- Emission never silently drops limbs: unsupported carriers fail, not truncate.
+#guard
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped uint96Frame) 0 with
+  | .error reason => reason.contains "typed event"
+  | .ok _ => false
+
+-- Signature-only event: zero data words, LOG1 with `(0, 0)` geometry.
+#guard
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped emptyFrame) 0 with
+  | .error _ => false
+  | .ok (txt, _, st) =>
+      txt == s!"  log1(0, 0, 0x{Keccak.keccak256HexOfString "Ping()"})\n" && st == 0
+
+-- Indexed bytes32 packs through the fixed-bytes helper into a fresh topic word.
+#guard
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped bytes32Frame) 0 with
+  | .error _ => false
+  | .ok (txt, _, st) =>
+      txt.contains "pf_store_fixed_bytes(0, 0, 0, 0, 0, 32)" &&
+        txt.contains s!"log2(0, 0, 0x{Keccak.keccak256HexOfString "Digest(bytes32)"}, v0)" &&
+        st == 1
+
 private def spliceTyped (p : IR.Program) (frame : ProofForge.Core.Ops.EventFrame Ops.Val) :
     Option IR.Program :=
   match p.entries.find? (·.ixName == "get") with
@@ -190,6 +254,82 @@ private def spliceTyped (p : IR.Program) (frame : ProofForge.Core.Ops.EventFrame
                   "{\"name\":\"amt\",\"type\":\"uint64\",\"indexed\":false}"
           | _, _, _, _, _, _ => false
       | _, _, _ => false
+
+-- ABI identity is the topic0 signature. Same signature with different indexed flags or names
+-- is a conflict; identical frames dedupe to one declaration even across entries / nested `ite`.
+private def transferReindexed : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "Transfer"
+  args := #[
+    { name := "from", type := .address20, parts := #[.lit 0, .lit 1, .lit 2] },
+    { name := "to", type := .address20, parts := #[.lit 3, .lit 4, .lit 5] },
+    { name := "value", type := .uint256, parts := #[.lit 6, .lit 7, .lit 8, .lit 9],
+      indexed := true }
+  ]
+}
+
+private def transferRenamed : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "Transfer"
+  args := #[
+    { name := "src", type := .address20, parts := #[.lit 0, .lit 1, .lit 2], indexed := true },
+    { name := "to", type := .address20, parts := #[.lit 3, .lit 4, .lit 5], indexed := true },
+    { name := "value", type := .uint256, parts := #[.lit 6, .lit 7, .lit 8, .lit 9] }
+  ]
+}
+
+private def tippedRenamed : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "Tipped"
+  args := #[{ name := "value", type := .uint64, parts := #[.lit 9] }]
+}
+
+private def spliceOps (p : IR.Program) (ops : Array IR.Op) : Option IR.Program :=
+  match p.entries.find? (·.ixName == "get") with
+  | none => none
+  | some get => some { p with entries := #[{ get with ops := ops.push (.returnU64 (.lit 0)) }] }
+
+private def logTypedOp (frame : ProofForge.Core.Ops.EventFrame Ops.Val) : IR.Op :=
+  .component (.nativeFx (.logTyped frame))
+
+private def abiOf (p : IR.Program) (ops : Array IR.Op) : Except String String :=
+  match spliceOps p ops with
+  | none => .error "no get entry"
+  | some prog => Emit.emitAbiChecked prog
+
+private def countOccurrences (haystack needle : String) : Nat :=
+  (haystack.splitOn needle).length - 1
+
+#guard
+  match IR.fromProgram ProofForge.Golden.extractedCounter with
+  | .error _ => false
+  | .ok base =>
+      let conflictIndexed := abiOf base #[logTypedOp transferFrame, logTypedOp transferReindexed]
+      let conflictNames := abiOf base #[logTypedOp transferFrame, logTypedOp transferRenamed]
+      let dedupNested := abiOf base #[
+        logTypedOp transferFrame,
+        .ite .eq (.lit 0) (.lit 0) #[logTypedOp transferFrame] #[.forBody 1 #[logTypedOp transferFrame]]]
+      let closedSame := abiOf base #[
+        .component (.nativeFx (.logTransfer256 lit lit lit lit lit lit lit lit lit lit)),
+        logTypedOp transferFrame,
+        .component (.nativeFx (.log "Tipped" lit)),
+        logTypedOp tippedFrame]
+      let closedConflict := abiOf base #[
+        .component (.nativeFx (.log "Tipped" lit)),
+        logTypedOp tippedRenamed]
+      (match conflictIndexed with
+        | .error reason => reason.contains "conflicting typed event"
+        | .ok _ => false) &&
+      (match conflictNames with
+        | .error reason => reason.contains "conflicting typed event"
+        | .ok _ => false) &&
+      (match dedupNested with
+        | .ok abi => countOccurrences abi transferAbi == 1
+        | .error _ => false) &&
+      (match closedSame with
+        | .ok abi => countOccurrences abi transferAbi == 1 &&
+            countOccurrences abi "\"name\":\"Tipped\"" == 1
+        | .error _ => false) &&
+      (match closedConflict with
+        | .error reason => reason.contains "conflicts with closed event"
+        | .ok _ => false)
 
 -- Registry / golden digests for existing programs stay pinned (no closed-union spelling change).
 #guard Registry.digestOf "Token" == some "7d01d10202d87dd3"

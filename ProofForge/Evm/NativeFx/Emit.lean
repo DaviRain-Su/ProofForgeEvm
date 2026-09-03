@@ -138,20 +138,9 @@ private def emitLogTransfer256 (context : Context σ)
     logTxt
   return (txt, z0, s12)
 
-/-- ABI type list for one typed event. Indexed is not part of the keccak signature. -/
-private def typedEventAbiTypes (frame : Core.Ops.EventFrame Ops.Val) :
-    Except String (Array String) := do
-  unless NativeFx.Call.logTypedWellFormed (·.wellFormed Ops.ValKind.arity) frame do
-    throw "extract/unsupported: malformed typed event frame"
-  let mut types := #[]
-  for arg in frame.args do
-    unless arg.parts.size == Codec.limbCount arg.type do
-      throw "extract/unsupported: typed event field limb count"
-    types := types.push (← Codec.abiType arg.type)
-  return types
-
 /-- Pack one event field into a single ABI word. Addresses and fixed bytes go through the
-shared memory helpers; wide integers use the little-endian `packU256` spelling. -/
+shared memory helpers; wide integers use the little-endian `packU256` spelling; narrow
+integers and booleans are already one word. Any other carrier fails closed. -/
 private def packEventWord (context : Context σ) (arg : Core.Ops.EventArg Ops.Val) (st : σ) :
     Except String (String × String × σ) := do
   let indent := context.indent
@@ -187,12 +176,14 @@ private def packEventWord (context : Context σ) (arg : Core.Ops.EventArg Ops.Va
       ((parts[3]?).getD "0")
     let txt := prelude ++ indent ++ "let " ++ word ++ " := " ++ packed ++ nl
     return (txt, word, st')
-  else
+  else if Codec.isNarrowIntegerCarrier arg.type && parts.size == 1 then
     return (prelude, parts[0]!, st)
+  else
+    throw "extract/unsupported: typed event field type has no EVM word carrier"
 
 private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops.Val) (st : σ) :
     Except String (String × String × σ) := do
-  let abiTypes ← typedEventAbiTypes frame
+  let abiTypes ← NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame
   let mut prelude := ""
   let mut topics : Array String :=
     #["0x" ++ Keccak.keccak256HexOfString (Keccak.signature frame.constructor abiTypes)]
