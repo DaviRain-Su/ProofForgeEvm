@@ -84,8 +84,9 @@ private def depositPlan : OpenCall.Plan Ops.Val := {
 
 private def badName : OpenCall.Plan Ops.Val := { pingPlan with name := "" }
 private def nineArgs : OpenCall.Plan Ops.Val :=
-  { pingPlan with args := Array.replicate 9
-      { name := "a", type := .uint64, parts := #[lit] } }
+  { pingPlan with
+    args := (List.range 9).toArray.map fun i =>
+      { name := s!"a{i}", type := .uint64, parts := #[lit] } }
 private def staticValue : OpenCall.Plan Ops.Val :=
   { echoPlan with valueParts := #[lit, lit, lit, lit] }
 
@@ -198,6 +199,7 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
+#guard Registry.digestOf "EvmOpenCall" == some "a300130619c177c"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -247,7 +249,7 @@ structure Payload where
   amount : UInt256
 
 def structCall (target to : Address) (amount : UInt256) : UInt64 :=
-  OpenCall.call target { to, amount }
+  OpenCall.call target (Payload.mk to amount)
 
 inductive OptionArg where
   | wide (value : Option UInt64)
@@ -281,9 +283,9 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost pingStored"
   let some xfer := source.methods.find? (·.ixName == "openTransfer")
     | throwError "open-call example lost openTransfer"
-  let some echo := source.methods.find? (·.ixName == "readEcho")
+  let some _echo := source.methods.find? (·.ixName == "readEcho")
     | throwError "open-call example lost readEcho"
-  let some pair := source.methods.find? (·.ixName == "readPair")
+  let some _pair := source.methods.find? (·.ixName == "readPair")
     | throwError "open-call example lost readPair"
   let some pay := source.methods.find? (·.ixName == "payTarget")
     | throwError "open-call example lost payTarget"
