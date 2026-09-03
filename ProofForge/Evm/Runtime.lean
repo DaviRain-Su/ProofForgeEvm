@@ -386,4 +386,25 @@ actual flattened storage schema. Empty, dynamic, unknown, or non-UInt64 fields f
     (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
   value.w0
 
+/-- Typed external CALL (`OpenCall.call`): constructor name + fields are the ABI contract.
+The host stub returns 0; extraction preserves the plan. Reentrancy is application-visible. -/
+@[irreducible] def evmOpenCall {_α : Type} (_target : Addr20) (_payload : _α) : UInt64 := 0
+
+/-- Typed external CALL with contract-success policy (`OpenCall.callSuccess`). -/
+@[irreducible] def evmOpenCallSuccess {_α : Type} (_target : Addr20) (_payload : _α) : UInt64 := 0
+
+/-- Typed external CALL carrying msg.value (`OpenCall.callValue`). Host returns `value.w0`. -/
+@[irreducible] def evmOpenCallValue {_α : Type} (_target : Addr20) (value : UInt256)
+    (_payload : _α) : UInt64 :=
+  value.w0
+
+/-- Typed STATICCALL with exact-one-word policy (`OpenCall.staticWord`). Host returns 0. -/
+@[irreducible] def evmOpenStaticWord {_α : Type} (_target : Addr20) (_payload : _α) : UInt256 :=
+  ⟨0, 0, 0, 0⟩
+
+/-- Typed STATICCALL with exact-two-word policy (`OpenCall.staticWords2`). Host returns 0.
+The source carrier is the first word; both words are still gated. -/
+@[irreducible] def evmOpenStaticWords2 {_α : Type} (_target : Addr20) (_payload : _α) : UInt256 :=
+  ⟨0, 0, 0, 0⟩
+
 end ProofForge.Evm.Runtime

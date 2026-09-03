@@ -290,6 +290,38 @@ Soft reverts stay `.ok (state, UInt64)` — no Bool coercion via `thenTrue`. -/
 
 end Effect
 
+namespace OpenCall
+
+/-- Typed external CALL. The payload is an inductive constructor: its name is the ABI
+function name and its fields are the ABI arguments. Calldata is assembled by the emitter;
+this helper never accepts raw bytes, a selector string, a return-buffer length, or an opcode.
+Reentrancy is application-visible; OpenCall does not add a guard. `delegatecall`, CREATE2,
+and proxy dispatch are not variants. -/
+@[pf_inline] def call {α : Type} (target : Address) (payload : α) : UInt64 :=
+  Runtime.evmOpenCall target payload
+
+/-- Typed external CALL with the contract-success policy (runtime code required on empty
+returndata). Reentrancy is application-visible. -/
+@[pf_inline] def callSuccess {α : Type} (target : Address) (payload : α) : UInt64 :=
+  Runtime.evmOpenCallSuccess target payload
+
+/-- Typed external CALL that forwards a packed `UInt256` CALL value. The current entry must
+separately accept `msg.value` (`Ether.accept`) when the method is payable. -/
+@[pf_inline] def callValue {α : Type} (target : Address) (value : UInt256) (payload : α) :
+    UInt64 :=
+  Runtime.evmOpenCallValue target value payload
+
+/-- Typed STATICCALL with the exact-one-word policy. The source carrier is `UInt256`. -/
+@[pf_inline] def staticWord {α : Type} (target : Address) (payload : α) : UInt256 :=
+  Runtime.evmOpenStaticWord target payload
+
+/-- Typed STATICCALL with the exact-two-word policy. The source carrier is the first
+`UInt256`; both words are still size-gated. -/
+@[pf_inline] def staticWords2 {α : Type} (target : Address) (payload : α) : UInt256 :=
+  Runtime.evmOpenStaticWords2 target payload
+
+end OpenCall
+
 namespace Event
 
 /-- Marks one event constructor field as an EVM topic (after the signature topic). Unwrapped

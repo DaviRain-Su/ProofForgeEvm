@@ -39,6 +39,7 @@ import Tests.EvmStorageVecSpec
 import Tests.EvmTokenErgonomicsSpec
 import Tests.EvmTypedErrorSpec
 import Tests.EvmTypedEventSpec
+import Tests.EvmOpenCallSpec
 import Tests.Fixtures
 import Tests.FlagSpec
 import Tests.LangSpec

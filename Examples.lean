@@ -32,6 +32,7 @@ import Examples.Evm.EvmSafeCastAccumulator
 import Examples.Evm.EvmSafeCastConfig
 import Examples.Evm.EvmTypedErrors
 import Examples.Evm.EvmTypedEvents
+import Examples.Evm.EvmOpenCall
 import Examples.Evm.EvmPriceBand
 import Examples.Evm.GuardedPayout
 import Examples.Evm.Collectible

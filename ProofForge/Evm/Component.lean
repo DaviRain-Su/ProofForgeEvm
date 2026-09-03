@@ -1,6 +1,7 @@
 import ProofForge.Evm.HashedMap
 import ProofForge.Evm.WideWord
 import ProofForge.Evm.ClosedCall
+import ProofForge.Evm.OpenCall
 import ProofForge.Evm.NativeFx
 import ProofForge.Evm.StaticStorage
 import ProofForge.Evm.Environment
@@ -35,6 +36,9 @@ private def ofClosedCall (effects : ClosedCall.EffectSummary) : EffectSummary :=
     logs := effects.logs
     externalCall := effects.externalCall }
 
+private def ofOpenCall (effects : OpenCall.EffectSummary) : EffectSummary :=
+  { externalCall := effects.externalCall }
+
 private def ofNativeFx (effects : NativeFx.EffectSummary) : EffectSummary :=
   { logs := effects.logs
     externalCall := effects.externalCall
@@ -54,6 +58,7 @@ inductive Query where
   | hashedMap (query : HashedMap.Query)
   | wideWord (query : WideWord.Query)
   | closedCall (query : ClosedCall.Query)
+  | openCall (query : OpenCall.Query)
   | environment (query : Environment.Query)
   deriving BEq, Repr, Inhabited
 
@@ -62,6 +67,7 @@ def Query.arity : Query → Nat
   | .hashedMap query => query.arity
   | .wideWord query => query.arity
   | .closedCall query => query.arity
+  | .openCall query => query.arity
   | .environment query => query.arity
 
 def Query.effects : Query → EffectSummary
@@ -69,6 +75,7 @@ def Query.effects : Query → EffectSummary
   | .hashedMap query => ofHashedMap query.effects
   | .wideWord _ => {}
   | .closedCall query => ofClosedCall query.effects
+  | .openCall query => ofOpenCall query.effects
   | .environment _ => {}
 
 def Query.wellFormed : Query → Bool
@@ -76,6 +83,7 @@ def Query.wellFormed : Query → Bool
   | .hashedMap query => query.wellFormed
   | .wideWord query => query.wellFormed
   | .closedCall query => query.wellFormed
+  | .openCall query => query.wellFormed
   | .environment query => query.wellFormed
 
 def Query.canonical (renderValue : V → String) (operands : Array V) : Query → String
@@ -85,6 +93,7 @@ def Query.canonical (renderValue : V → String) (operands : Array V) : Query �
   | .hashedMap query => query.canonical renderValue operands
   | .wideWord query => query.canonical renderValue operands
   | .closedCall query => query.canonical renderValue operands
+  | .openCall query => query.canonical renderValue operands
   | .environment query => query.canonical renderValue operands
 
 /-- Stable effect bridge. New hashed-map, closed-CALL, or native ETH/LOG backends extend this
@@ -95,6 +104,7 @@ inductive Call (V : Type) where
   | empty
   | hashedMap (call : HashedMap.Call V)
   | closedCall (call : ClosedCall.Call V)
+  | openCall (call : OpenCall.Call V)
   | nativeFx (call : NativeFx.Call V)
   | staticStorage (call : StaticStorage.Call V)
   deriving BEq, Repr, Inhabited
@@ -103,6 +113,7 @@ def Call.mapValues (mapValue : α → β) : Call α → Call β
   | .empty => .empty
   | .hashedMap call => .hashedMap (call.mapValues mapValue)
   | .closedCall call => .closedCall (call.mapValues mapValue)
+  | .openCall call => .openCall (call.mapValues mapValue)
   | .nativeFx call => .nativeFx (call.mapValues mapValue)
   | .staticStorage call => .staticStorage (call.mapValues mapValue)
 
@@ -110,6 +121,7 @@ def Call.mapValuesM [Monad m] (mapValue : α → m β) : Call α → m (Call β)
   | .empty => pure .empty
   | .hashedMap call => return .hashedMap (← call.mapValuesM mapValue)
   | .closedCall call => return .closedCall (← call.mapValuesM mapValue)
+  | .openCall call => return .openCall (← call.mapValuesM mapValue)
   | .nativeFx call => return .nativeFx (← call.mapValuesM mapValue)
   | .staticStorage call => return .staticStorage (← call.mapValuesM mapValue)
 
@@ -117,6 +129,7 @@ def Call.values : Call V → Array V
   | .empty => #[]
   | .hashedMap call => call.values
   | .closedCall call => call.values
+  | .openCall call => call.values
   | .nativeFx call => call.values
   | .staticStorage call => call.values
 
@@ -130,6 +143,7 @@ def Call.effects : Call V → EffectSummary
   | .empty => {}
   | .hashedMap call => ofHashedMap call.effects
   | .closedCall call => ofClosedCall call.effects
+  | .openCall call => ofOpenCall call.effects
   | .nativeFx call => ofNativeFx call.effects
   | .staticStorage call => ofStaticStorage call.effects
 
@@ -137,6 +151,7 @@ def Call.wellFormed (valueWellFormed : V → Bool) : Call V → Bool
   | .empty => false
   | .hashedMap call => call.wellFormed valueWellFormed
   | .closedCall call => call.wellFormed valueWellFormed
+  | .openCall call => call.wellFormed valueWellFormed
   | .nativeFx call => call.wellFormed valueWellFormed
   | .staticStorage call => call.wellFormed valueWellFormed
 
@@ -144,6 +159,7 @@ def Call.canonical (renderValue : V → String) : Call V → String
   | .empty => "evm.comp.empty"
   | .hashedMap call => call.canonical renderValue
   | .closedCall call => call.canonical renderValue
+  | .openCall call => call.canonical renderValue
   | .nativeFx call => call.canonical renderValue
   | .staticStorage call => call.canonical renderValue
 

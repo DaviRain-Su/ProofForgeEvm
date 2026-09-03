@@ -55,6 +55,9 @@
 - `evmAnd256` / `evmOr256` / `evmXor256` / `evmNot256` / `evmShl256` / `evmShr256`。
 - `evmSwapExact2` / `evmSwapExact3` — 封闭 Uniswap V2 `swapExactTokensForTokens`。
 - `evmPermit` / `evmTokenPermit` / `evmDomainSeparator` — 封闭 EIP-2612 / EIP-712。
+- `evmOpenCall` / `evmOpenCallSuccess` / `evmOpenCallValue` / `evmOpenStaticWord` /
+  `evmOpenStaticWords2` — typed OpenCall (S3)。payload 是 inductive constructor；抽出保留
+  函数名 / 参数类型。结果门走 `CallResult`。重入对应用可见。
 
 ABI 上 `Addr20` 是一个 `address`，`UInt256` 是一个 `uint256`。不把非 EVM 名译成 opcode。
 
@@ -72,3 +75,5 @@ mint / allowance / pause / cap。
 `Tests/LangSpec.lean` + `anvil_lang.sh`：位运算、移位、tuple、下标、有界 for。
 `Tests/EvmPayableSpec.lean` / `EvmLogErrorSpec.lean` / `EvmPrecompileSpec.lean` /
 `EvmCallResultSpec.lean`：payable 守卫、命名错误、预编译与封闭 CALL 结果。
+`Tests/EvmOpenCallSpec.lean` + `anvil_opencall.sh`：typed OpenCall 目标、两词返回、CALL value、
+EOA / 畸形 returndata、CALL 后 `sstore`。

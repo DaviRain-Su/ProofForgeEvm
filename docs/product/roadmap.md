@@ -27,9 +27,12 @@
 11. Effect representation rewrite (remove `dummy` / `hold` / fake guards).
 12. Reference `World` semantics + Lean↔Anvil differential.
 13. Generic typed events; richer constructors. *(S1a frames + S1b `Event.emit` extract/SDK/Anvil path landed)*
-14. Decide yulc: full second backend vs permanent experimental subset.
-15. Formal powdr bridge beyond probe status.
+14. Typed OpenCall (S3). *(implemented on `cursor/opencall-s3-e4eb`; not claimed on `main` until merge)*
+15. Decide yulc: full second backend vs permanent experimental subset.
+16. Formal powdr bridge beyond probe status.
 
 ## Explicit non-goals
 
-Dynamic callee, delegatecall, create2, proxies, unbounded recursion, mainnet endorsement, bytecode refinement proofs.
+`delegatecall`, CREATE2, proxies, unbounded recursion, arbitrary calldata, mainnet endorsement, bytecode refinement proofs.
+
+Typed `OpenCall` selects a target address only inside a statically typed, bounded ABI constructor. It is not a route around those non-goals.

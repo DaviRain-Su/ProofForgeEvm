@@ -32,9 +32,10 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | Checked arithmetic, `ite`, bounded `for`, bit ops, narrow ABI, tuples | Supported |
 | Env / Addr20 / payable / closed ETH send / typed errors / typed events (`Event.emit`) | Supported |
 | Hashed maps + closed ERC-20 / WETH / UniswapV2 / Permit calls | Supported |
-| CallResult S2 (`exactWords n`, `strictBool`, `magicBytes4`, typed `words`) | **Plan + Yul emit** (≤4 ABI words); ClosedCall still uses the original three policies. No OpenCall consumer yet (S3). Default fail mode is `revert(0, 0)` |
+| Typed OpenCall (`OpenCall.call` / `callSuccess` / `callValue` / `staticWord` / `staticWords2`) | **Supported** (S3): CALL/STATICCALL to a typed `Address` target with a compile-time constructor ABI (≤8 static one-word args). Result gates are S2 `CallResult` policies. No raw calldata, selector string, return-buffer length, opcode, `delegatecall`, CREATE2, or proxy. Reentrancy is application-visible. |
+| CallResult S2 (`exactWords n`, `strictBool`, `magicBytes4`, typed `words`) | **Plan + Yul emit** (≤4 ABI words); ClosedCall still uses the original three policies. OpenCall consumes `canonicalTrueOrCodeBackedEmpty` / `contractSuccess` / `exactWord` / `exactWords 2` via the five helpers above. Default fail mode is `revert(0, 0)` |
 | Effect ergonomics without `dummy` / `hold` / fake guards | **Debt** (see roadmap) |
-| Dynamic callee / `delegatecall` / `create2` / proxy / unbounded loops | **Out of scope** |
+| `delegatecall` / CREATE2 / proxy / arbitrary calldata / unbounded loops | **Out of scope** |
 
 ## SDK naming honesty
 

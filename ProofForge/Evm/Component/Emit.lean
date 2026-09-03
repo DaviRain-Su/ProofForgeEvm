@@ -3,6 +3,7 @@ import ProofForge.Evm.Ops
 import ProofForge.Evm.HashedMap.Emit
 import ProofForge.Evm.WideWord.Emit
 import ProofForge.Evm.ClosedCall.Emit
+import ProofForge.Evm.OpenCall.Emit
 import ProofForge.Evm.NativeFx.Emit
 import ProofForge.Evm.StaticStorage.Emit
 import ProofForge.Evm.Environment.Emit
@@ -45,6 +46,14 @@ private def Context.closedCall (context : Context σ) : ClosedCall.Emit.Context 
     valKey := context.valKey
     indent := context.indent }
 
+private def Context.openCall (context : Context σ) : OpenCall.Emit.Context σ :=
+  { materialize := context.materialize
+    fresh := context.fresh
+    rememberWide := context.rememberWide
+    lookupWide := context.lookupWide
+    valKey := context.valKey
+    indent := context.indent }
+
 private def Context.nativeFx (context : Context σ) : NativeFx.Emit.Context σ :=
   { materialize := context.materialize
     fresh := context.fresh
@@ -77,6 +86,8 @@ def emitQuery (context : Context σ) (query : Component.Query) (operands : Array
       WideWord.Emit.emitQuery context.wideWord wideQuery operands st
   | .closedCall callQuery =>
       ClosedCall.Emit.emitQuery context.closedCall callQuery operands st
+  | .openCall openQuery =>
+      OpenCall.Emit.emitQuery context.openCall openQuery operands st
   | .environment environmentQuery =>
       Environment.Emit.emitQuery context.environment environmentQuery operands st
 
@@ -88,6 +99,8 @@ def emitCall (context : Context σ) (call : Component.Call Ops.Val) (st : σ) :
       HashedMap.Emit.emitCall context.hashedMap storageCall st
   | .closedCall callCall =>
       ClosedCall.Emit.emitCall context.closedCall callCall st
+  | .openCall openCall =>
+      OpenCall.Emit.emitCall context.openCall openCall st
   | .nativeFx fxCall =>
       NativeFx.Emit.emitCall context.nativeFx fxCall st
   | .staticStorage storageCall =>
