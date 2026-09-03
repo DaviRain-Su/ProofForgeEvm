@@ -16,6 +16,9 @@ open Lean Elab Command
 
 #guard Erc3009.domainSeparator == Permit.domainSeparator
 
+private def authUsedTopic : String :=
+  ProofForge.Crypto.Keccak.keccak256HexOfString "AuthorizationUsed(address,bytes32)"
+
 private def expectAuth3009Link : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -39,6 +42,14 @@ private def expectAuth3009Link : CommandElabM Unit := do
   unless abi.contains "\"name\":\"transferWithAuthorization\"" &&
       abi.contains "\"name\":\"DOMAIN_SEPARATOR\"" do
     throwError s!"Auth3009Link ABI lost ERC-3009 surface:\n{abi}"
+  let yul ←
+    match Emit.emitYul program with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless yul.contains s!"0x{authUsedTopic}" &&
+      yul.contains "iszero(gt(timestamp()" &&
+      yul.contains "iszero(lt(timestamp()" do
+    throwError "Auth3009Link Yul missing AuthorizationUsed or exclusive validity bounds"
   unless IR.digestHex program == "c0188e81405c51f5" do
     throwError s!"Auth3009Link digest drifted: {IR.digestHex program}"
 

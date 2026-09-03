@@ -3,6 +3,7 @@ import ProofForge.Extract.Ops
 import ProofForge.Profile
 import ProofForge.Attr
 import ProofForge.Core.Value
+import ProofForge.Core.Collections
 import ProofForge.Core.Except
 import ProofForge.Evm.Runtime
 import ProofForge.Evm.Codec
@@ -1367,10 +1368,104 @@ private def staticBoundedStringLengthLit? (env : Environment) (e : Expr) : Optio
     | _ => none
   | none => none
 
+private partial def staticNatLitFromExpr? (fuel : Nat) (e : Expr) : Option Nat :=
+  match fuel with
+  | 0 => none
+  | fuel' + 1 =>
+    let e := strip e
+    match e with
+    | .lit (.natVal n) => some n
+    | _ =>
+      if isConstNamed e ``OfNat.ofNat then
+        let args := e.getAppArgs
+        if args.size ≥ 2 then staticNatLitFromExpr? fuel' args[args.size - 2]! else none
+      else none
+
+private partial def staticListNatLits? (env : Environment) (fuel : Nat) (e : Expr) : Option (Array Nat) :=
+  match fuel with
+  | 0 => none
+  | fuel' + 1 =>
+    let e := strip (unfoldUserHelpers env 8 e)
+    if isConstNamed e ``List.nil || endsWith e ".nil" then
+      some #[]
+    else if isConstNamed e ``List.cons || endsWith e ".cons" then
+      let args := e.getAppArgs
+      if args.size ≥ 2 then
+        match staticNatLitFromExpr? 8 args[args.size - 2]! with
+        | some n =>
+          match staticListNatLits? env fuel' args[args.size - 1]! with
+          | some tail => some (tail.push n)
+          | none => none
+        | none => none
+      else none
+    else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
+      let args := e.getAppArgs
+      if args.size ≥ 1 then staticListNatLits? env fuel' args[args.size - 1]! else none
+    else
+      e.getAppArgs.findSome? (staticListNatLits? env fuel')
+
+private def staticBoundedStringVectorBytes? (env : Environment) (e : Expr) : Option (Array Nat) := do
+  let e := strip (unfoldUserHelpers env 32 e)
+  let args := e.getAppArgs
+  unless args.size ≥ 1 do none
+  let vectorE := strip (unfoldUserHelpers env 32 args[args.size - 1]!)
+  unless isConstNamed vectorE ``Vector.mk || endsWith vectorE "Vector.mk" do none
+  let vArgs := vectorE.getAppArgs
+  unless vArgs.size ≥ 2 do none
+  let dataE := strip (unfoldUserHelpers env 16 vArgs[1]!)
+  if isConstNamed dataE ``List.toArray || endsWith dataE ".toArray" then
+    let largs := dataE.getAppArgs
+    unless largs.size ≥ 1 do none
+    staticListNatLits? env 80 largs[largs.size - 1]!
+  else
+    staticListNatLits? env 80 dataE
+
+private def staticBoundedStringCapacityLit? (env : Environment) (e : Expr) : Option Nat :=
+  let e := strip (unfoldUserHelpers env 32 e)
+  match e.getAppFn.constName? with
+  | some ctor =>
+    match env.find? ctor with
+    | some (.ctorInfo info) =>
+      if info.induct != boundedStringName then none
+      else
+        let args := e.getAppArgs
+        if args.size ≥ 3 then
+          staticNatLitFromExpr? 8 args[0]!
+        else if args.size ≥ 2 then
+          let vectorE := strip (unfoldUserHelpers env 32 args[args.size - 1]!)
+          if isConstNamed vectorE ``Vector.mk || endsWith vectorE "Vector.mk" then
+            let vArgs := vectorE.getAppArgs
+            if vArgs.size ≥ 1 then staticNatLitFromExpr? 8 vArgs[0]! else none
+          else
+            (staticBoundedStringVectorBytes? env e).map (·.size)
+        else none
+    | _ => none
+  | none => none
+
+private def vectorUInt8FromNatLits? (cap : Nat) (bytes : Array Nat) : Option (Vector UInt8 cap) := do
+  if bytes.size != cap then none
+  return Vector.ofFn fun i => UInt8.ofNat bytes[i]!
+
+private def staticBoundedStringWellFormedLit? (env : Environment) (e : Expr) : Option Bool := do
+  let cap ← staticBoundedStringCapacityLit? env e
+  let len ← staticBoundedStringLengthLit? env e
+  let bytes ← staticBoundedStringVectorBytes? env e
+  let valuesVec ← vectorUInt8FromNatLits? cap bytes
+  let boundedBytes : ProofForge.Core.Value.BoundedBytes cap :=
+    { length := UInt32.ofNat len, values := valuesVec }
+  return boundedBytes.isValidUtf8
+
 private def boundedCanPublishVal (env : Environment) (nameE versionE : Expr) : Option Ops.Val := do
+  let nameE := strip (unfoldUserHelpers env 64 nameE)
+  let versionE := strip (unfoldUserHelpers env 64 versionE)
   let nameLen ← staticBoundedStringLengthLit? env nameE
   let verLen ← staticBoundedStringLengthLit? env versionE
-  if nameLen > 0 && verLen > 0 then return .lit 1 else return .lit 0
+  let nameOk := (staticBoundedStringWellFormedLit? env nameE).getD false
+  let verOk := (staticBoundedStringWellFormedLit? env versionE).getD false
+  if nameLen > 0 && verLen > 0 && nameOk && verOk then
+    return .lit 1
+  else
+    return .lit 0
 
 private def staticUInt64Lit? (env : Environment) (e : Expr) : Option Nat :=
   let e := strip (unfoldUserHelpers env 16 e)
@@ -2332,6 +2427,16 @@ private partial def boundedMetadataGateVal (env : Environment) (fuel : Nat) (e :
       boundedCanEncode721Val env args[args.size - 1]!
     else if endsWith raw ".canPublish" && args.size ≥ 2 then
       boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
+    else if (isConstNamed raw ``Eq || isConstNamed raw ``BEq.beq) && args.size ≥ 2 then
+      let lhs := strip args[args.size - 2]!
+      let rhs := strip args[args.size - 1]!
+      if isConstNamed rhs ``Bool.true && endsWith lhs ".canPublish" && lhs.getAppArgs.size ≥ 2 then
+        let largs := lhs.getAppArgs
+        boundedCanPublishVal env largs[largs.size - 2]! largs[largs.size - 1]!
+      else
+        match unfoldUserHelper env raw with
+        | some (_, unfolded) => boundedMetadataGateVal env fuel' unfolded
+        | none => none
     else if endsWith raw ".canSchedule" && args.size ≥ 3 then
       boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
     else if (isConstNamed raw ``Bool.and || isConstNamed raw ``HAnd.hAnd || endsWith raw ".hAnd") &&

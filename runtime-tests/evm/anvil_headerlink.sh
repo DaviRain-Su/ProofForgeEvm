@@ -76,14 +76,43 @@ pf_evm_require_equal \
   "$("$cast" call --rpc-url "$rpc" "$addr" 'inHistoryWindow(uint64)(bool)' "$previous")" \
   true "previous block in history window"
 
+pf_evm_require_equal \
+  "$("$cast" call --rpc-url "$rpc" "$addr" 'inHistoryWindow(uint64)(bool)' "$bn_dec")" \
+  false "current block outside BLOCKHASH window"
+pf_evm_require_uint \
+  "$("$cast" call --rpc-url "$rpc" "$addr" 'blockHash(uint64)(uint256)' "$bn_dec")" \
+  0 "BLOCKHASH zero for current block"
+
+if [[ "$bn_dec" -ge 256 ]]; then
+  oldest="$(( bn_dec - 256 ))"
+  pf_evm_require_equal \
+    "$("$cast" call --rpc-url "$rpc" "$addr" 'inHistoryWindow(uint64)(bool)' "$oldest")" \
+    true "oldest available block in history window"
+  oldest_hash="$("$cast" block --rpc-url "$rpc" "$oldest" --json |
+    "$python" -I -S -c 'import json,sys; print(int(json.load(sys.stdin)["hash"], 16))')"
+  pf_evm_require_uint \
+    "$("$cast" call --rpc-url "$rpc" "$addr" 'blockHash(uint64)(uint256)' "$oldest")" \
+    "$oldest_hash" "BLOCKHASH oldest available block"
+fi
+
+if [[ "$bn_dec" -ge 257 ]]; then
+  too_old="$(( bn_dec - 257 ))"
+  pf_evm_require_equal \
+    "$("$cast" call --rpc-url "$rpc" "$addr" 'inHistoryWindow(uint64)(bool)' "$too_old")" \
+    false "block older than 256 is outside history window"
+  pf_evm_require_uint \
+    "$("$cast" call --rpc-url "$rpc" "$addr" 'blockHash(uint64)(uint256)' "$too_old")" \
+    0 "BLOCKHASH zero outside history window"
+fi
+
 old="$(( bn_dec - 300 ))"
 if [[ "$old" -ge 0 ]]; then
   pf_evm_require_equal \
     "$("$cast" call --rpc-url "$rpc" "$addr" 'inHistoryWindow(uint64)(bool)' "$old")" \
-    false "block older than 256 is outside history window"
+    false "block far older than 256 is outside history window"
   pf_evm_require_uint \
     "$("$cast" call --rpc-url "$rpc" "$addr" 'blockHash(uint64)(uint256)' "$old")" \
-    0 "BLOCKHASH zero outside history window"
+    0 "BLOCKHASH zero far outside history window"
 fi
 
 future="$(( bn_dec + 1 ))"
