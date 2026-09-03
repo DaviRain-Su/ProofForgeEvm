@@ -4,9 +4,10 @@ import ProofForge
 W3 quota consumer: bounded per-address nonces plus a fixed-window rate limiter.
 
 The SDK owns pure nonce and rate-limit decisions; this contract owns three disjoint hashed-map
-namespaces (`nonces`, `lastUsed`, `lastTimepoint`), authorization, and typed failure terminals.
+namespaces (`nonces`, `lastUsed`, `lastTimepoint`), authorization, and closed failure terminals.
 Successful `act` checks the caller nonce, consumes quota, advances the nonce, and increments a
-scalar action counter.
+scalar action counter. A stale nonce reverts as `Insufficient(current, provided)`; rate exhaustion
+uses the typed `rateLimitExceeded()` error.
 -/
 
 namespace Examples.Evm.EvmQuota
@@ -82,10 +83,14 @@ def act (s : State) (nonce : UInt256) (amount : UInt64) : Except Error (State ×
     let elapsed :=
       RateLimit.FixedWindow.windowElapsed (config s) bucket now
     let nextUsed :=
-      if elapsed then amount else bucket.lastUsed + amount
+      if amount == 0 then bucket.lastUsed
+      else if elapsed then amount else bucket.lastUsed + amount
+    let nextTimepoint :=
+      if amount == 0 then bucket.lastTimepoint
+      else if elapsed then now else bucket.lastTimepoint
     .ok ({ s with totalActions := s.totalActions + 1 },
       maps.nonces.put Context.caller (Nonces.useNext maps.nonces Context.caller)
         ||| maps.lastUsed.put Context.caller nextUsed
-        ||| maps.lastTimepoint.put Context.caller now)
+        ||| maps.lastTimepoint.put Context.caller nextTimepoint)
 
 end Examples.Evm.EvmQuota

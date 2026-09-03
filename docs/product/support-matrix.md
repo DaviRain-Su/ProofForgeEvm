@@ -52,7 +52,7 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | `Pausable.Log` + `TwoStepCounter` / `Credits` / `Capped` | Canonical `Paused` / `Unpaused` (LOG1, non-indexed `account` = caller) on **`pause` / `unpause`**. `Token` pause still does not emit these | Drop-in OpenZeppelin Pausable |
 | `Roles.Log` + `EvmStaticCounter` / `EvmStaticRoster` | Canonical `RoleGranted` / `RoleRevoked` (LOG4, empty data; `bytes32` role + account + sender all indexed) on **actual** bounded `Set2` grant/revoke. Idempotent no-ops do not log. No `RoleAdminChanged`, ERC-165, or `mapping(bytes32 => …)` AccessControl | Drop-in OpenZeppelin AccessControl |
 | `Roles.Log` + `EvmCrew` | Same LOG4 role events on **actual** bounded `Set4` grant/revoke (four explicit address slots). Fifth distinct grant fails closed with `CapExceeded()` | Drop-in OpenZeppelin AccessControl |
-| `Nonces` + `RateLimit` + `EvmQuota` | Per-address nonce map (`AddressMap256`) with checked consumption; fixed-window rate limit (`capacity`/`window` + per-caller `lastUsed`/`lastTimepoint` maps). Typed `invalidNonce(uint256,uint256)` and `rateLimitExceeded()` failures; no token-bucket refill or sliding-window limiter | Drop-in OpenZeppelin Nonces / RateLimiter |
+| `Nonces` + `RateLimit` + `EvmQuota` | Per-address nonce map (`AddressMap256`) with checked consumption; fixed-window rate limit (`capacity`/`window` + per-caller `lastUsed`/window-start maps). Stale nonces use the closed `Insufficient(current,provided)` revert; rate exhaustion uses typed `rateLimitExceeded()`. No token-bucket refill or sliding-window limiter | Drop-in OpenZeppelin Nonces / RateLimiter |
 | Reentrancy | Explicit policy helpers | Drop-in OpenZeppelin clone |
 
 ## Networks / deploy

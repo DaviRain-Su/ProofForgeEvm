@@ -8,10 +8,10 @@ namespace ProofForge.Evm.Sdk.RateLimit
 # EVM SDK bounded fixed-window rate limit
 
 Reusable per-key fixed-window counter policy: shared `capacity` and `window` configuration plus
-explicit `lastUsed` and `lastTimepoint` scalars (typically one hashed-map entry each). Within a
-window, `lastUsed` accumulates consumption; when `now - lastTimepoint ≥ window` the entry resets
-before the next consume. Zero-quantity consumption is always admissible and does not modify entry
-state. `window = 0` is treated as one second.
+explicit `lastUsed` and `lastTimepoint` scalars (typically one hashed-map entry each).
+`lastTimepoint` is the active window's start: it is preserved by consumption within that window
+and replaced only when an elapsed window is consumed. Zero-quantity consumption is always
+admissible and does not modify entry state. `window = 0` is treated as one second.
 
 This is a bounded profile, not a drop-in OpenZeppelin `RateLimiter` clone: there is no linear
 token-bucket refill, sliding-window checkpoint trace, or settings-mutation API.
@@ -65,7 +65,7 @@ namespace FixedWindow
   else if windowElapsed config entry now then
     { lastUsed := quantity, lastTimepoint := now }
   else
-    { lastUsed := entry.lastUsed + quantity, lastTimepoint := now }
+    { lastUsed := entry.lastUsed + quantity, lastTimepoint := entry.lastTimepoint }
 
 end FixedWindow
 

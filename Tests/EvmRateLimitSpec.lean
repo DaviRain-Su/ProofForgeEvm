@@ -19,6 +19,8 @@ def config : RateLimit.Config := { capacity := 10, window := 100 }
 #guard RateLimit.FixedWindow.canConsume config RateLimit.FixedWindow.empty 1000 11 == false
 #guard RateLimit.FixedWindow.used config ⟨7, 950⟩ 1000 == 7
 #guard RateLimit.FixedWindow.used config ⟨7, 950⟩ 1051 == 0
-#guard RateLimit.FixedWindow.consume config ⟨7, 950⟩ 1000 3 == ⟨10, 1000⟩
+#guard RateLimit.FixedWindow.consume config ⟨7, 950⟩ 1000 0 == ⟨7, 950⟩
+#guard RateLimit.FixedWindow.consume config ⟨7, 950⟩ 1000 3 == ⟨10, 950⟩
+#guard RateLimit.FixedWindow.consume config ⟨7, 950⟩ 1050 3 == ⟨3, 1050⟩
 
 end Tests.EvmRateLimitSpec
