@@ -38,12 +38,36 @@ def verify (s : State) (proof : BoundedVec Bytes32 8) (leaf : Bytes32) : Bool :=
     false
   else
     Id.run do
-      let mut computed := leaf
-      for i in [0:8] do
-        if UInt64.ofNat i < proof.length.toUInt64 then
-          computed := MerkleProof.hashPair computed proof.values[i]!
+      let mut c0 := leaf.w0
+      let mut c1 := leaf.w1
+      let mut c2 := leaf.w2
+      let mut c3 := leaf.w3
+      if proof.length.toUInt64 > 0 then
+        let next := MerkleProof.hashPair ⟨c0, c1, c2, c3⟩ proof.values[0]!
+        c0 := next.w0; c1 := next.w1; c2 := next.w2; c3 := next.w3
+      if proof.length.toUInt64 > 1 then
+        let next := MerkleProof.hashPair ⟨c0, c1, c2, c3⟩ proof.values[1]!
+        c0 := next.w0; c1 := next.w1; c2 := next.w2; c3 := next.w3
+      if proof.length.toUInt64 > 2 then
+        let next := MerkleProof.hashPair ⟨c0, c1, c2, c3⟩ proof.values[2]!
+        c0 := next.w0; c1 := next.w1; c2 := next.w2; c3 := next.w3
+      if proof.length.toUInt64 > 3 then
+        let next := MerkleProof.hashPair ⟨c0, c1, c2, c3⟩ proof.values[3]!
+        c0 := next.w0; c1 := next.w1; c2 := next.w2; c3 := next.w3
+      if proof.length.toUInt64 > 4 then
+        let next := MerkleProof.hashPair ⟨c0, c1, c2, c3⟩ proof.values[4]!
+        c0 := next.w0; c1 := next.w1; c2 := next.w2; c3 := next.w3
+      if proof.length.toUInt64 > 5 then
+        let next := MerkleProof.hashPair ⟨c0, c1, c2, c3⟩ proof.values[5]!
+        c0 := next.w0; c1 := next.w1; c2 := next.w2; c3 := next.w3
+      if proof.length.toUInt64 > 6 then
+        let next := MerkleProof.hashPair ⟨c0, c1, c2, c3⟩ proof.values[6]!
+        c0 := next.w0; c1 := next.w1; c2 := next.w2; c3 := next.w3
+      if proof.length.toUInt64 > 7 then
+        let next := MerkleProof.hashPair ⟨c0, c1, c2, c3⟩ proof.values[7]!
+        c0 := next.w0; c1 := next.w1; c2 := next.w2; c3 := next.w3
       return ProofForge.Evm.Runtime.evmEqBytes32
-        computed.w0 computed.w1 computed.w2 computed.w3 s.root0 s.root1 s.root2 s.root3
+        c0 c1 c2 c3 s.root0 s.root1 s.root2 s.root3
 
 @[pf_entry]
 def touch (_s : State) (v : UInt64) : Except Error (State × UInt64) :=
