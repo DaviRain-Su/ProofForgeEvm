@@ -403,6 +403,12 @@ emits the bounded Keccak loop; this host stub only preserves the extraction sign
     (_owner _spender : Addr20) (value _deadline : UInt256) (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
   value.w0
 
+/-- 封闭 ERC-3009 `transferWithAuthorization`。name=`Token`，version=`1`，balance base=0，authUsed base=3。失败 revert。宿主返回 `value.w0`。 -/
+@[irreducible] def evmTransferWithAuthorization
+    (_from _to : Addr20) (value _validAfter _validBefore : UInt256) (_nonce : Bytes32)
+    (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
+  value.w0
+
 /-- 封闭 EIP-712 domain separator。name=`Token`，version=`1`。宿主返回 0。 -/
 @[irreducible] def evmDomainSeparator : Bytes32 := ⟨0, 0, 0, 0⟩
 

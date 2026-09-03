@@ -31,13 +31,13 @@ def coverageRows : UInt64 := 32
 def doneCount : UInt64 := 2
 
 /-- Rows marked PARTIAL (named restricted profile). -/
-def partialCount : UInt64 := 18
+def partialCount : UInt64 := 20
 
 /-- Rows marked ABSENT (no profile shipped). -/
-def absentCount : UInt64 := 12
+def absentCount : UInt64 := 10
 
 /-- Rows whose remaining gap is blocked by a documented permanent non-goal. -/
-def blockedCount : UInt64 := 12
+def blockedCount : UInt64 := 10
 
 /-- Rows marked ABSENT without a permanent non-goal blocker (implementable gap). -/
 def temporaryGapCount : UInt64 := 0
@@ -229,7 +229,7 @@ def pathTagOf (row : UInt64) : UInt8 :=
 def statusOf (row : UInt64) : UInt8 :=
   if row == 0 then statusPartial
   else if row == 1 then statusPartial
-  else if row == 2 then statusAbsent
+  else if row == 2 then statusPartial
   else if row == 3 then statusAbsent
   else if row == 4 then statusAbsent
   else if row == 5 then statusPartial
@@ -243,7 +243,7 @@ def statusOf (row : UInt64) : UInt8 :=
   else if row == 13 then statusPartial
   else if row == 14 then statusAbsent
   else if row == 15 then statusPartial
-  else if row == 16 then statusAbsent
+  else if row == 16 then statusPartial
   else if row == 17 then statusAbsent
   else if row == 18 then statusAbsent
   else if row == 19 then statusPartial
@@ -267,13 +267,11 @@ def isAbsent (row : UInt64) : Bool :=
 
 /-- Permanent non-goal blocker bit for backlog row `row` (independent of `isAbsent`). -/
 def isBlocked (row : UInt64) : Bool :=
-  if row == 2 then true
-  else if row == 3 then true
+  if row == 3 then true
   else if row == 4 then true
   else if row == 6 then true
   else if row == 12 then true
   else if row == 14 then true
-  else if row == 16 then true
   else if row == 17 then true
   else if row == 18 then true
   else if row == 25 then true
@@ -291,13 +289,11 @@ def blockedImpliesAbsent (row : UInt64) : Bool :=
 
 /-- Permanent non-goal category for blocked row `row`; `nonGoalNone` when not blocked. -/
 def nonGoalTagOf (row : UInt64) : UInt8 :=
-  if row == 2 then nonGoalUnboundedGovernance
-  else if row == 3 then nonGoalAccountAbstraction
+  if row == 3 then nonGoalAccountAbstraction
   else if row == 4 then nonGoalCrossChainRegistry
   else if row == 6 then nonGoalUnboundedGovernance
   else if row == 12 then nonGoalArbitraryCall
   else if row == 14 then nonGoalCrossChainRegistry
-  else if row == 16 then nonGoalCrossChainRegistry
   else if row == 17 then nonGoalArbitraryCall
   else if row == 18 then nonGoalProxyCreateSlot
   else if row == 25 then nonGoalArbitraryCall

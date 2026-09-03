@@ -41,6 +41,7 @@ lean_lib ProofForgeEvmSdk where
     `ProofForge.Evm.Sdk.MerkleProof,
     `ProofForge.Evm.Sdk.BlockHeader,
     `ProofForge.Evm.Sdk.DefaultAdminDelay,
+    `ProofForge.Evm.Sdk.Erc3009,
     `ProofForge.Evm.Sdk.OzAudit,
     `ProofForge.Evm.Sdk.Ownable,
     `ProofForge.Evm.Sdk.Pausable,
