@@ -197,6 +197,10 @@ not a numeric UInt256. -/
     (_owner _spender : Addr20) (amt : UInt256) : UInt64 :=
   amt.w0
 
+/-- Typed event constructor. The extractor preserves the constructor name, field names, ABI
+types, and `Indexed` flags as one `EventFrame`; the host returns 0. -/
+@[irreducible] def evmLogTyped {_α : Type} (_event : _α) : UInt64 := 0
+
 /-- 参数化 `Insufficient(uint256,uint256)`。宿主返回 `have.w0`。 -/
 @[irreducible] def evmRevertInsufficient (_have _want : UInt256) : UInt64 := 0
 
