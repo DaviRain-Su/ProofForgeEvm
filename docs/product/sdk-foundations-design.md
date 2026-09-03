@@ -145,6 +145,16 @@ Required behavior:
 must replace or wrap that result with a bounded typed result collection while preserving existing
 consumer output and fresh-name order. Arbitrary or unbounded returndata is not introduced.
 
+**Implementation note (S2):** `maxResultWords = 4` (128 bytes), matching `LogError.maxLogDataWords`.
+New constructors are `exactWords n`, `strictBool`, `magicBytes4 selector`, and `words kinds`
+(`uint256` / `boolean` / `address20` / `bytes4`). `Emit.emitBound` returns the bound Yul names;
+`emit` still projects the first-word `Option String` so ClosedCall / Precompile output is
+unchanged. `Request.fail` defaults to `revert0` (`revert(0, 0)`); `bubble` is opt-in and applies
+only to the call-failure gate (policy tails stay `revert(0, 0)`). Bubble copies callee-controlled
+`returndatasize()` and is not a bounded plan. yulc already rejects `gas()` on every CallResult
+CALL/STATICCALL; bubble additionally needs dynamic `returndatacopy`. See the support-matrix yulc
+row. OpenCall (S3) is not part of this slice.
+
 ### S3 — `OpenCall` typed external CALL / 类型化开放调用
 
 `OpenCall` is an EVM component sibling to `ClosedCall`, not a raw opcode escape hatch. “Open”
