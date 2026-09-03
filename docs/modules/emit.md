@@ -1,55 +1,49 @@
-# ProofForge.Svm.Emit
+# ProofForge.Evm.Emit
 
 ## Purpose
 
-把 target-owned SVM CFG 发射成与 ProofForge StateCell 对齐的 sBPF 汇编文本。
+把 `Evm.IR.Program` 编成 Yul 文本和 `abi.json`。公开入口先假定程序已经过
+`Evm.IR.fromExtracted`；每个 method 再经 `Core.CFG` 降成显式 basic block。
+Emitter 遍历 checked terminator 和 exit，不重新递归解释 source `ite` / `forBody`。
 
 ## Boundary
 
-公开入口先调用 `Svm.IR.fromExtracted`；每个 target-owned `Method` 再通过 `Method.toCFG`
-lower/optimize。Emitter 的 handler body 只遍历显式 basic block、edge、checked terminator 和
-exit，不重新递归解释 source `ite` / `forBody`。CFG block 全部显式跳转，不依赖物理
-fallthrough。全局 layout 对超过保守 12,000-instruction bound 的 edge 在物理中点插入 relay
-block，迭代到所有 sBPF signed-16-bit jump 都在安全范围；不再按嵌套 branch/loop 加特判。
-Core optimize 在 layout 前以结构 fingerprint 给全图 block 分桶，再做 params / instructions /
-terminator 精确相等确认，合并非相邻重复 block；fingerprint collision 只增加精确比较，不会
-错误共享 block。已知 redirect 在 lookup 前归一化，target extension 的静态 metadata 仍由
-`payloadEq` 精确确认。
+由于 Yul 没有 `goto`，runtime 用 `pf_pc` dispatcher：每个 `case` 对应一个 basic
+block，branch / checked success / overflow 只改下一 block id。入口预声明 CFG
+locals。`pf_last` 只显式承接原 ABI 的 checked/effect result；local 和 storage
+value 直接按 CFG 中的显式引用读取，冲突 join fail closed。tuple return 由 CFG 的
+`returnU64s` exit 一次编码为连续 ABI words。Constructor 从 `initialize` 的
+`returnState` 取值。
 
-`.field _ name` 的 account-data byte offset、Vector base/stride 和 leaf width 已在 target IR
-物化，emitter 不扫描 frontend flattened names 猜布局。`indexGet` / `indexSet` 的定长向量越界
-走 in-bound 短前跳：`jlt r2, r3, ok_*`，越界 fallthrough `lddw r0, 0x1; exit`（Custom(1)），
-再落到 `ok_*` 后的 load/store。不给每个站点独立 error label，也不用 `ja ok` 绕过。其余 Load 由 `Val` 决定：`.arg _` →
-`INSTRUCTION_DATA+8`；`.clockSlot` → 40 字节栈缓冲 + `sol_get_clock_sysvar` + `ldxdw`
-第一字；`.signerKey0` → `ACC0_KEY+0`；`.accLamports0` / `.accOwner0` /
-`.accDataLen0` / `.accN` 读对应 header 字；`.isSigner0` / `.isWritable0` /
-`.isExecutable0` 读 header +1/+2/+3；`.findPda seed` →
-`sol_try_find_program_address`（一条 ASCII 种子 + 当前 program id），返回 bump。用到
-`signerKey0` 的入口 `needSigner=true`；只读旗叶子不强制签名。`invoke` 走 N 账户虚地址 walk
-以及 `sol_invoke_signed_c`。metas 相对已加 `metaOff` 的 `r5`，第 i 条在 `16*i`，不要再加 16。
-`systemTransfer` 是 program=2 / metas 两槽 / `u32le(2)||u64le` 的特化。acc0 以及 meta 标
-writable/signer 的账户在 prelude 里检查。按槽宽用 `ldxb`/`ldxh`/`ldxw`/`ldxdw` 与对应
-`stx*`。layout marker 与 `INSTRUCTION_DATA*` 按 `Program` 取。dispatch 按每个 method 的
-`ixName` 取已登记 discriminator。CFG dataflow 跟踪 checked result / explicit store 穿过
-edge；不一致的 join fail closed。`okState` 写回目标取 checked 算术的 lhs
-（Pair.creditLeft 抽出的 `okState (field right)` 仍写 left）。同序列已有 `storeField` 时
-`okState` 只回传、不再猜 dest。`storeField name v` 把 `v` 写进名为 `name` 的槽。有 `_tag`
-槽时 `okState (lit 0)` 清零两叶，其它值写 tag=1 + payload。字面量用十六进制，避免 `sbpf`
-拒 `2^64-1`。所有会生成分支 label 的递归 `loadVal` 叶子都带 method / block scope，
-同一入口多次读取 clock、PDA、rent 等叶子不会产生重名 label。空 ops 失败。多返回值由
-CFG tuple exit 一次写入 return-data，不丢弃第一项之后的值。
+`.field _ name` 的 storage slot、Vector base/stride 和 leaf width 已在 `Evm.IR`
+物化，emitter 不扫描 frontend flattened names 猜布局。`indexGet` / `indexSet`
+对定长向量做 `sload` / `sstore`，越界 `revert`。其余 Load 由 `Val` 决定：
+`.arg i` → 入口参数；环境叶 → `caller()` / `number()` / `timestamp()` /
+`chainid()` / `address()` / `callvalue()` / `selfbalance()`（超 `UInt64` 的
+block number 等 revert）；Addr20 三叶按小端拆 `caller()` / `address()`；
+immutable → `loadimmutable`。位运算和 mod-64 移位直接降成 Yul。
+`Op.component` 交给 `Evm.Component.Emit`。
+
+overflow 是 `revert(0, 0)`。命名错误走 4-byte selector `revert`。Yul 头含
+`digest=`（`Evm.IR.digestHex`）。空 `entries` 失败。字面量用十六进制。
+
+首选的 `init` / `initialize` → constructor；其它 `.init` 方法不会成为 runtime
+entry。非 init 方法 → ABI entry；`kind.get` 标 `view`；含 `evmDeposit` /
+`evmReceive` 的 mutate 标 `payable`。
 
 ## API
 
-`emitProgramAsm : Extract.IR.Program → Except String String`；`emitAsm` 接受 target-owned
-`Svm.IR.Program`。`emitCounterAsm` 仅是 legacy compatibility 入口。
-
-汇编头含 `digest=`（`Core.IR.digestHex`）。
-
-非 Counter 形状 → `extract/unsupported`。
+`emitYul` / `emitAbiChecked` / `emitAbi` / `emit`：输入 `Evm.IR.Program`。
+`emit` 返回 `(yul, abi)`。`emitAbi` 在 codec 元数据损坏时回空串；汇编路径走
+`emitAbiChecked`。
 
 ## Tests
 
-`Tests/EmitSpec.lean` / `Tests/CFGSpec.lean`：含 `entrypoint`、checked edge、layout marker、
-discriminator、tuple exit 与 `sol_set_return_data`。`Tests/PhoenixSpec.lean` 钉 CFG block、全局
-relay 和无未解析 edge token；实际 ELF 汇编及 48 个 Mollusk 文件由 CI 覆盖。
+`Tests/CFGSpec.lean`：显式 branch/join、非相邻 duplicate intern、fingerprint
+collision 仍精确比较 payload、tuple exit、checked edge、component 操作数参与
+substitution。
+`Tests/EvmSpec.lean`：Counter Yul 含 object / selector / `sstore` / `revert(0, 0)` /
+digest；ABI 含 constructor 与 view；Flag 窄槽 mask；Maybe 双叶清零；Pair 不暴露
+runtime `initBoth`。
+`Tests/LangSpec.lean`：位运算、移位、有界 for、下标、`uint8` ABI、tuple return。
+`Tests/EmitSpec.lean` 只挂载模块。

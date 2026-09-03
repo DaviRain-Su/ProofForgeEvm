@@ -2,8 +2,7 @@
 
 ## Purpose
 
-从 elaborated `Expr` 抽出 `IR.Program`。前端先从 `init` 的结果类型建立 target-neutral
-typed state schema，再抽方法 Ops；物理槽表只是 schema 的兼容视图。
+从 elaborated `Expr` 抽出 `Extract.IR.Program`（`Core.IR.Program` 配上抽出器方言）。前端先从 `init` 的结果类型建立 typed state schema，再抽方法 Ops；物理槽表只是 schema 的兼容视图。
 
 ## State schema
 
@@ -13,14 +12,13 @@ typed state schema，再抽方法 Ops；物理槽表只是 schema 的兼容视�
   字段名不参与身份判定，只用于诊断和兼容叶名；Vector 元素用 index；Option 的 tag /
   payload 是显式路径步骤。
 - `Leaf` 保存 source scalar type；`VectorLayout` 保存长度、每元素字节数和每元素叶子数，
-  不包含 SVM byte offset 或 EVM storage slot。
+  不含 storage slot。
 - `IR.Program.slots` 由 `IR.slotsOfSchema` 生成，继续保留 `nodes_0_value`、`slot_tag`
-  这类 ABI / 显示名，以保持已有 digest、IDL 和产物不变。抽出的程序必须满足
-  `IR.schemaMatchesSlots`。
+  这类显示名。抽出的程序必须满足 `IR.schemaMatchesSlots`。
 
-SVM / EVM emitter 不再扫描 `_0_left`、`_tag`、`_p0` 来猜 Vector / Option 布局；
-它们只调用各自 IR 层的 typed layout 查询。旧的手写 `Golden` fixture 没有 schema，
-因此字符串兼容解析仅集中保留在 IR 层，不能再进入 emitter。
+`Evm.IR.fromExtracted` 只调用 typed layout 查询，不扫描 `_0_left`、`_tag`、`_p0` 猜
+Vector / Option 布局。旧的手写 `Golden` fixture 没有 schema，字符串兼容解析只留在 IR
+兼容层，不能再进入 emitter。
 
 ## Core evaluation and writeback
 
@@ -37,13 +35,11 @@ SVM / EVM emitter 不再扫描 `_0_left`、`_tag`、`_p0` 来猜 Vector / Option
   明确没有虚构的静态首槽写入。
 - `Evaluation.explicit = false` 只用于没有 schema 的旧手写 fixture。
 
-当前 `Ops` 仍是前端 compatibility lowering，但 emitter 不再直接消费它：
-`Core.Target.projectProgram` 先按 `Svm.IR.extractRegistration` / `Evm.IR.extractRegistration`
-递归投影公共 Core，并把 extension conversion 留在目标模块；两个 IR 再降到互不共享
-constructor 的 target `Op`，把 typed `Place` 物化成 SVM account-data byte offset 或 EVM storage slot。
-`Core.Evaluation` 随 target method 保留，下一步用它替换 target `okState` 的兼容写回规则。这里刻意
-不让旧规则进入 Core：旧 SVM 对 `indexSet + okState` 会额外覆写首槽，而 EVM 不会；把任一旧
-行为塞回 Core 都会污染 target-neutral 语义。
+当前 `Ops` 仍是前端 compatibility lowering，但 emitter 不再直接消费抽出方言：
+`Core.Target.projectProgram` 按 `Evm.IR.extractRegistration` 递归投影公共 Core，并把
+extension conversion 留在 `Evm` 模块；`Evm.IR` 再降到 EVM-only `Op`，把 typed `Place`
+物化成 storage slot。`Core.Evaluation` 随 method 保留。这里刻意不让旧写回规则进入
+Core：把任一物理布局特判塞回 Core 都会污染 source 语义。
 
 ## Source-form normalization
 
@@ -52,18 +48,18 @@ constructor 的 target `Op`，把 typed `Place` 物化成 SVM account-data byte 
 窄整数 alias 和包住 `if` 的 pure head `let` 做 zeta-reduction；`UInt64` pure let 保留成
 `letLocal`，纯值 `if` 保留成 `Val.select`，避免把同一 mutation continuation 复制到两个
 分支。动态 `Vector.set` 会保留 `.ok (newState, ret)` 的显式 `ret`，不会误用最后写入的
-element value。普通复合 Boolean guard 即使 error 在 else 分支，也统一降成 target-neutral
+element value。普通复合 Boolean guard 即使 error 在 else 分支，也统一降成
 bit/select value + structured `ite`；checked arithmetic guard 仍优先走专用 lowering。
-`invoke`、EVM effect 和循环仍交给专用 decoder。这里不做全局 `whnf`，新增 Lean
+EVM effect 和循环仍交给专用 decoder。这里不做全局 `whnf`，新增 Lean
 表面形式应先加等价性 characterization test，再扩规范化或 decoder。连续的
 `State → … → State` inline helper 先按顺序发 transition，再处理 continuation，避免把逐层
 record expression 重复替换进后续每个 projection；helper 是否为 transition 由第一个用户
 structure 输入类型与结果类型是否相同判定。`State → … → Node` 这类纯结构 reader 则展开
 后再投影，不能因名称或恰好同处 Tree 模块而重定位到可变 State。
 
-方法完成规范化后会递归检查所有 Val、CPI data、branch 和 loop 的 `.arg`。init 只允许
+方法完成规范化后会递归检查所有 Val、branch 和 loop 的 `.arg`。init 只允许
 `arg < paramCount`；mutate/view 另允许 `arg == paramCount` 表示隐式 state。任何 proof / let /
-callback binder 泄漏都会在 target lowering 之前 fail closed，不能再被 emitter 误认成 calldata。
+callback binder 泄漏都会在 lowering 之前 fail closed，不能再被 emitter 误认成 calldata。
 
 ## Boundary
 
@@ -71,25 +67,20 @@ callback binder 泄漏都会在 target lowering 之前 fail closed，不能再�
 `y = 0 ∨ x ≤ u64Max / y` → `checkedMulU64`；`y ≠ 0` 后 `/` `%` →
 `checkedDivU64` / `checkedModU64`。比较认 `=` `≠` `<` `≤` `>` `≥`。假支不必是
 overflow。`match opt with | none => a | some n => b` 抽成 `ite (eq tag 0)`。
-`ProofForge.Svm.Runtime.clockSlot` / `signerKey0` / `acc*` 抽成 SVM 运行时叶子；
-`ProofForge.Evm.Runtime.evm*` 抽成 EVM 叶子。`invoke programIx metas data` 抽成
-`Op.invoke`。`systemTransfer` / `invokeAcc1` 是普通包装，展开成同一条。`findPda "seed"`
-抽成运行时叶子。`evmDeposit` / `evmSendEth` / `evmLog*` / pair-key Map / 全部 EVM 环境叶
-抽成独立 ops。位运算 / 有界 `forIn [:N]` / 运行时 `Vector` 下标 / 命名 `Error` 构造子 /
-`UInt64 × UInt64` view 也抽。SVM 发射器再拒语言叶和 EVM 叶。可变方法无 checked 算术 /
-ite / invoke / EVM 效应 / 语言叶则 fail closed。
+`ProofForge.Evm.Runtime` 的具名 stub 抽成 EVM 叶子或 `Evm.Component` 效应
+（`opOfRuntimeApp` / `queryOfRuntimeApp`，不按 recipe 名枚举 walker）。位运算 /
+有界 `forIn [:N]` / 运行时 `Vector` 下标 / 命名 `Error` 构造子 /
+`UInt64 × UInt64` view 也抽。可变方法无 checked 算术 / ite / EVM 效应 /
+语言叶 / `storeField` / 有界循环则 fail closed。
 
 嵌套用户 structure 摊成 `parent_child` 槽；`Vector Nested n` 每个元素再摊，例如
 `nodes_0_value`。固定布局、多构造子且 payload 全是 `UInt64` 的 inductive 摊成 tag + 最大
-payload，短构造子补零；其 match 绑定 lexical locals。`extends` 仍关。Sokoban 节点是普通
-structure + `Vector Node n`。mutate 的 `State.mk` / `Vector.set` / 嵌套 `with` 按叶 diff：
-改了几个槽就发几条 `storeField`，不按合约猜 dest。root `@[pf_inline]` State helper 会先
-展开并保留其 transition；UInt64/Bool scalar helper 与 `({ s with x := v }).x` 也在 typed value
-边界归一化。单叶仍压成 `okState`。`for i in [:n]` 改状态抽出 `forBody`，循环下标是
-`loopIx`，payload 仍是外层参数。运行时下标读写嵌套记录或 variant 走 `indexGet` /
-`indexSet`；`elemOff` 是元素内被改叶的偏移。N=4 Tree 已覆盖 allocator、free-list、完整
-左右旋、duplicate update、insertion fixup、deletion fixup 和地址复用；Phoenix 已覆盖
-fixed-capacity event batch 的动态 multi-leaf variant 写入，最宽九 payload 到 byte offset 72。
+payload，短构造子补零；其 match 绑定 lexical locals。`extends` 仍关。mutate 的
+`State.mk` / `Vector.set` / 嵌套 `with` 按叶 diff：改了几个槽就发几条 `storeField`，
+不按合约猜 dest。root `@[pf_inline]` State helper 会先展开并保留其 transition；
+UInt64/Bool scalar helper 与 `({ s with x := v }).x` 也在 typed value 边界归一化。
+单叶仍压成 `okState`。`for i in [:n]` 改状态抽出 `forBody`，循环下标是 `loopIx`，
+payload 仍是外层参数。运行时下标读写嵌套记录或 variant 走 `indexGet` / `indexSet`。
 非固定 N 与 `extends` 仍关。
 
 schema 默认从 `init` 返回类型收：必须是已注册 `structure`、无 `extends`。叶子接受
@@ -98,47 +89,36 @@ schema 默认从 `init` 返回类型收：必须是已注册 `structure`、无 `
 两构造子 option-like inductive，以及至少三个构造子且所有字段都是 `UInt64` 的 variant。
 variant 使用一叶 tag + 最宽构造子的 payload，短构造子规范补零。嵌套用户 structure
 递归摊平。不定长 `Array`、递归或带参数/索引的 inductive、非 `UInt64` variant payload
-fail closed。`#pf_extract … with "a","b"` 仍可覆盖槽名，且必须与 schema 导出的表一致。
+fail closed。可选 `fields?` 覆盖槽名时必须与 schema 导出的表一致。
 ops 里出现的字段名必须在表内。
 
-用户合约不绑仓库目录名。`#pf_build Ns` 收任意名字空间下的 `@[pf_entry]`。字段投影认已注册 structure，排除 `ProofForge` / `Lean` / `Std` / `Init`；`Examples.` 本身不是准入条件。
+用户合约不绑仓库目录名。`extractModuleIR` / `#pf_evm_build` 收任意名字空间下的
+`@[pf_entry]`。字段投影认已注册 structure，排除 `ProofForge` / `Lean` / `Std` /
+`Init`；`Examples.` 本身不是准入条件。
 
-`@[pf_entry]` 只是标记。种类从返回类型推断：structure → init；`Except` → mutate；`UInt64` → view。Lean `init` 的链上名是 `initialize`。允许多个 init / mutate / view；槽表从名为 `init` 的那个收。重复链上名 fail closed。`init` 的 `paramCount` 按 λ 个数算。抽出按类型展开槽名（`name_tag` / `name_i`），不按合约字段名写死。
+`@[pf_entry]` 只是标记。种类从返回类型推断：structure → init；`Except` → mutate；
+标量 / `Prod` / 有界容器 / `@[pf_boundary]` 类型 → view。Lean `init` 的链上名是
+`initialize`。允许多个 init / mutate / view；槽表从名为 `init` 的那个收。重复链上名
+fail closed。`init` 的 `paramCount` 按 λ 个数算。抽出按类型展开槽名（`name_tag` /
+`name_i`），不按合约字段名写死。
 
 ## API
 
 - `inferSchema env initName : Except String Core.Schema`
-- `inferSlots env initName : Except String (Array IR.Slot)`（schema 的兼容视图）
+- `inferSlots env initName : Except String (Array Core.IR.Slot)`（schema 的兼容视图）
 - `inferFields env initName : Except String (Array String)`
-- `extractProgram env init increment get (name?) (fields?)`
-- `#pf_extract init increment get`
-- `#pf_extract init increment get with "left", "right"`
-- `#pf_build Namespace`（收 `@[pf_entry]`）
-- `extractModule env ns`
+- `extractProgramIR env init increment get (name?) (fields?)`（抽出器方言）
+- `extractModuleIR env ns (fields?)`（收 `@[pf_entry]`）
+- `extractProgram` / `extractModule`（兼容适配器，产出 `Extract.Legacy.Program`）
+- `#pf_evm_build Namespace`（`Evm.Commands`：抽出 + `Evm.IR.fromExtracted` + Yul）
 
 ## Tests
 
-`Tests/ExtractSpec.lean`：Counter / Pair / Flag / Maybe / Window 抽出；动态 multi-leaf
-variant-vector 写保留独立返回值；四项 compound guard 在 error else 前不丢比较；
-非支持叶子与不定长 Array 拒绝。
-`Tests/BuildSpec.lean`：`#pf_build` 收入口；无标记 fail closed。
-`Tests/LayoutSpec.lean`：窄字段偏移、Option 双叶、layout marker。
-`Tests/NormalizationSpec.lean`：等价 Lean 表面形式抽成同一 Core；Tree 的 typed Vector schema
-固定为 4 个元素、每元素 48 字节 / 6 叶；checked result、Option 双叶和动态 Vector
-writeback 的 Core evaluation 是显式且 typed 的；Tree allocator 已覆盖同一动态元素一次
-改写六个叶子、静态 allocator 元数据 writeback 以及 LIFO free-list 复用。完整左右旋
-进一步覆盖条件分支、同一返回中的静态 root + 动态 Vector 写，以及只沿
-`Vector.set` base 追溯旧写，避免把 payload read 指数级复制成写。`Tests/TreeSpec.lean` 的删除门覆盖 successor
-transplant、black/red sibling fixup 和脱链地址回收到同一 free-list；所有 24 种四 key
-插入顺序分别删除四个 key 后都检查 BST、parent、root-black、red-red、black-height 和
-存活 key。同一 Tree `Place`
-在 SVM target IR 中变成 byte offset/stride，在 EVM target IR 中变成
-slot/slot-stride；Maybe 的 Option tag/payload 也保持同一 typed identity。Maybe / Window
-的 typed 与 legacy schema 路径生成逐字节相同的 SVM 输出，适用程序的 EVM 输出也相同；
-真实 Tree 已超出旧手写 fixture，只钉 source digest 和 typed target identity。N=4 insertion
-还逐项检查四种旋转、red-uncle、duplicate-full、overflow、free-list reuse、BST 顺序、parent、
-root-black、red-red 和 black-height 不变量。加入删除后，当前产物为 612,547-byte source
-assembly 和 203,648-byte eBPF ELF；lexical locals 与 sequential-State normalization 让增长
-保持线性，而不是按搜索分支或连续 helper projection 指数级复制 allocator/fixup。
-wide variant characterization 另钉 tag + 五 payload、match binder、短构造子补零，以及
-`Vector Variant 4` 的六叶动态写；同一 extracted Core 同时通过 SVM 和 EVM lowering/emitter。
+`Tests/BuildSpec.lean`：`#pf_evm_build` 收入口；无标记 fail closed；Legacy digest 随 ops 变。
+`Tests/LayoutSpec.lean`：Flag / Maybe Legacy digest 稳定且互异。
+`Tests/LangSpec.lean`：`extractProgramIR` 抽出窄 Vector 与 saturating `Nat.sub`，再经
+`Evm.IR.fromExtracted` 发射。
+`Tests/TargetOpsSpec.lean`：抽出方言 well-formed、Core-only 合成 backend 覆盖无
+`Extract.IR` 修改的注册路径及 foreign-extension 拒绝；Legacy round-trip。
+`Tests/CounterSpec.lean` / `PairSpec.lean` / `FlagSpec.lean` / `WindowSpec.lean` /
+`PhaseSpec.lean`：对应 fixture 的源语义与抽出形状。

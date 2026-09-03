@@ -2,7 +2,7 @@
 
 ## Purpose
 
-对普通 Lean 声明做 Solana 编译剖面检查。
+对普通 Lean 声明做可编译剖面检查。不绑定某一条链。
 
 ## Boundary
 
@@ -12,12 +12,16 @@
 
 - `check env root : Decision`
 - `checkAll env roots : Decision`
-- `#pf_check ident`
+- `#pf_check ident`（`Evm.Commands`）
 
-拒绝：unknown、partial（含用户模块里落成 `opaque` 的 `partial def`）、unsafe、用户 `extern` / `implemented_by`、axiom/`sorryAx`、IO/EIO/Task/BaseIO、入口类型含 `Nat`、闭包 > 4096。
+拒绝：unknown、partial（含用户模块里落成 `opaque` 的 `partial def`）、unsafe、用户 `extern` / `implemented_by`、axiom/`sorryAx`、IO/EIO/Task/BaseIO、入口类型含运行时 `Nat`、闭包 > 4096。
+
+字面量 `FixedBytes n` / `Vector T n` / `BoundedVec` / `BoundedBytes` / `BoundedString`
+的编译期容量不算运行时 `Nat`。
 
 用户门打在非 Lean/Std/Init、非 prelude 类型根的声明上。任意 Lake 包都可以，不绑 `Examples`。Init 原语（`UInt64.add`、`Nat.pow` 等）自带 `@[extern]`，必须放行。`sorryAx` 无论在哪一模块都拒绝；`propext` 这类 kernel 公理放行。
 
 ## Tests
 
-`Tests/ProfileSpec.lean`：Counter 三根 accept；Nat / partial / sorry / IO / extern / implemented_by reject。
+`Tests/ProfileSpec.lean`：Counter 三根 accept；字面量 FixedBytes / Vector / BoundedVec
+accept；动态容量 / Nat / partial / sorry / IO / extern / implemented_by reject。

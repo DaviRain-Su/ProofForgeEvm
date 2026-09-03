@@ -1,42 +1,45 @@
-# Core IR and target ABI
+# Core IR and EVM ABI
 
 ## Purpose
 
-`ProofForge.Core.IR` owns the stable, comparable source-program shape. Target physical
+`ProofForge.Core.IR` owns the stable, comparable source-program shape. Physical
 layouts are deliberately outside Core.
 
 ## Boundary
 
-Core 记录 source schema、flattened leaves 和方法；`ixName` 是 target 可复用的入口名。
-`canonical` / `digestHex` 按 `ixName` 排序后做 FNV-1a 64，不含 Lean 全名与 sketch。
-证明主语与发射主语共享这个 source digest。
+Core 记录 source schema、flattened leaves 和方法；`ixName` 是可复用的入口名。
+证明主语与发射主语共享抽出后的 source 程序；物理 digest 由 `Evm.IR.digestHex`
+按 `canonical` 做 FNV-1a 64（构造器 + 按 `ixName` 排序的 entries，不含 Lean 全名）。
 
-`ProofForge.Svm.ABI` owns Solana-only account offsets, Loader V3 input layout, account limits,
-CPI account counting, instruction discriminators and layout markers. `Svm.IR.fromExtracted` then
-materializes byte offsets. `Evm.IR.fromExtracted` independently materializes storage slots and
-selectors. No root `ProofForge.IR` compatibility façade remains.
+`Evm.IR.fromExtracted` 经 `Evm.IR.extractRegistration` 投影后物化 storage slot 和
+selector。无根层 `ProofForge.IR` 兼容 façade。
 
-`Program.schema` / `Method.evaluation` are target-neutral identity and state semantics.
-`Core.Target.Registration` recursively projects all common Core values/ops and delegates only
-extension leaves/effects to a target-owned callback. It also carries target value arity,
-op well-formedness and CFG dialect, so projection validates before physical lowering. SVM/EVM
-registrations live in their own IR modules; `Extract.IR` no longer contains backend conversion
-functions. A backend accepting the existing common language therefore does not add a case to
-`Extract.IR`. A genuinely new source/runtime intrinsic still extends the frontend dialect.
+`Program.schema` / `Method.evaluation` 是 identity 和 state 语义。
+`Core.Target.Registration` 递归投影所有公共 Core values/ops，只把 extension
+leaves/effects 交给拥有方 callback。它同时携带 value arity、op well-formedness 和
+CFG dialect，所以投影在物理 lowering 之前先校验。抽出器方言只含 `.evm` 扩展；
+`Extract.IR` 不再包含 backend conversion 函数。接受既有公共语言的 backend 不必给
+`Extract.IR` 加 case。真正新的 source/runtime intrinsic 仍要扩前端方言。
 
 ## Types
 
 Shared: `ProofForge/Core/IR.lean` (`MethodKind`, `Method`, `Program`) and
 `ProofForge/Core/Target.lean` (`Registration`, generic value/op/program projection).
 
-SVM ABI: `ProofForge/Svm/ABI.lean`. `maxTxAccountLocks = 64` and
-`maxAccountsPerInstruction = 255` are not visible from Core or EVM.
+EVM ABI: `ProofForge/Evm/IR.lean`（`Slot` / `Vector` / `Method` / `Program`，
+`canonical` / `digestHex`）。selector 由 `Crypto.Keccak.selector` 从 `ixName` 与 ABI
+类型算出。
 
 ## Errors
 
-投影对 foreign extension、extension arity、target op well-formedness 或 CFG validation
-失败时 fail closed。
+投影对 foreign extension、extension arity、op well-formedness 或 CFG validation
+失败时 fail closed。EVM 另拒绝空槽表、缺 constructor、缺 runtime entry、空 ops，
+以及 method 上的 foreign annotations。
 
 ## Tests
 
-T-S0-09：Counter 描述符含三方法。T-L1-13/14：digest 稳定且随 ops 变。T-L2-01/02：Flag / Maybe 槽偏移。`TargetOpsSpec` 的 Core-only 合成第三 target 覆盖无 `Extract.IR` 修改的注册路径及 foreign-extension 拒绝。
+`Tests/EvmSpec.lean`：Counter 三方法、digest 稳定且随 ops 变、Flag 窄宽、Maybe 双叶、
+Pair 构造器只保留 `initialize`。
+`Tests/TargetOpsSpec.lean`：Core-only 合成 backend 覆盖无 `Extract.IR` 修改的注册路径
+及 foreign-extension 拒绝；`schemaMatchesSlots`。
+`Tests/BuildSpec.lean` / `Tests/LayoutSpec.lean`：Legacy digest 稳定且随程序形状变。

@@ -2,21 +2,21 @@
 
 ## Purpose
 
-把 frontend `Core.IR.Program` 降成独立 EVM target IR，再编成 Yul / ABI / bytecode。
-平行于 `Svm/`，不改 frontend `Core.IR.Program`。
+把 frontend `Core.IR.Program` 降成独立 EVM IR，再编成 Yul / ABI / bytecode。
+不改 frontend `Core.IR.Program`。
 
 ## Boundary
 
 | 模块 | 拥有 | 不拥有 |
 |---|---|---|
-| `Evm.Sdk` | 合同侧 `Address` / `UInt256`、静态 storage layout、typed map、checked fungible ledger、explicit reentrancy policy、bounded persistent vector/bitmap/ring/enumerable-set policy、context / immutable / event / revert / closed-call facade | SVM 账户几何、业务协议、运行时 layout 对象 |
-| `Evm.Runtime` | 环境 opcode、`Addr20` / `UInt256`、LOG、hashed Map、封闭 ERC-20 | SVM sysvar / CPI |
+| `Evm.Sdk` | 合同侧 `Address` / `UInt256`、静态 storage layout、typed map、checked fungible ledger、explicit reentrancy policy、bounded persistent vector/bitmap/ring/enumerable-set policy、context / immutable / event / revert / closed-call facade | 业务协议、运行时 layout 对象 |
+| `Evm.Runtime` | 环境 opcode、`Addr20` / `UInt256`、LOG、hashed Map、封闭 ERC-20 | 任意 CALL |
 | `Crypto.Keccak` | Ethereum Keccak-256、ABI selector（公共库） | 链上 opcode |
-| `Evm.IR` | EVM-only `Op`、typed storage slot/Vector stride、constructor、selector、digest | Loader V3、账户 disc、SVM op |
+| `Evm.IR` | EVM-only `Op`、typed storage slot/Vector stride、constructor、selector、digest | 非 EVM 物理布局 |
 | `Evm.Component` | 稳定 Query/Call 桥、effects/value 遍历、component-owned emitter | 业务协议语义、任意 CALL |
-| `Evm.Emit` | Core CFG → Yul + `abi.json`；环境、value、Addr20、位运算、for、下标、ABI、hashed Map、封闭 ERC-20、通用 LOG、pair-key allowance、event ABI、本合约 transfer/transferFrom | 任意 CALL / Token-2022 |
-| `Evm.Assemble` | locked `solc 0.8.34` 子进程 | FFI、PATH 随便一个 solc |
-| `Evm.Commands` | `#pf_evm_build` | 新 DSL |
+| `Evm.Emit` | Core CFG → Yul + `abi.json`；环境、value、Addr20、位运算、for、下标、ABI、hashed Map、封闭 ERC-20、通用 LOG、pair-key allowance、event ABI、本合约 transfer/transferFrom | 任意 CALL |
+| `Evm.Assemble` | locked `solc 0.8.34` 子进程；可选 `yulc` | FFI、PATH 随便一个 solc |
+| `Evm.Commands` | `#pf_evm_build` / `#pf_evm_dump` | 新 DSL |
 
 上层封闭能力经统一 component lowering：
 
@@ -33,9 +33,8 @@ source semantic helper
 `Evm.Sdk`：`Storage.Layout` 用编译期 cursor 分配互不重叠的 map namespace；
 `AddressMap256` / `AddressPairMap256` 提供 `get` / `put` / `containsAtLeast` /
 `nextAdd` / `nextSub` / `revertInsufficient`；`Context`、`Immutable`、`Event`、`Revert`、
-`ERC20`、`WETH`、`UniswapV2`、`Permit` 隔离 target runtime 名字。layout descriptor 只在
-抽取期存在，不进 EVM storage，也没有魔数泄漏进合同源代码。SVM 不复用这套 layout：它的
-持久容器仍由 account bytes / fixed stride / one-based index 描述。
+`ERC20`、`WETH`、`UniswapV2`、`Permit` 隔离 runtime 名字。layout descriptor 只在
+抽取期存在，不进 EVM storage，也没有魔数泄漏进合同源代码。
 
 `Sdk.Fungible.Balances` 把显式 `AddressMap256` handle 组合成 O(1) checked balance movement；
 `Sdk.Fungible.Allowances` 把显式 `AddressPairMap256` handle 组合成 approve、checked
@@ -67,12 +66,11 @@ walker。新增 LOG 配方仍在 `Evm.Component` 内注册，不再改动上述�
 输入是已通过 Profile 的 frontend `Core.IR.Program`。`Evm.IR.extractRegistration` 向
 `Core.Target` 注册 extension 投影、arity / well-formed / CFG 合同；`Evm.IR.fromExtracted`
 经通用投影后物化 storage slot 并把 source Ops 降成 EVM-only `Op`。`Extract.IR` 不再拥有
-EVM conversion；SVM 叶子（`clockSlot` / `signerKey0` /
-`systemTransfer`）在这个边界 fail closed，Yul emitter 不再承担跨 target 过滤。承认独立 EVM
-叶子：环境 opcode（超 UInt64 revert）、8 字节 `evmCaller`/`evmSelf`、Addr20 三叶。
-`evmDeposit` 让该 entry payable；程序若有任一 payable 入口，去掉全局 `callvalue()` 守卫，
-非 payable 入口本地守卫。`evmSendEth` 是封闭 value CALL。`evmLogTipped` 是 LOG1。窄槽
-`UInt8/16/32` 各占一个 storage word。`Option UInt64` 是 tag+payload 两槽。
+EVM conversion。承认独立 EVM 叶子：环境 opcode（超 UInt64 revert）、8 字节
+`evmCaller`/`evmSelf`、Addr20 三叶。`evmDeposit` 让该 entry payable；程序若有任一
+payable 入口，去掉全局 `callvalue()` 守卫，非 payable 入口本地守卫。`evmSendEth` 是封闭
+value CALL。`evmLogTipped` 是 LOG1。窄槽 `UInt8/16/32` 各占一个 storage word。
+`Option UInt64` 是 tag+payload 两槽。
 
 同一 successful transition 同时包含 component effect 与 ordinary State store 时，Extract 会先
 snapshot 后续依赖的 mutable target query，再按 effect → State stores → return 排序。这样 map
@@ -81,7 +79,7 @@ query 失效，因此不触发额外 snapshot。多 limb/leaf State store 也不
 pre-state。query/effect 的可变性来自
 `Component.Query.effects` / `Component.Call.effects`，不是协议或容器名特判。
 
-每个 target-owned method 通过 `Method.toCFG` 后生成 Yul：入口预声明 CFG locals，`pf_pc`
+每个 method 通过 `Method.toCFG` 后生成 Yul：入口预声明 CFG locals，`pf_pc`
 dispatcher 的每个 `case` 对应一个 basic block，branch / checked success / overflow 只改下一
 block id。`pf_last` 只显式承接原 ABI 的 checked/effect result；local 和 storage value 直接
 按 CFG 中的显式引用读取，冲突 join fail closed。由于 Yul
@@ -97,8 +95,8 @@ overflow 是 `revert(0, 0)`，不是 `0x1001`。定理仍钉用户 `def`。
 
 - `IR.fromExtracted : Extract.IR.Program → Except String IR.Program`
 - `IR.extractRegistration : Core.Target.Registration … Evm.Ops.ValKind Evm.Ops.OpExt`
-- `Emit.emitYul` / `Emit.emitAbi`
-- `Assemble.assembleProgram`
+- `Emit.emitYul` / `Emit.emitAbi` / `Emit.emit`
+- `Assemble.assembleProgram` / `Assemble.assembleProgramWithBackend`
 - `#pf_evm_build Namespace`
 - `#pf_evm_dump Namespace`（打抽出 ops / digest，不汇编）
 

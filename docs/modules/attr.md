@@ -7,12 +7,16 @@
 ## Boundary
 
 只记录声明名。不检查闭包（那是 Profile）、不抽出（那是 Extract）。只能标 `def`。
+`@[pf_inline]` 允许抽出器在控制流边界展开已检查的有界 helper。`@[pf_boundary]`
+只给 `ProofForge.` 名下的编译器自有 structure / inductive 走通用 boundary codec。
 
 ## API
 
 - `@[pf_entry]`
-- `pfEntryAttr.hasTag env decl`
+- `@[pf_inline]`
+- `@[pf_boundary]`
+- `isEntry` / `isInline` / `isBoundary`
 
 ## Tests
 
-`Tests/BuildSpec.lean`：有标记则 `#pf_build` 成功；无标记 fail closed。
+`Tests/BuildSpec.lean`：有标记则 `#pf_evm_build` 成功；无标记 fail closed。

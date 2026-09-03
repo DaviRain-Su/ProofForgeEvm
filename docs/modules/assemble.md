@@ -1,29 +1,28 @@
-# ProofForge.Svm.Assemble
+# ProofForge.Evm.Assemble
 
 ## Purpose
 
-调用本机 `sbpf 0.2.2`，把 Counter 汇编变成 ELF `.so`。
+把 `Evm.IR.Program` 先编成 Yul / ABI，再调用本机汇编器写出 `.bin`。
 
 ## Boundary
 
-子进程，不是 FFI。按 `Program.name` 写 `src/Name/Name.s`，递归找 `Name.so`（`sbpf` 会嵌套 `deploy`）。
-读取 ELF 后、写最终 `.s` / `.so` / IDL 前执行 Loader-v3 size gate：Agave 4.0 的
-`ProgramData` account 上限 10 MiB，其中 metadata 45 bytes，因此 ELF 最大
-10,485,715 bytes。边界值由 `loaderV3SizeEligible` 的正反测试固定；超限以
-`assemble/size` fail closed。该纯函数门本身只声明 Loader-v3 **体积可容纳**；独立的
-`runtime-tests/surfpool/smoke.sh` 会关闭 instant direct-state 路径，通过 Surfpool 1.5.0
-执行真实 Loader-v3 buffer/write/deploy/authority transactions。该本地门不等同于公网部署。
+子进程，不是 FFI。默认后端是锁定的 `solc 0.8.34`，`--evm-version cancun`
+（opcode `0x44` 是 `PREVRANDAO`，不是 Paris 前的 `DIFFICULTY`）。`yulc` 由
+`PROOFFORGE_EVM_BACKEND=yulc` 或 `assembleProgramWithBackend … .yulc` 选择；
+二进制来自 `PROOFFORGE_YULC` 或仓内 `powdr-probe` 构建产物。PATH 上随便一个
+solc 不算。写出 `{name}.yul` / `{name}.abi.json` / `{name}.bin`。
 
 ## API
 
-- `assembleIRProgram outDir program : IO Result`（正常 target IR 路径）
-- `assembleProgram` / `assembleCounter`（旧 extraction IR 兼容入口）
-- `loaderV3MaxElfBytes` / `loaderV3SizeEligible`
-- `pfAssemble` 遍历 `Golden.programs`
-- `lake exe pfAssemble -- build/sbpf`（写出 Counter.so 与 Pair.so）
+- `Backend`：`.solc` | `.yulc`；`parseBackend` / `backendFromEnv`
+- `requiredSolcVersion` / `requiredEvmVersion`
+- `assembleProgramWithBackend outDir program backend : IO Result`
+- `assembleProgram`（读环境选后端）
+- `Result`：`yulPath` / `abiPath` / `binPath` / `binHex` / `backend`
+- `lake exe pfEvmAssemble -- build/evm` 遍历 `Evm.Golden.programs`
 
 ## Tests
 
-`runtime-tests/solana` Mollusk：Counter 4/4；Pair init / creditLeft 保 right / getLeft / overflow。
-`runtime-tests/surfpool/smoke.sh`：Phoenix ELF 本地 Loader-v3 交易部署、confirmed deploy
-signature、Program/ProgramData owner/layout 和完整 ELF bytes 一致性。
+`Tests/EvmBuildSpec.lean` / `Tests/BuildSpec.lean`：`#pf_evm_build` 钉登记 fixture
+的 digest 与 Yul 对象。solc 门在 `pfEvmAssemble`。
+`runtime-tests/evm/anvil.sh`：Anvil 工程门（见 `evm.md`）。

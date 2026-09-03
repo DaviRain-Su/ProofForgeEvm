@@ -9,7 +9,6 @@ import Tests.CoreCollectionsSpec
 import Tests.CoreMathSpec
 import Tests.CounterSpec
 import Tests.CreditsSpec
-import Tests.EmitSpec
 import Tests.EvmBitmapSpec
 import Tests.EvmBoundedSpec
 import Tests.EvmBuildSpec
