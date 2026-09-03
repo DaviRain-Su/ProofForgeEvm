@@ -51,6 +51,8 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | `Ownable.Log` + `TwoStepCounter` / `Credits` | Canonical `OwnershipTransferred` (LOG3) on **`acceptOwnership`** and Ownable2Step `OwnershipTransferStarted` (LOG3) on **`transferOwnership`**. `pendingOwner()` is the sole nominee. Constructor init stores the owner argument and empty pending state; constructor logs and zero-owner constructor reverts are not lowered | Drop-in OpenZeppelin Ownable / Ownable2Step |
 | `Pausable.Log` + `TwoStepCounter` / `Credits` / `Capped` | Canonical `Paused` / `Unpaused` (LOG1, non-indexed `account` = caller) on **`pause` / `unpause`**. `Token` pause still does not emit these | Drop-in OpenZeppelin Pausable |
 | `Roles.Log` + `EvmStaticCounter` / `EvmStaticRoster` | Canonical `RoleGranted` / `RoleRevoked` (LOG4, empty data; `bytes32` role + account + sender all indexed) on **actual** bounded `Set2` grant/revoke. Idempotent no-ops do not log. No `RoleAdminChanged`, ERC-165, or `mapping(bytes32 => …)` AccessControl | Drop-in OpenZeppelin AccessControl |
+| `Roles.Log` + `EvmCrew` | Same LOG4 role events on **actual** bounded `Set4` grant/revoke (four explicit address slots). Fifth distinct grant fails closed with `CapExceeded()` | Drop-in OpenZeppelin AccessControl |
+| `Nonces` + `RateLimit` + `EvmQuota` | Per-address nonce map (`AddressMap256`) with checked consumption; fixed-window rate limit (`capacity`/`window` + per-caller `lastUsed`/`lastTimepoint` maps). Typed `invalidNonce(uint256,uint256)` and `rateLimitExceeded()` failures; no token-bucket refill or sliding-window limiter | Drop-in OpenZeppelin Nonces / RateLimiter |
 | Reentrancy | Explicit policy helpers | Drop-in OpenZeppelin clone |
 
 ## Networks / deploy
