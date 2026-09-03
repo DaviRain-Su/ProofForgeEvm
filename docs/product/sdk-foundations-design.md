@@ -1,8 +1,9 @@
 # Fable SDK foundations design / SDK 基础设计
 
-> Status: design proposal, reviewed against `origin/main` on 2026-09-03.
-> Scope: a staged path from the current closed EVM components to typed events, typed external
-> calls, honest OpenZeppelin-compatible examples, and Base-ready execution.
+> Status: design proposal. S0, S1a/S1b, S2 (#9), S3 OpenCall (#10), S4a–d (#11–#14), and
+> S5 Base RPC gates (#8) are on `main` as of 2026-09-03. Remaining S4 (ERC-165, `TransferBatch`,
+> `RoleAdminChanged`, constructor Ownable logs) is not claimed. Anonymous LOG0 is not a product
+> `Event.emit` shape — typed events are named ABI events (LOG1–4, signature topic always).
 
 ## Objective / 目标
 
@@ -62,8 +63,7 @@ S0 is an integration prerequisite, not an SDK architecture change. The required 
 `pf init demo`; it must run the named-project flow (`pf init demo`, generated-project
 `lake build`, then `pf build`) rather than an opaque “smoke” label.
 
-At review time this work is present on PR #4, not assumed to be on `main`. S0 is complete only when
-the branch carrying this design sees that named check as a required, green CI result. No S1 code
+S0 landed on `main` as CI job `pf-init-user-project` (check name `pf init demo`). No S1 code
 should duplicate the init-gate implementation.
 
 ### S1a — target-local typed events first / 先做目标端 typed events
@@ -155,7 +155,7 @@ unchanged. `Request.fail` defaults to `revert0` (`revert(0, 0)`); `bubble` is op
 only to the call-failure gate (policy tails stay `revert(0, 0)`). Bubble copies callee-controlled
 `returndatasize()` and is not a bounded plan. yulc already rejects `gas()` on every CallResult
 CALL/STATICCALL; bubble additionally needs dynamic `returndatacopy`. See the support-matrix yulc
-row. OpenCall (S3) is not part of this slice.
+row. OpenCall (S3) is not part of this slice; it landed later on `main` as #10.
 
 ### S3 — `OpenCall` typed external CALL / 类型化开放调用
 
@@ -202,12 +202,12 @@ before `sstore`).
 “OZ adoption” means compatible signatures, indexed flags, ABI metadata, and observable behavior
 for the stated subset. It does not mean a drop-in or complete OpenZeppelin implementation.
 
-| Surface | Current `main` | S4 target | Honest boundary after S4 |
+| Surface | Current `main` | Remaining S4 | Honest boundary |
 |---|---|---|---|
-| ERC-20 events | Closed `Transfer`/`Approval` logs and ABI | Re-express through typed events only if zero-churn equivalence holds | Existing ERC-20-style subset, not a blanket full-ERC claim |
+| ERC-20 events | Closed `Transfer`/`Approval` logs and ABI (`Token`, `Erc20Meta`) | Re-express through typed events only if zero-churn equivalence holds | Existing ERC-20-style subset, not a blanket full-ERC claim |
 | ERC-165 | No SDK implementation found | Bounded `supportsInterface(bytes4)` policy for explicitly implemented interface IDs; `0xffffffff` is false | Reports only interfaces whose required surface is actually present |
-| ERC-721 | O(1) ownership/approval/balance core; events and receiver hooks are app-owned | Standard `Transfer`, `Approval`, and `ApprovalForAll` event descriptors and example adoption; ERC-165 ID only when the full advertised function set exists | No “full ERC-721” claim without safe-transfer/receiver and metadata decisions |
-| ERC-1155 | Bounded single-id balance/operator core; no standard events, batch calls, receiver hooks, or metadata URI | Standard `TransferSingle` and `ApprovalForAll`; `TransferBatch` only with a separately approved bounded dynamic-event plan | Single-id bounded core with those two events; no “full ERC-1155” claim |
+| ERC-721 | O(1) core plus canonical `Transfer`/`Approval`/`ApprovalForAll` on Collectible/Badge (S4a, #11) | ERC-165 ID only when the full advertised function set exists; safe callbacks / metadata URI | No “full ERC-721” claim without safe-transfer/receiver and metadata decisions |
+| ERC-1155 | Bounded single-id core plus canonical `TransferSingle`/`ApprovalForAll` on MultiToken/CraftToken (S4c, #13) | `TransferBatch` only with a separately approved bounded dynamic-event plan | Single-id bounded core with those two events; no “full ERC-1155” claim |
 
 The `TransferBatch` payload contains dynamic arrays and does not fit S1a's one-word-per-argument or
 the current four-data-word `LogPlan` contract. S4 must not fake it with a nonstandard fixed event.
@@ -234,6 +234,10 @@ Acceptance runs the same deployment entry point against local Anvil and a config
 RPC, proves the mismatch gate, and records chain ID, deployment address, transaction hash, and
 artifact digest. CI must not require a public funded key; remote evidence can remain an explicit
 protected/manual gate.
+
+**Implementation note (S5):** landed on `main` as #8. `PF_EVM_RPC_URL` + required
+`PF_EVM_CHAIN_ID` for external RPC; Anvil keeps local defaults; `anvil_setStorageAt` is
+Anvil-local only. Full `anvil.sh` refuses an external URL. See `docs/product/deploy.md`.
 
 ### S6 — OZ example waves / OZ 示例分波
 

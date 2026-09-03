@@ -118,6 +118,7 @@ Anvil（工程门，不是 refinement）：
 - `runtime-tests/evm/anvil_vault.sh`：hashed Map UInt64/Addr20、`shareOf(address)` / `pull(address,address,uint256)`、封闭 `approve`/`transferFrom`/`allowance`、超额保持、USDT 无返回成功
 - `runtime-tests/evm/anvil_ownable.sh`：`constructor(address)` / `ownerOf()(address)`、非 owner revert、Incremented log、UInt256 approve / checked allowance spend / over-spend atomicity
 - `runtime-tests/evm/anvil_token.sh`：checked additive mint、direct/delegated self-transfer、checked allowance increase/decrease/spend、wrap/不足原子保持、LOG3 Transfer/Approval
+- `runtime-tests/evm/anvil_erc20meta.sh`：`string` name/symbol ABI、standard `allowance`/`transfer`/`approve`、canonical LOG3 Transfer/Approval topics/data
 - `runtime-tests/evm/anvil_capped.sh`：第二个合约复用 owner + pause + 固定 cap；非 owner / paused / 超 cap 分别解码 Unauthorized / Paused / CapExceeded
 - `runtime-tests/evm/anvil_allowlist.sh`：owner-gated set insert/zero-key/contains/index/swap-remove/full/malformed atomicity
 - `runtime-tests/evm/anvil_id_registry.sh`：permissionless set reuse、typed full error、nonreverting malformed membership fallback

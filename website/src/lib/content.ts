@@ -51,8 +51,8 @@ export const PIPELINE = [
     zh: "EVM IR",
     en: "EVM IR",
     detail: {
-      zh: "Core 降到 EVM IR。物化 storage slot / selector / ABI。Registry 钉 47 个示例 digest。",
-      en: "Core lowers to EVM IR. Owns storage slots / selector / ABI. The registry pins 47 example digests.",
+      zh: "Core 降到 EVM IR。物化 storage slot / selector / ABI。Registry 钉 52 个示例 digest。",
+      en: "Core lowers to EVM IR. Owns storage slots / selector / ABI. The registry pins 52 example digests.",
     },
   },
   {
@@ -107,13 +107,13 @@ export const TARGETS = [
       zh: [
         "Lean → Extract IR → EVM IR → Yul → 钉死的 solc 0.8.34",
         "pf build 默认写出 Name.bin / Name.yul / Name.abi.json",
-        "Registry 钉 47 个示例 digest；抽出不匹配即拒绝",
+        "Registry 钉 52 个示例 digest；抽出不匹配即拒绝",
         "Anvil 工程门；v0 拒绝公网 broadcast",
       ],
       en: [
         "Lean → Extract IR → EVM IR → Yul → pinned solc 0.8.34",
         "pf build writes Name.bin / Name.yul / Name.abi.json by default",
-        "The registry pins 47 example digests; a mismatch is a refusal",
+        "The registry pins 52 example digests; a mismatch is a refusal",
         "Anvil engineering gate; v0 refuses public broadcast",
       ],
     },
@@ -260,7 +260,7 @@ export const DOCS: Record<
       title: "编译链",
       blocks: [
         "Profile → Extract.IR / Core → Evm.IR → Yul Emit → Assemble（默认 solc；可选 yulc）。Core 拥有 schema、control、checked arithmetic。",
-        "CLI 构建必须重新从用户模块抽 IR，不能组装 legacy Golden fixture。Registry 只钉仓内 Examples 的 47 个 digest。",
+        "CLI 构建必须重新从用户模块抽 IR，不能组装 legacy Golden fixture。Registry 只钉仓内 Examples 的 52 个 digest。",
         "详细边界见 docs/product/support-matrix.md。",
       ],
     },
@@ -268,7 +268,7 @@ export const DOCS: Record<
       title: "Pipeline",
       blocks: [
         "Profile → Extract.IR / Core → Evm.IR → Yul Emit → Assemble (solc by default; optional yulc). Core owns schema, control, checked arithmetic.",
-        "CLI build re-extracts IR from the user module. It does not assemble a legacy Golden fixture. The registry pins 47 in-tree Examples digests only.",
+        "CLI build re-extracts IR from the user module. It does not assemble a legacy Golden fixture. The registry pins 52 in-tree Examples digests only.",
         "See docs/product/support-matrix.md for the detailed boundary.",
       ],
     },
@@ -279,7 +279,7 @@ export const DOCS: Record<
       blocks: [
         "ProofForge.Evm.Sdk 是合同源表面：storage、fungible ledger、roles、pausable、reentrancy、payments，以及 ERC-721/1155 的 bounded core。",
         "用户项目只 import ProofForge.Attr 与 ProofForge.Evm.Sdk，不碰 ProofForge 伞模块。SDK 传递闭包不得到达 Emit / Assemble / Registry。",
-        "ERC-721/1155 当前是账本/授权 core，不是完整标准实现（缺规范事件、safe 回调、完整 metadata ABI）。对外请称 core / bounded policy。",
+        "ERC-721/1155 当前是账本/授权 core，不是完整标准实现（已覆盖所列 canonical events；仍缺 safe 回调、完整 metadata ABI）。对外请称 core / bounded policy。",
       ],
     },
     en: {
@@ -287,7 +287,7 @@ export const DOCS: Record<
       blocks: [
         "ProofForge.Evm.Sdk is the contract-facing surface: storage, fungible ledger, roles, pausable, reentrancy, payments, and bounded ERC-721/1155 cores.",
         "User projects import only ProofForge.Attr and ProofForge.Evm.Sdk — never the ProofForge umbrella. The SDK closure must not reach Emit / Assemble / Registry.",
-        "ERC-721/1155 are ledger/approval cores today, not full standard implementations (no full standard events, safe callbacks, or complete metadata ABI). Call them core / bounded policy.",
+        "ERC-721/1155 are ledger/approval cores today, not full standard implementations (the listed canonical events are covered; safe callbacks and complete metadata ABI are absent). Call them core / bounded policy.",
       ],
     },
   },
