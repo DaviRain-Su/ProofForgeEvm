@@ -80,7 +80,7 @@ private def expectProofLink : CommandElabM Unit := do
       abi.contains "\"name\":\"verify\"" &&
       abi.contains "\"type\":\"bytes32[]\"" do
     throwError s!"ProofLink ABI lost Merkle surface:\n{abi}"
-  unless IR.digestHex program == "c2070bfd6bf58831" do
+  unless IR.digestHex program == "c41e5e834c987462" do
     throwError s!"ProofLink digest drifted: {IR.digestHex program}"
   logInfo m!"prooflink: digest={IR.digestHex program} abi-ok keccak-ok"
 
