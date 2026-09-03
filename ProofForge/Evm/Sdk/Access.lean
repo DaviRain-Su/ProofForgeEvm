@@ -15,8 +15,9 @@ This module owns contract *policy gates*, not storage geometry. Every combinator
 - failure terminals are the closed `Revert` set (`Unauthorized(caller)`, `Paused()`),
   never new error selectors;
 - two-step ownership is one fixed `Ownership` value containing the sole pending address; the
-  consumer stores that value as ordinary static state, so an accepted transfer cannot leave an
-  older nominee live in another map entry.
+consumer stores that value as ordinary static state, so an accepted transfer cannot leave an
+older nominee live in another map entry. Canonical `OwnershipTransferred` logs live in
+`Sdk.Ownable.Log` and stay application-owned (typically on `acceptOwnership`).
 
 Storage writes stay explicit: `Ownership.nominate` / `cancel` / `consume` return replacement
 values, while the consumer's state transition writes both ownership policy and owner/paused

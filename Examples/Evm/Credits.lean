@@ -12,7 +12,8 @@ State: stored `owner` (rotated by two-step transfer), explicit `paused` flag, `U
 claimed credits, and one fixed pending owner. `credits` uses namespace 0 of `AddressMap256`, the map
 shape whose get/condition/put binding `Examples.Evm.Token` already proves end to end. Application
 policy and typed State writes stay in this file; reusable balance debit mechanics live in
-`Sdk.Fungible`.
+`Sdk.Fungible`. Successful `acceptOwnership` emits `OwnershipTransferred`; successful `pause` /
+`unpause` emit `Paused` / `Unpaused`.
 -/
 
 structure State where
@@ -45,12 +46,15 @@ def transferOwnership (s : State) (candidate : Address) : Except Error (State ×
   else
     .ok (s, Access.ownerViolation)
 
-/-- Nominee accepts; the owner-field write is explicit here. -/
+/-- Nominee accepts; the owner-field write is explicit here. Success emits
+    `OwnershipTransferred(previousOwner, pending)`. The new owner is the stored nominee
+    (equal to `caller` on this path) so Extract keeps the owner-field stores beside the log. -/
 @[pf_entry]
 def acceptOwnership (s : State) : Except Error (State × UInt64) :=
   if Access.Ownership.callerIsPending s.ownership then
-    .ok ({ owner := Context.caller, paused := s.paused, total := s.total, ownership :=
-      Access.Ownership.consume s.ownership }, 1)
+    .ok ({ owner := s.ownership, paused := s.paused, total := s.total, ownership :=
+      Access.Ownership.consume s.ownership },
+      Ownable.Log.ownershipTransferred s.owner s.ownership)
   else
     .ok (s, Access.ownerViolation)
 
@@ -85,19 +89,19 @@ def claim (s : State) (amount : UInt256) : Except Error (State × UInt64) :=
   else
     .ok (s, Pausable.violation)
 
-/-- Owner-gated pause. -/
+/-- Owner-gated pause. Success emits `Paused(caller)`. -/
 @[pf_entry]
 def pause (s : State) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
-    .ok ({ s with paused := Pausable.pause s.paused }, 1)
+    .ok ({ s with paused := Pausable.pause s.paused }, Pausable.Log.paused Context.caller)
   else
     .ok (s, Access.ownerViolation)
 
-/-- Owner-gated unpause. -/
+/-- Owner-gated unpause. Success emits `Unpaused(caller)`. -/
 @[pf_entry]
 def unpause (s : State) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
-    .ok ({ s with paused := Pausable.unpause s.paused }, 0)
+    .ok ({ s with paused := Pausable.unpause s.paused }, Pausable.Log.unpaused Context.caller)
   else
     .ok (s, Access.ownerViolation)
 

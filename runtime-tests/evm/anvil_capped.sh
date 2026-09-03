@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Capped: owner + pause + fixed cap, no hashed map. Darwin + Linux.
+# Receipts are ABI-decoded: Paused/Unpaused are LOG1 (non-indexed account).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,7 +9,14 @@ source "$here/lib.sh"
 
 pf_evm_evm_init evm-anvil-capped
 bin="$root/build/evm/Capped.bin"
-pf_evm_ensure_bin "$bin"
+abi="$root/build/evm/Capped.abi.json"
+if [[ ! -f "$bin" || ! -f "$abi" ]]; then
+  echo "building Capped.bin" >&2
+  lake exe pf -- build --target evm --out "$root/build/evm" Capped \
+    || { echo "FAIL: pf build Capped failed" >&2; exit 1; }
+fi
+[[ -f "$bin" ]] || { echo "FAIL: missing $bin" >&2; exit 1; }
+[[ -f "$abi" ]] || { echo "FAIL: missing $abi" >&2; exit 1; }
 pf_evm_start_anvil "${PF_EVM_PORT:-18559}" "$root/build/evm/anvil-capped.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
@@ -18,6 +26,13 @@ sender="$("$cast" wallet address --private-key "$private_key")"
 addr="$(pf_evm_deploy_ctor_address "$bytecode" "$sender")"
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
+
+sig_paused="$(pf_evm_typed_event_sig "$abi" Paused)"
+sig_unpaused="$(pf_evm_typed_event_sig "$abi" Unpaused)"
+pf_evm_require_equal "$sig_paused" 'Paused(address)' "ABI Paused signature"
+pf_evm_require_equal "$sig_unpaused" 'Unpaused(address)' "ABI Unpaused signature"
+topic_paused="$("$cast" keccak "$sig_paused")"
+topic_unpaused="$("$cast" keccak "$sig_unpaused")"
 
 got_owner="$("$cast" call --rpc-url "$rpc" "$addr" 'ownerOf()(address)')"
 pf_evm_require_equal "${got_owner,,}" "${sender,,}" "ownerOf"
@@ -64,8 +79,11 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'capOf()(uint256)')" \
   100 "cap holds after over-mint"
 
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'pause()' >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'pause()')"
+pf_evm_typed_event_check "$abi" "$receipt" Paused "$topic_paused" \
+  "{\"account\": \"$sender\"}" \
+  "pause Paused LOG1"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'pausedOf()(uint8)')" \
   1 "paused after pause"
@@ -88,8 +106,11 @@ fi
 pf_evm_require_unauthorized "$addr" "$other" \
   "$("$cast" calldata 'unpause()')" "$other" \
   "non-owner unpause"
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'unpause()' >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'unpause()')"
+pf_evm_typed_event_check "$abi" "$receipt" Unpaused "$topic_unpaused" \
+  "{\"account\": \"$sender\"}" \
+  "unpause Unpaused LOG1"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'pausedOf()(uint8)')" \
   0 "unpaused"
@@ -100,4 +121,4 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "mint to cap"
 
-echo "evm-anvil-capped: ok (owner/pause/cap; engineering only)"
+echo "evm-anvil-capped: ok (owner/pause/cap + Paused/Unpaused LOG1)"

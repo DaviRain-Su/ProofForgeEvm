@@ -9,7 +9,9 @@ EVM-SDK-1 consumer A: a counter guarded by `Access.requireOwner` /
 
 The owner is an explicit `Address` state field (mutable so `acceptOwnership` can rotate it), the
 paused flag is an explicit `UInt8` state field, and `ownership` contains exactly one pending
-address. All storage writes stay in this file.
+address. All storage writes stay in this file. Successful `acceptOwnership` emits canonical
+`OwnershipTransferred`; successful `pause` / `unpause` emit `Paused` / `Unpaused`. Constructor
+init does not log, and nomination does not emit Ownable2Step `OwnershipTransferStarted`.
 -/
 
 def u64Max : UInt64 := ~~~(0 : UInt64)
@@ -53,13 +55,16 @@ def cancelOwnership (s : State) (candidate : Address) : Except Error (State × U
   else
     .ok (s, Access.ownerViolation)
 
-/-- Step 2: the nominee accepts. The owner field write is explicit here; the SDK only
-    consumes the nomination flag. Non-nominee → `Unauthorized(caller)`. -/
+/-- Step 2: the nominee accepts. The owner-field write is explicit here; the SDK only
+    consumes the nomination flag. Non-nominee → `Unauthorized(caller)`. Success emits
+    `OwnershipTransferred(previousOwner, pending)`. The new owner is the stored nominee
+    (equal to `caller` on this path) so Extract keeps the owner-field stores beside the log. -/
 @[pf_entry]
 def acceptOwnership (s : State) : Except Error (State × UInt64) :=
   if Access.Ownership.callerIsPending s.ownership then
-    .ok ({ owner := Context.caller, paused := s.paused, count := s.count, ownership :=
-      Access.Ownership.consume s.ownership }, 1)
+    .ok ({ owner := s.ownership, paused := s.paused, count := s.count, ownership :=
+      Access.Ownership.consume s.ownership },
+      Ownable.Log.ownershipTransferred s.owner s.ownership)
   else
     .ok (s, Access.ownerViolation)
 
@@ -79,19 +84,19 @@ def bump (s : State) (delta : UInt64) : Except Error (State × UInt64) :=
   else
     .ok (s, Access.ownerViolation)
 
-/-- Owner-gated pause. -/
+/-- Owner-gated pause. Success emits `Paused(caller)`. -/
 @[pf_entry]
 def pause (s : State) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
-    .ok ({ s with paused := Pausable.pause s.paused }, 1)
+    .ok ({ s with paused := Pausable.pause s.paused }, Pausable.Log.paused Context.caller)
   else
     .ok (s, Access.ownerViolation)
 
-/-- Owner-gated unpause. -/
+/-- Owner-gated unpause. Success emits `Unpaused(caller)`. -/
 @[pf_entry]
 def unpause (s : State) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
-    .ok ({ s with paused := Pausable.unpause s.paused }, 0)
+    .ok ({ s with paused := Pausable.unpause s.paused }, Pausable.Log.unpaused Context.caller)
   else
     .ok (s, Access.ownerViolation)
 
