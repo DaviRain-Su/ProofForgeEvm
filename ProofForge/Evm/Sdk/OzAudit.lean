@@ -16,9 +16,12 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - 32 backlog coverage rows: 2 DONE, 16 PARTIAL, 14 ABSENT (14 blocked by non-goals)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
-a blocker bit (`true` when the row is ABSENT because of a documented permanent non-goal), and for
-blocked rows a permanent non-goal category tag aligned with `oz-sdk-backlog.md` § Permanent
-non-goals.
+an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal
+category tag aligned with `oz-sdk-backlog.md` § Permanent non-goals.
+
+`isAbsent` means no profile is shipped. `isBlocked` means the remaining gap is a documented
+permanent non-goal. Temporary implementable gaps may be `isAbsent` without `isBlocked`; blocked
+rows must always be absent (`isBlocked → isAbsent`), but absent rows are not automatically blocked.
 -/
 
 /-- Rows in the coverage table (`oz-sdk-backlog.md`). -/
@@ -28,13 +31,16 @@ def coverageRows : UInt64 := 32
 def doneCount : UInt64 := 2
 
 /-- Rows marked PARTIAL (named restricted profile). -/
-def partialCount : UInt64 := 16
+def partialCount : UInt64 := 18
 
 /-- Rows marked ABSENT (no profile shipped). -/
-def absentCount : UInt64 := 14
+def absentCount : UInt64 := 12
 
 /-- Rows whose remaining gap is blocked by a documented permanent non-goal. -/
-def blockedCount : UInt64 := 14
+def blockedCount : UInt64 := 12
+
+/-- Rows marked ABSENT without a permanent non-goal blocker (implementable gap). -/
+def temporaryGapCount : UInt64 := 0
 
 /-- Authority snapshot: `contracts/` tree paths. -/
 def authorityTreePaths : UInt64 := 452
@@ -234,7 +240,7 @@ def statusOf (row : UInt64) : UInt8 :=
   else if row == 10 then statusPartial
   else if row == 11 then statusDone
   else if row == 12 then statusAbsent
-  else if row == 13 then statusAbsent
+  else if row == 13 then statusPartial
   else if row == 14 then statusAbsent
   else if row == 15 then statusPartial
   else if row == 16 then statusAbsent
@@ -243,7 +249,7 @@ def statusOf (row : UInt64) : UInt8 :=
   else if row == 19 then statusPartial
   else if row == 20 then statusPartial
   else if row == 21 then statusPartial
-  else if row == 22 then statusAbsent
+  else if row == 22 then statusPartial
   else if row == 23 then statusPartial
   else if row == 24 then statusPartial
   else if row == 25 then statusAbsent
@@ -255,9 +261,33 @@ def statusOf (row : UInt64) : UInt8 :=
   else if row == 31 then statusAbsent
   else statusUnknown
 
-/-- Blocker bit for backlog row `row`: `true` when ABSENT due to a permanent non-goal. -/
-def isBlocked (row : UInt64) : Bool :=
+/-- True when no corresponding profile is shipped for backlog row `row`. -/
+def isAbsent (row : UInt64) : Bool :=
   statusOf row == statusAbsent
+
+/-- Permanent non-goal blocker bit for backlog row `row` (independent of `isAbsent`). -/
+def isBlocked (row : UInt64) : Bool :=
+  if row == 2 then true
+  else if row == 3 then true
+  else if row == 4 then true
+  else if row == 6 then true
+  else if row == 12 then true
+  else if row == 14 then true
+  else if row == 16 then true
+  else if row == 17 then true
+  else if row == 18 then true
+  else if row == 25 then true
+  else if row == 29 then true
+  else if row == 31 then true
+  else false
+
+/-- True when the row is an implementable ABSENT gap (not permanently blocked). -/
+def isTemporaryGap (row : UInt64) : Bool :=
+  isAbsent row && !isBlocked row
+
+/-- Blocked rows must be ABSENT; temporary gaps may be ABSENT without being blocked. -/
+def blockedImpliesAbsent (row : UInt64) : Bool :=
+  !isBlocked row || isAbsent row
 
 /-- Permanent non-goal category for blocked row `row`; `nonGoalNone` when not blocked. -/
 def nonGoalTagOf (row : UInt64) : UInt8 :=
@@ -266,12 +296,10 @@ def nonGoalTagOf (row : UInt64) : UInt8 :=
   else if row == 4 then nonGoalCrossChainRegistry
   else if row == 6 then nonGoalUnboundedGovernance
   else if row == 12 then nonGoalArbitraryCall
-  else if row == 13 then nonGoalArbitraryCall
   else if row == 14 then nonGoalCrossChainRegistry
   else if row == 16 then nonGoalCrossChainRegistry
   else if row == 17 then nonGoalArbitraryCall
   else if row == 18 then nonGoalProxyCreateSlot
-  else if row == 22 then nonGoalUnboundedGovernance
   else if row == 25 then nonGoalArbitraryCall
   else if row == 29 then nonGoalProxyCreateSlot
   else if row == 31 then nonGoalNotRuntime
@@ -308,8 +336,7 @@ def isClassified (row : UInt64) : Bool :=
   row < coverageRows && isKnownStatus (statusOf row)
 
 private def classifyRow (row : UInt64) : Bool :=
-  isClassified row && pathTagOf row != 0 &&
-    (isBlocked row == (statusOf row == statusAbsent))
+  isClassified row && pathTagOf row != 0 && blockedImpliesAbsent row
 
 /-- True when every in-range row is classified with a consistent blocker bit. -/
 def allRowsClassified : Bool :=

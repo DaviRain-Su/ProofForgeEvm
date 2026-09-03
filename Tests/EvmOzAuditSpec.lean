@@ -16,9 +16,10 @@ open Lean Elab Command
 
 #guard OzAudit.coverageRows == 32
 #guard OzAudit.doneCount == 2
-#guard OzAudit.partialCount == 16
-#guard OzAudit.absentCount == 14
-#guard OzAudit.blockedCount == 14
+#guard OzAudit.partialCount == 18
+#guard OzAudit.absentCount == 12
+#guard OzAudit.blockedCount == 12
+#guard OzAudit.temporaryGapCount == 0
 #guard OzAudit.classifiedCount == 32
 #guard OzAudit.isComplete
 #guard OzAudit.allRowsClassified
@@ -58,6 +59,11 @@ open Lean Elab Command
 #guard OzAudit.pathTagOf 2 == OzAudit.tagAccessExt
 #guard OzAudit.statusOf 2 == OzAudit.statusAbsent
 #guard OzAudit.isBlocked 2
+#guard OzAudit.isAbsent 2
+#guard !OzAudit.isTemporaryGap 2
+#guard OzAudit.blockedImpliesAbsent 2
+#guard !OzAudit.isAbsent 0
+#guard !OzAudit.isTemporaryGap 0
 #guard OzAudit.pathTagOf 31 == OzAudit.tagVendor
 #guard OzAudit.statusOf 31 == OzAudit.statusAbsent
 #guard OzAudit.isBlocked 31
@@ -73,8 +79,8 @@ private def countStatus (status : UInt8) : Nat := Id.run do
   return n
 
 #guard countStatus OzAudit.statusDone == 2
-#guard countStatus OzAudit.statusPartial == 16
-#guard countStatus OzAudit.statusAbsent == 14
+#guard countStatus OzAudit.statusPartial == 18
+#guard countStatus OzAudit.statusAbsent == 12
 
 private def countBlocked : Nat := Id.run do
   let mut n : Nat := 0
@@ -83,7 +89,16 @@ private def countBlocked : Nat := Id.run do
       n := n + 1
   return n
 
-#guard countBlocked == 14
+#guard countBlocked == 12
+
+private def countTemporaryGap : Nat := Id.run do
+  let mut n : Nat := 0
+  for row in [0:32] do
+    if OzAudit.isTemporaryGap row.toUInt64 then
+      n := n + 1
+  return n
+
+#guard countTemporaryGap == 0
 
 private def expectAuditLink : CommandElabM Unit := do
   let env ← getEnv
@@ -113,7 +128,7 @@ private def expectAuditLink : CommandElabM Unit := do
       abi.contains "\"name\":\"isClassified\"" &&
       abi.contains "\"name\":\"auditOk\"" do
     throwError s!"AuditLink ABI lost audit surface:\n{abi}"
-  unless IR.digestHex program == "46dd623883b2ee8e" do
+  unless IR.digestHex program == "f8f4b79c4ff80d0a" do
     throwError s!"AuditLink digest drifted: {IR.digestHex program}"
   logInfo m!"auditlink: digest={IR.digestHex program} abi-ok"
 

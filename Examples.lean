@@ -49,7 +49,10 @@ import Examples.Evm.SafePay
 import Examples.Evm.RoyaltyArt
 import Examples.Evm.VestLink
 import Examples.Evm.ProofLink
+import Examples.Evm.HeaderLink
 import Examples.Evm.AuditLink
+import Examples.Evm.Vault4626Link
+import Examples.Evm.NineLink
 import Examples.Evm.Capped
 import Examples.Evm.MultiToken
 import Examples.Evm.CraftToken

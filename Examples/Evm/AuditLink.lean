@@ -99,7 +99,7 @@ def statusOf (_s : State) (row : UInt64) : UInt8 :=
   else if row == 10 then 2
   else if row == 11 then 1
   else if row == 12 then 3
-  else if row == 13 then 3
+  else if row == 13 then 2
   else if row == 14 then 3
   else if row == 15 then 2
   else if row == 16 then 3
@@ -108,7 +108,7 @@ def statusOf (_s : State) (row : UInt64) : UInt8 :=
   else if row == 19 then 2
   else if row == 20 then 2
   else if row == 21 then 2
-  else if row == 22 then 3
+  else if row == 22 then 2
   else if row == 23 then 2
   else if row == 24 then 2
   else if row == 25 then 3
@@ -127,12 +127,10 @@ def isBlocked (_s : State) (row : UInt64) : Bool :=
   else if row == 4 then true
   else if row == 6 then true
   else if row == 12 then true
-  else if row == 13 then true
   else if row == 14 then true
   else if row == 16 then true
   else if row == 17 then true
   else if row == 18 then true
-  else if row == 22 then true
   else if row == 25 then true
   else if row == 29 then true
   else if row == 31 then true
@@ -145,12 +143,10 @@ def nonGoalTagOf (_s : State) (row : UInt64) : UInt8 :=
   else if row == 4 then 5
   else if row == 6 then 4
   else if row == 12 then 2
-  else if row == 13 then 2
   else if row == 14 then 5
   else if row == 16 then 5
   else if row == 17 then 2
   else if row == 18 then 1
-  else if row == 22 then 4
   else if row == 25 then 2
   else if row == 29 then 1
   else if row == 31 then 6
