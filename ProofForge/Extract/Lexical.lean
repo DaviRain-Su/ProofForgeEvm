@@ -726,6 +726,7 @@ def reduceCtorProjection? (env : Environment) (e : Expr) : Option Expr :=
     let name := projection.toString
     if !name.startsWith "ProofForge.Evm.HashedMap." &&
         !name.startsWith "ProofForge.Evm.ClosedCall." &&
+        !name.startsWith "ProofForge.Evm.OpenCall." &&
         !name.startsWith "ProofForge.Evm.WideWord." &&
         !name.startsWith "ProofForge.Evm.NativeFx." &&
         !name.startsWith "MProd." &&

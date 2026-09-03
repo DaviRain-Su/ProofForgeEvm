@@ -7,6 +7,8 @@ import ProofForge.Core.Except
 import ProofForge.Evm.Runtime
 import ProofForge.Evm.Codec
 import ProofForge.Evm.NativeFx
+import ProofForge.Evm.OpenCall
+import ProofForge.Evm.CallResult
 import ProofForge.Extract.Lexical
 
 open Lean
@@ -731,6 +733,12 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogApproval256) ||
       (endsWith e ".evmLogTyped" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped) ||
+      (endsWith e ".evmOpenCall" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall) ||
+      (endsWith e ".evmOpenCallSuccess" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess) ||
+      (endsWith e ".evmOpenCallValue" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue) ||
       (endsWith e ".evmSendEth" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmSendEth) ||
       (endsWith e ".evmSendEth256" ||
@@ -790,6 +798,13 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       some (.mapGetPair (get 6) (get 5) (get 4) (get 3) (get 2) (get 1) (get 0))
       else if endsWith e ".evmLogTyped" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped then
+      some (.lit 0)
+      else if endsWith e ".evmOpenCall" ||
+          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall ||
+          endsWith e ".evmOpenCallSuccess" ||
+          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
+          endsWith e ".evmOpenCallValue" ||
+          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue then
       some (.lit 0)
       else if endsWith e ".evmLogTransfer256" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTransfer256 ||
@@ -2524,6 +2539,174 @@ private def findTypedEventFailure (env : Environment) (e : Expr) : Option String
           | _ => none
   walk 24 e
 
+private inductive DecodedOpenCall where
+  | notOpenCall
+  | plan (plan : Evm.OpenCall.Plan Ops.Val)
+  | query (query : Evm.OpenCall.Query) (operands : Array Ops.Val)
+  | unsupported (reason : String)
+
+private def nthFromEnd (args : Array Expr) (n : Nat) : Option Expr :=
+  if args.size ≥ n + 1 then some args[args.size - 1 - n]! else none
+
+private def isEvmOpenCallApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall || endsWith e ".evmOpenCall"
+
+private def isEvmOpenCallSuccessApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
+    endsWith e ".evmOpenCallSuccess"
+
+private def isEvmOpenCallValueApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
+    endsWith e ".evmOpenCallValue"
+
+private def isEvmOpenStaticWordApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenStaticWord ||
+    endsWith e ".evmOpenStaticWord"
+
+private def isEvmOpenStaticWords2App (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenStaticWords2 ||
+    endsWith e ".evmOpenStaticWords2"
+
+private def isAnyOpenCallApp (e : Expr) : Bool :=
+  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
+    isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e
+
+/-- Preserve a typed open-call constructor as one ABI plan. Names and closed scalar types stay
+structured; unsupported shapes must not degrade to raw calldata. -/
+private def decodeOpenCallArgs (env : Environment) (applied : Expr) :
+    Except String (String × Array (Evm.OpenCall.Arg Ops.Val)) :=
+  let applied := peelLets (strip applied)
+  match applied.getAppFn.constName? with
+  | none => .error "open-call lost constructor"
+  | some ctorName =>
+    let name := Core.IR.lastName ctorName.toString
+    match env.find? ctorName with
+    | some (.ctorInfo ctor) =>
+      if name.isEmpty then
+        .error "open-call constructor name must be non-empty"
+      else if Lean.isStructure env ctor.induct then
+        .error "open-call payload must be an inductive constructor, not a structure"
+      else
+        match env.find? ctor.induct with
+        | some (.inductInfo info) =>
+          if info.numParams != 0 || info.numIndices != 0 || info.isRec then
+            .error "open-call payload must be a nonrecursive monomorphic enum"
+          else if applied.getAppArgs.size < ctor.numFields then
+            .error "open-call lost constructor fields"
+          else if ctor.numFields > Evm.OpenCall.maxArgWords then
+            .error "open-call supports at most eight ABI arguments"
+          else Id.run do
+            let mut type := ctor.type
+            let mut args : Array (Evm.OpenCall.Arg Ops.Val) := #[]
+            let mut names : Array String := #[]
+            for fieldIndex in [:ctor.numFields] do
+              let .forallE fieldName domain body binderInfo := strip type
+                | return .error "open-call lost field metadata"
+              unless explicitEventFieldBinder fieldName binderInfo do
+                return .error "open-call fields must be explicitly named"
+              let some scalar := eventScalarOfLeanType domain
+                | return .error "open-call field type is not a closed EVM scalar"
+              unless Evm.OpenCall.argScalarSupported scalar do
+                return .error "open-call field type is not a closed EVM scalar"
+              let fieldName := fieldName.toString
+              if fieldName.isEmpty || names.contains fieldName then
+                return .error "open-call field names must be unique"
+              let some fieldExpr :=
+                  applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
+                | return .error "open-call lost field value"
+              let some parts := eventPartsOf env scalar (peelLets (strip fieldExpr))
+                | return .error "open-call field is not a scalar value"
+              names := names.push fieldName
+              args := args.push { name := fieldName, type := scalar, parts }
+              type := body
+            if !Evm.OpenCall.isIdent name then
+              return .error "open-call constructor name must be a Solidity identifier"
+            .ok (name, args)
+        | _ => .error "open-call payload has no enum metadata"
+    | _ => .error "open-call lost constructor"
+
+private def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedOpenCall :=
+  let e := unfoldUserHelpers env 8 (peelLets (strip e))
+  if !isAnyOpenCallApp e then .notOpenCall
+  else
+    let args := e.getAppArgs
+    let hasValue := isEvmOpenCallValueApp e
+    let payloadIdx : Nat := 0
+    let valueIdx : Nat := 1
+    let targetIdx : Nat := if hasValue then 2 else 1
+    match nthFromEnd args targetIdx, nthFromEnd args payloadIdx,
+        (if hasValue then nthFromEnd args valueIdx else none) with
+    | some targetE, some payloadE, valueE? =>
+      match decodeOpenCallArgs env payloadE with
+      | .error reason => .unsupported reason
+      | .ok (name, callArgs) =>
+        let (t0, t1, t2) := addr20Leaves env targetE
+        let target := #[t0, t1, t2]
+        let valueParts :=
+          match valueE? with
+          | some valueE =>
+            let (v0, v1, v2, v3) := uint256Leaves env valueE
+            #[v0, v1, v2, v3]
+          | none => #[]
+        let kind : Evm.CallResult.Kind :=
+          if isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e then .staticcall
+          else .call
+        let policy : Evm.CallResult.Policy :=
+          if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
+          else if isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e then .contractSuccess
+          else if isEvmOpenStaticWords2App e then .exactWords 2
+          else .exactWord
+        if isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e then
+          let query : Evm.OpenCall.Query := {
+            name
+            argTypes := callArgs.map (·.type)
+            kind
+            policy
+            hasValue := false
+            word := 0
+            limb := 0
+          }
+          let operands := target ++ callArgs.flatMap (·.parts)
+          if query.wellFormed && operands.size == query.arity then
+            .query query operands
+          else .unsupported "malformed open-call query"
+        else
+          let plan : Evm.OpenCall.Plan Ops.Val := {
+            name
+            args := callArgs
+            target
+            kind
+            policy
+            valueParts
+          }
+          if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
+          else .unsupported "malformed open-call plan"
+    | _, _, _ => .unsupported "open-call lost target or payload"
+
+private def findOpenCallFailure (env : Environment) (e : Expr) : Option String :=
+  let rec walk (fuel : Nat) (e : Expr) : Option String :=
+    match fuel with
+    | 0 => none
+    | fuel' + 1 =>
+      let e := e.consumeMData
+      match decodeOpenCallCtor env e with
+      | .unsupported reason => some reason
+      | .plan _ | .query _ _ => none
+      | .notOpenCall =>
+        if let some (_, unfolded) := unfoldUserHelper env e then
+          walk fuel' unfolded
+        else
+          match e with
+          | .letE _ _ value body _ =>
+              walk fuel' value <|> walk fuel' (body.instantiate1 value)
+          | .lam _ _ body _ => walk fuel' body
+          | .app f a => walk fuel' f <|> walk fuel' a
+          | _ => none
+  walk 24 e
+
+private def findTypedSourceFailure (env : Environment) (e : Expr) : Option String :=
+  findTypedEventFailure env e <|> findOpenCallFailure env e
+
 private def isErrorOverflow (e : Expr) : Bool :=
   let e := peelControl 8 e
   if isExceptErrorHead e then
@@ -3094,9 +3277,6 @@ private def collectIndexSets (env : Environment) (e : Expr)
 private def findIndexSet (env : Environment) (e : Expr) : Option Ops.Op :=
   (collectIndexSets env e)[0]?
 
-private def nthFromEnd (args : Array Expr) (n : Nat) : Option Expr :=
-  if args.size ≥ n + 1 then some args[args.size - 1 - n]! else none
-
 private def valAtEnd (env : Environment) (args : Array Expr) (n : Nat) : Ops.Val :=
   match nthFromEnd args n with
   | some e => (val env e).getD (.arg n)
@@ -3171,6 +3351,15 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
     match decodeEventCtor env app with
     | .typed frame => some (.evmLogTyped frame)
     | .unsupported _ | .notEvent => none
+  else if isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCall ||
+      endsWith app ".evmOpenCall" ||
+      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
+      endsWith app ".evmOpenCallSuccess" ||
+      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCallValue ||
+      endsWith app ".evmOpenCallValue" then
+    match decodeOpenCallCtor env app with
+    | .plan plan => some (.evmComponent (.openCall (.invoke plan)))
+    | .unsupported _ | .notOpenCall | .query _ _ => none
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmRevertInsufficient ||
       endsWith app ".evmRevertInsufficient" then
     match nthFromEnd args 1, nthFromEnd args 0 with
@@ -3480,6 +3669,19 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
       .returnU64 (.ext (.evm (.component (.closedCall (.allowance256 3))))
         #[t0, t1, t2, o0, o1, o2, s0, s1, s2])
     ]
+  else if isConstNamed app ``ProofForge.Evm.Runtime.evmOpenStaticWord ||
+      endsWith app ".evmOpenStaticWord" ||
+      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenStaticWords2 ||
+      endsWith app ".evmOpenStaticWords2" then
+    match decodeOpenCallCtor env app with
+    | .query query operands =>
+      some #[
+        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 0 }))) operands),
+        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 1 }))) operands),
+        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 2 }))) operands),
+        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 3 }))) operands)
+      ]
+    | _ => none
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmCallValue256 ||
       endsWith app ".evmCallValue256" then
     some #[
@@ -3654,6 +3856,7 @@ private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   | some (.evmSwapExact3 _ _ _ _ _ _ _ _ _ _ _ _ i0 _ _ _ _ _ _ _) => i0
   | some (.evmPermit _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
   | some (.evmTokenPermit _ _ _ _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
+  | some (.evmComponent (.openCall _)) => .lit 0
   | _ => .arg 0
 
 private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
@@ -3830,7 +4033,7 @@ def zetaPureHeadLets (env : Environment) (fuel : Nat) (e : Expr) : Expr :=
     match strip e with
     | .letE _ _ value body _ =>
         let effectful :=
-          (decodeEvmEffect env value).isSome || (findTypedEventFailure env value).isSome ||
+          (decodeEvmEffect env value).isSome || (findTypedSourceFailure env value).isSome ||
             (findForIn env value).isSome || (findForBodyExpr env value).isSome
         -- A scalar captured before an effect must remain a local: substituting its state-field read
         -- through the call can move that read after a later state write.
@@ -4566,7 +4769,7 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
   let includeSingleStore := stateful || stateType?.any fun stateType =>
     (getStructureFields env stateType).size > 1
   -- 必须在 peelLets 之前找效应：剥掉 `have sent := …` 后调用就没了。
-  if let some reason := findTypedEventFailure env e then
+  if let some reason := findTypedSourceFailure env e then
     .error s!"extract/unsupported: {reason}"
   else if let some ops := decodeEvmEffect env e then
     .ok (mergeEvmStores localDepth ops (evmEffectStores env e))
@@ -4927,7 +5130,7 @@ private def nestedSequencedScalarHelper? (env : Environment) (e : Expr) : Option
             | some (.defnInfo info) =>
                 if (resultType 16 info.type).consumeMData.getAppFn.constName? == some ``UInt64 &&
                     (decodeEvmEffect env unfolded).isNone &&
-                    (findTypedEventFailure env unfolded).isNone &&
+                    (findTypedSourceFailure env unfolded).isNone &&
                     ((findForIn env unfolded).isSome || (findForBodyExpr env unfolded).isSome) then
                   some candidate
                 else
@@ -4958,7 +5161,7 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
     match strip e with
     | .letE _ ty value body _ =>
       let effectful :=
-        (decodeEvmEffect env value).isSome || (findTypedEventFailure env value).isSome ||
+        (decodeEvmEffect env value).isSome || (findTypedSourceFailure env value).isSome ||
           (findForIn env value).isSome || (findForBodyExpr env value).isSome
       let scalarControlProducer := isSequencedScalarProducer env ty value
       if scalarControlProducer then
@@ -5181,7 +5384,7 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
           (stateType? := stateType?) (deepScalars := deepScalars) with
       | .ok ops => return .ok ops
       | .error reason => return .error s!"extract/unsupported: inline {name}: {reason}"
-    else if let some reason := findTypedEventFailure env e then
+    else if let some reason := findTypedSourceFailure env e then
       return .error s!"extract/unsupported: {reason}"
     else if let some ops := decodeEvmEffect env e then
       return .ok (mergeEvmStores localDepth ops (evmEffectStores env e))
@@ -5227,9 +5430,9 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
       let f :=
         if containsStructuredStateLet env 64 f then f
         else substIteLets 64 f
-      if let some reason := findTypedEventFailure env t then
+      if let some reason := findTypedSourceFailure env t then
         return .error s!"extract/unsupported: {reason}"
-      if let some reason := findTypedEventFailure env f then
+      if let some reason := findTypedSourceFailure env f then
         return .error s!"extract/unsupported: {reason}"
       let checkedSubMatches (candidate : Expr) : Bool :=
         match asCheckedSubGuard env candidate with
@@ -5477,7 +5680,7 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
           return .error (if stateful then s!"state loop then: {r}" else s!"ite then: {r}")
         | _, .error r =>
           return .error (if stateful then s!"state loop else: {r}" else s!"ite else: {r}")
-    else if let some reason := findTypedEventFailure env e then
+    else if let some reason := findTypedSourceFailure env e then
       return .error s!"extract/unsupported: {reason}"
     else if let some ops := decodeEvmEffect env e then
       return .ok ops
