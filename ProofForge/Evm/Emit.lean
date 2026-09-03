@@ -1611,6 +1611,35 @@ private def eventAbi (name : String) : String :=
     "{\"type\":\"event\",\"name\":\"" ++ escapeJson name ++
       "\",\"inputs\":[{\"name\":\"amt\",\"type\":\"uint64\",\"indexed\":false}],\"anonymous\":false}"
 
+/-- ABI types of one validated typed event frame; the same owner the Yul emitter uses for
+topic0, so ABI JSON and LOG geometry cannot drift apart. Existing Transfer256/Approval256 JSON
+is not rewritten here. -/
+private def typedEventAbiTypes (frame : Core.Ops.EventFrame Ops.Val) :
+    Except String (Array String) :=
+  NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame
+
+/-- Canonical event identity is the topic0 signature `Name(type,...)`. Two frames sharing it must
+agree on names and indexed flags, since receipts cannot distinguish them. -/
+private def typedEventIdentity (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
+  let types ← typedEventAbiTypes frame
+  return Keccak.signature frame.constructor types
+
+/-- Topic0 signature of a closed `NativeFx.logName` event, mirroring `eventAbi`. -/
+private def closedEventIdentity (name : String) : String :=
+  if name == "Transfer256" then "Transfer(address,address,uint256)"
+  else if name == "Approval256" then "Approval(address,address,uint256)"
+  else name ++ "(uint64)"
+
+private def eventAbiTyped (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
+  let types ← typedEventAbiTypes frame
+  let mut inputs := #[]
+  for i in [0:frame.args.size] do
+    let indexed := if frame.args[i]!.indexed then "true" else "false"
+    inputs := inputs.push ("{\"name\":\"" ++ escapeJson frame.args[i]!.name ++
+      "\",\"type\":\"" ++ types[i]! ++ "\",\"indexed\":" ++ indexed ++ "}")
+  return "{\"type\":\"event\",\"name\":\"" ++ escapeJson frame.constructor ++
+    "\",\"inputs\":[" ++ String.intercalate "," inputs.toList ++ "],\"anonymous\":false}"
+
 private def errorAbiInsufficient : String :=
   "{\"type\":\"error\",\"name\":\"Insufficient\",\"inputs\":[" ++
     "{\"name\":\"have\",\"type\":\"uint256\"}," ++
@@ -1690,6 +1719,19 @@ private partial def collectTypedErrorFrames (ops : Array IR.Op) :
     | .forBody _ body => acc ++ collectTypedErrorFrames body
     | _ => acc
 
+/-- Collect typed event frames through the same structured control-flow tree as emission. -/
+private partial def collectTypedEventFrames (ops : Array IR.Op) :
+    Array (Core.Ops.EventFrame Ops.Val) :=
+  ops.foldl (init := #[]) fun acc op =>
+    let acc :=
+      match op with
+      | .component (.nativeFx (.logTyped frame)) => acc.push frame
+      | _ => acc
+    match op with
+    | .ite _ _ _ t f => acc ++ collectTypedEventFrames t ++ collectTypedEventFrames f
+    | .forBody _ body => acc ++ collectTypedEventFrames body
+    | _ => acc
+
 private partial def hasErrorLeaf (pred : IR.Op → Bool) (ops : Array IR.Op) : Bool :=
   ops.any fun op =>
     pred op ||
@@ -1718,6 +1760,30 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
       unless typedErrorIds.contains identity do
         typedErrorIds := typedErrorIds.push identity
         typedErrors := typedErrors.push frame
+  -- Typed events dedupe on topic0 identity. A second frame with the same identity must carry
+  -- byte-identical ABI metadata; a collision with a closed `logName` event is accepted only when
+  -- the typed JSON equals the closed spelling, so Transfer/Approval bytes are never rewritten.
+  let closedEventIds := evs.map closedEventIdentity
+  let mut typedEvents := #[]
+  let mut typedEventIds : Array String := #[]
+  let mut typedEventJson : Array String := #[]
+  for method in p.entries do
+    for frame in collectTypedEventFrames method.ops do
+      let identity ← typedEventIdentity frame
+      let json ← eventAbiTyped frame
+      match typedEventIds.idxOf? identity with
+      | some i =>
+          unless typedEventJson[i]! == json do
+            throw s!"extract/unsupported: conflicting typed event metadata for {identity}"
+      | none =>
+          match closedEventIds.idxOf? identity with
+          | some i =>
+              unless eventAbi evs[i]! == json do
+                throw s!"extract/unsupported: typed event conflicts with closed event {identity}"
+          | none =>
+              typedEventIds := typedEventIds.push identity
+              typedEventJson := typedEventJson.push json
+              typedEvents := typedEvents.push frame
   let needIns := p.entries.any (fun m =>
     hasErrorLeaf (fun
       | .component call => call.emitsInsufficient
@@ -1749,6 +1815,7 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
       entryItems := entryItems.push (← entryAbi method)
   let items :=
     #[← ctorAbi p] ++ evs.map eventAbi ++
+      (← typedEvents.mapM eventAbiTyped) ++
       (if needIns then #[errorAbiInsufficient] else #[]) ++
       (if needUnauth then #[errorAbiUnauthorized] else #[]) ++
       (if needZero then #[errorAbiZeroAddress] else #[]) ++

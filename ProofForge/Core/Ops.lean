@@ -78,6 +78,57 @@ def ErrorFrame.wellFormed (valueWellFormed : V → Bool) (frame : ErrorFrame V) 
         arg.parts.size == (arg.type.byteWidth + 7) / 8 &&
         arg.parts.all valueWellFormed
 
+/-- One logical field of a source event constructor. Mirrors `ErrorArg`, plus the ABI `indexed`
+flag that decides topic vs data placement. Core still owns names, scalar metadata, and
+little-endian source limbs; targets own topic0, LOG geometry, and the indexed-count bound. -/
+structure EventArg (V : Type) where
+  name : String
+  type : Core.Codec.Scalar
+  parts : Array V
+  indexed : Bool := false
+  deriving BEq, Repr, Inhabited
+
+/-- Target-neutral fixed event frame. Indexed fields become LOG topics after the signature
+hash; non-indexed fields become ABI data words. -/
+structure EventFrame (V : Type) where
+  constructor : String
+  args : Array (EventArg V)
+  deriving BEq, Repr, Inhabited
+
+def EventArg.mapValues (mapValue : α → β) (arg : EventArg α) : EventArg β :=
+  { arg with parts := arg.parts.map mapValue }
+
+def EventFrame.mapValues (mapValue : α → β) (frame : EventFrame α) : EventFrame β :=
+  { frame with args := frame.args.map (·.mapValues mapValue) }
+
+def EventArg.mapValuesM [Monad m] (mapValue : α → m β) (arg : EventArg α) :
+    m (EventArg β) := do
+  return { arg with parts := ← arg.parts.mapM mapValue }
+
+def EventFrame.mapValuesM [Monad m] (mapValue : α → m β) (frame : EventFrame α) :
+    m (EventFrame β) := do
+  return { frame with args := ← frame.args.mapM (·.mapValuesM mapValue) }
+
+def EventFrame.values (frame : EventFrame V) : Array V :=
+  frame.args.flatMap (·.parts)
+
+def EventFrame.indexedCount (frame : EventFrame V) : Nat :=
+  frame.args.foldl (init := 0) fun n arg => n + if arg.indexed then 1 else 0
+
+def EventFrame.dataCount (frame : EventFrame V) : Nat :=
+  frame.args.size - frame.indexedCount
+
+/-- Generic event-frame invariant, mirroring `ErrorFrame.wellFormed`. Empty argument lists are
+allowed (signature-only LOG1). A target may still reject a frame whose indexed/data word
+counts exceed LOG0..4 / data-word bounds. -/
+def EventFrame.wellFormed (valueWellFormed : V → Bool) (frame : EventFrame V) : Bool :=
+  let names := frame.args.toList.map (·.name)
+  !frame.constructor.isEmpty &&
+    names.length == names.eraseDups.length &&
+    frame.args.all fun arg =>
+      !arg.name.isEmpty && arg.type.isWellFormed &&
+        arg.parts.size == (arg.type.byteWidth + 7) / 8 &&
+        arg.parts.all valueWellFormed
 /--
 Target-independent effects and control flow. `OpExt V` is target-owned and may carry typed
 metadata plus source values, but cannot recursively contain `Op`.
