@@ -4,17 +4,8 @@ open Lake DSL
 package «proofforge» where
   version := v!"0.0.1"
 
-/-- Shared Attr + Core/Crypto surface used by the EVM SDK. -/
-lean_lib ProofForgeCore where
-  roots := #[
-    `ProofForge.Attr,
-    `ProofForge.Core.Codec,
-    `ProofForge.Core.Collections,
-    `ProofForge.Core.Math,
-    `ProofForge.Core.Ops,
-    `ProofForge.Core.SafeCast,
-    `ProofForge.Core.Value
-  ]
+/-- Shared Attr + Core/Crypto surface, now maintained in ProofForgeCommon. -/
+require «proofforge-common» from "../ProofForgeCommon"
 
 /-- Contract-facing EVM SDK (+ Runtime/Source needed for `pf_inline` erase). No Emit. -/
 lean_lib ProofForgeEvmSdk where
@@ -65,69 +56,19 @@ lean_lib ProofForgeEvmSdk where
     `ProofForge.Evm.WideWord.Source
   ]
 
-/-- Compiler: Extract, Evm IR/Emit/Assemble/Registry, and the `ProofForge` umbrella. -/
+/-- Compiler: Extract, Evm IR/Emit/Assemble/Registry, and the `ProofForge` umbrella.
+    The lib is named `ProofForgeEvm` (not `ProofForge`): a lean_lib name claims its
+    namespace for this package, and a `ProofForge` lib would shadow the
+    `ProofForge.Core.*` / `ProofForge.Crypto.*` modules exported by the required
+    `proofforge-common` package. -/
 @[default_target]
-lean_lib ProofForge where
-  roots := #[
-    `ProofForge,
-    `ProofForge.Cli,
-    `ProofForge.Core.CFG,
-    `ProofForge.Core.Eval,
-    `ProofForge.Core.FixedPoint,
-    `ProofForge.Core.IR,
-    `ProofForge.Core.Schema,
-    `ProofForge.Core.Target,
-    `ProofForge.Crypto.Keccak,
-    `ProofForge.Crypto.Sha256,
-    `ProofForge.Crypto.Sha256Compat,
-    `ProofForge.Evm.Assemble,
-    `ProofForge.Evm.AssembleMain,
-    `ProofForge.Evm.CallResult,
-    `ProofForge.Evm.CallResult.Emit,
-    `ProofForge.Evm.ClosedCall,
-    `ProofForge.Evm.ClosedCall.Emit,
-    `ProofForge.Evm.Codec,
-    `ProofForge.Evm.Codec.Emit,
-    `ProofForge.Evm.Commands,
-    `ProofForge.Evm.Component,
-    `ProofForge.Evm.Component.Emit,
-    `ProofForge.Evm.Emit,
-    `ProofForge.Evm.Environment,
-    `ProofForge.Evm.Environment.Emit,
-    `ProofForge.Evm.Golden,
-    `ProofForge.Evm.HashedMap,
-    `ProofForge.Evm.HashedMap.Emit,
-    `ProofForge.Evm.IR,
-    `ProofForge.Evm.IRCompat,
-    `ProofForge.Evm.Keccak,
-    `ProofForge.Evm.LogError,
-    `ProofForge.Evm.LogError.Emit,
-    `ProofForge.Evm.NativeFx,
-    `ProofForge.Evm.NativeFx.Emit,
-    `ProofForge.Evm.OpenCall,
-    `ProofForge.Evm.OpenCall.Emit,
-    `ProofForge.Evm.Ops,
-    `ProofForge.Evm.Payable,
-    `ProofForge.Evm.Payable.Emit,
-    `ProofForge.Evm.Precompile,
-    `ProofForge.Evm.Precompile.Emit,
-    `ProofForge.Evm.Registry,
-    `ProofForge.Evm.StaticStorage,
-    `ProofForge.Evm.StaticStorage.Emit,
-    `ProofForge.Evm.WideWord,
-    `ProofForge.Evm.WideWord.Emit,
-    `ProofForge.Extract,
-    `ProofForge.Extract.Compat,
-    `ProofForge.Extract.Decode,
-    `ProofForge.Extract.IR,
-    `ProofForge.Extract.LegacyAdapter,
-    `ProofForge.Extract.LegacyEval,
-    `ProofForge.Extract.LegacyGolden,
-    `ProofForge.Extract.LegacyIR,
-    `ProofForge.Extract.LegacyOps,
-    `ProofForge.Extract.Lexical,
-    `ProofForge.Extract.Ops,
-    `ProofForge.Profile
+lean_lib ProofForgeEvm where
+  globs := #[
+    .one `ProofForge,
+    .one `ProofForge.Cli,
+    .submodules `ProofForge.Evm,
+    .one `ProofForge.Extract,
+    .submodules `ProofForge.Extract
   ]
 
 /-- Build every module under `Examples/` (EVM fixtures only). -/

@@ -8,6 +8,7 @@ package «my-contract» where
 A published git-tag require is not available yet; do not pretend `v0.0.1` exists.
 Keep imports on `ProofForge.Attr` + `ProofForge.Evm.Sdk` only. -/
 require «proofforge» from ".." / ".."
+require «proofforge-common» from ".." / ".." / ".."
 
 @[default_target]
 lean_lib «MyContract»
