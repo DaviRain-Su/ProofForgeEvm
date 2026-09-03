@@ -48,6 +48,17 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasable()(uint2
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasable()(uint256)')" \
   0 "funded but still before start"
 
+# release(uint256) is bounded by the current releasable amount, not merely contract balance.
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'release(uint256)' 1 >/dev/null 2>&1; then
+  echo "FAIL: pre-vesting release unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_insufficient "$addr" "$beneficiary" \
+  "$("$cast" calldata 'release(uint256)' 1)" 0 1 "pre-vesting release"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+  0 "rejected release keeps accounting"
+
 # After end, the full allocation is releasable.
 after_end=$((start_ts + duration + 1))
 "$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$after_end" >/dev/null
@@ -76,4 +87,16 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$zero_addr" 'start()(uint2
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$zero_addr" 'releasable()(uint256)')" \
   0 "zero beneficiary fails closed on releasable"
 
-echo "evm-anvil-vestlink: ok (bounded single-beneficiary native-ETH vesting + EtherReleased)"
+# Overflowing start+duration also zeroes every schedule view, including beneficiary.
+max_u64=18446744073709551615
+bad_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64)' \
+  "$beneficiary" "$max_u64" 1)"
+bad_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${bytecode}${bad_encoded#0x}")"
+bad_addr="$(printf '%s' "$bad_receipt" | pf_evm_contract_address)"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$bad_addr" 'beneficiary()(address)')" \
+  "$zero" "overflowing schedule hides beneficiary"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$bad_addr" 'endTime()(uint256)')" \
+  0 "overflowing schedule hides end"
+
+echo "evm-anvil-vestlink: ok (bounded native-ETH vesting + constrained guarded release)"

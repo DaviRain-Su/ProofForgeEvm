@@ -19,18 +19,34 @@ private def leafA : Bytes32 := MerkleProof.fromKeccakUtf8 "pf-leaf-a"
 
 private def leafB : Bytes32 := MerkleProof.fromKeccakUtf8 "pf-leaf-b"
 
+private def leafC : Bytes32 := MerkleProof.fromKeccakUtf8 "pf-leaf-c"
+
 private def pairRoot : Bytes32 :=
   MerkleProof.hashPairPure leafA leafB
 
 private def singletonProof : MerkleProof.Proof :=
   { length := 1, values := #v[leafB, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩] }
 
+private def reverseProof : MerkleProof.Proof :=
+  { length := 1, values := #v[leafA, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩] }
+
+private def twoProof : MerkleProof.Proof :=
+  { length := 2, values := #v[leafB, leafC, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩] }
+
+private def malformedProof : MerkleProof.Proof :=
+  { length := 9, values := #v[leafB, leafC, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩, ⟨0, 0, 0, 0⟩] }
+
 #guard MerkleProof.defaultDepth == 8
 #guard MerkleProof.wellFormedRoot pairRoot
 #guard !MerkleProof.wellFormedRoot ⟨0, 0, 0, 0⟩
 #guard MerkleProof.wellFormedProof singletonProof
+#guard !MerkleProof.wellFormedProof malformedProof
+#guard pairRoot == ⟨0xdad2bcfb1a1ede11, 0x3a60116d796036e0, 0x423faf256908cace, 0xab5ed13baaeb2950⟩
+#guard MerkleProof.hashPairPure leafA leafB == MerkleProof.hashPairPure leafB leafA
 #guard MerkleProof.verifyPure pairRoot leafA singletonProof
+#guard MerkleProof.verifyPure pairRoot leafB reverseProof
 #guard !MerkleProof.verifyPure pairRoot leafB singletonProof
+#guard MerkleProof.verifyPure (MerkleProof.processProofPure leafA twoProof) leafA twoProof
 #guard !MerkleProof.canVerify ⟨0, 0, 0, 0⟩ leafA singletonProof
 
 private def expectProofLink : CommandElabM Unit := do

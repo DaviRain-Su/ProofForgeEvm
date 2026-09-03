@@ -47,8 +47,14 @@ private def byteArrayToBytes32 (bytes : ByteArray) : Bytes32 :=
     return lane
   ⟨readLane 0, readLane 8, readLane 16, readLane 24⟩
 
-private def asUInt256 (b : Bytes32) : UInt256 :=
-  ⟨b.w0, b.w1, b.w2, b.w3⟩
+private def bytes32Less (a b : Bytes32) : Bool :=
+  Id.run do
+    let left := bytes32Bytes a
+    let right := bytes32Bytes b
+    for i in [0:32] do
+      if left[i]! < right[i]! then return true
+      if right[i]! < left[i]! then return false
+    return false
 
 /-- True when the configured root is nonzero. -/
 @[pf_inline] def wellFormedRoot (root : Bytes32) : Bool :=
@@ -71,7 +77,7 @@ open ProofForge.Crypto.Keccak
 /-- Reference sorted pair hash for tests and host evaluation. -/
 @[pf_inline] def hashPairPure (a b : Bytes32) : Bytes32 :=
   let (left, right) :=
-    if UInt256.lt (asUInt256 a) (asUInt256 b) then (a, b) else (b, a)
+    if bytes32Less a b then (a, b) else (b, a)
   byteArrayToBytes32 (keccak256 (bytes32Bytes left ++ bytes32Bytes right))
 
 /-- Extractable single-step Merkle verify; erases to `Runtime.evmMerkleVerify256`. -/

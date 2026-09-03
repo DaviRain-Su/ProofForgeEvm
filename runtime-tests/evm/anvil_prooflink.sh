@@ -53,6 +53,45 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'verify(bytes32[],bytes32)(bool)' "[$leaf_b]" "$leaf_b")" \
   false "leaf without sibling fails"
 
+# Exercise all eight bounded proof slots against an independently folded OZ-style root.
+deep_root="$leaf_a"
+proof_items=()
+for i in {0..7}; do
+  sibling="$("$cast" keccak "pf-sibling-$i")"
+  proof_items+=("$sibling")
+  if [[ "$deep_root" < "$sibling" ]]; then
+    deep_root="$("$cast" keccak "$("$cast" concat-hex "$deep_root" "$sibling")")"
+  else
+    deep_root="$("$cast" keccak "$("$cast" concat-hex "$sibling" "$deep_root")")"
+  fi
+done
+deep_encoded="$("$cast" abi-encode 'constructor(bytes32)' "$deep_root")"
+deep_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${bytecode}${deep_encoded#0x}")"
+deep_addr="$(printf '%s' "$deep_receipt" | pf_evm_contract_address)"
+proof_arg="[$(IFS=,; echo "${proof_items[*]}")]"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$deep_addr" \
+  'verify(bytes32[],bytes32)(bool)' "$proof_arg" "$leaf_a")" \
+  true "valid depth-eight proof"
+
+# A ninth element exceeds the ABI profile capacity and must revert before source execution.
+proof9="$proof_arg"
+proof9="${proof9%]},$leaf_b]"
+if "$cast" call --rpc-url "$rpc" "$deep_addr" \
+    'verify(bytes32[],bytes32)(bool)' "$proof9" "$leaf_a" >/dev/null 2>&1; then
+  echo "FAIL: depth-nine proof unexpectedly succeeded" >&2
+  exit 1
+fi
+
+# Empty proofs are valid exactly when the leaf itself is the root.
+leaf_encoded="$("$cast" abi-encode 'constructor(bytes32)' "$leaf_a")"
+leaf_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${bytecode}${leaf_encoded#0x}")"
+leaf_addr="$(printf '%s' "$leaf_receipt" | pf_evm_contract_address)"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$leaf_addr" \
+  'verify(bytes32[],bytes32)(bool)' "[]" "$leaf_a")" \
+  true "empty proof accepts its root leaf"
+
 # Zero root fails closed on rootOf and verify.
 zero="0x0000000000000000000000000000000000000000000000000000000000000000"
 zero_encoded="$("$cast" abi-encode 'constructor(bytes32)' "$zero")"
