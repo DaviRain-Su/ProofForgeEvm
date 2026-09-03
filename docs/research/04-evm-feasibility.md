@@ -2,7 +2,7 @@
 
 > Date: 2026-08-22
 > Core question: 以当前 proofforge 的普通 Lean 4 表面（`def` / `theorem` / attribute / Profile / Extract / Ops），能否做出 EVM target？ProofForge 已有 Yul lowering，是否该搬？
-> Related: [03-feasibility.md](03-feasibility.md) · [gap-vs-proofforge.md](../plan/analysis/gap-vs-proofforge.md) · PF [01-evm.md](file:///Users/davirian/orca/projects/proof_forge/docs/targets/01-evm.md)
+> Related: [05-evm-coverage-slices.md](05-evm-coverage-slices.md)
 
 ---
 
@@ -254,7 +254,7 @@ E0–E3 是一条竖切。E4 才证明发射器不是 Counter 模板。Map / cal
 | PF Lower 不能直接吃本仓 IR | 读 `Evm.lean` `planFromCapability` | 入口是 `ResolvedEngineeringBuildV1` |
 | Keccak 可独立搬 | 读 `Keccak.lean` import | 仅 `Std` |
 | checked add Yul 形状 | 读 `EmitIRV1` `.checkedAdd` | `gt` + `sub(0xfff…)` + `revert(0,0)` + `add` |
-| 本仓调研曾排除 EVM | `03-feasibility.md` Scope Out | 当时只评 Solana 剥离；本次补评 |
+| 本仓调研曾排除 EVM | 上游多链仓调研记录 | 当时只评 Solana 剥离；本次补评 |
 
 ---
 

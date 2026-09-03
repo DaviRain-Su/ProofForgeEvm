@@ -2,7 +2,7 @@
 
 > Date: 2026-08-22
 > Core question: 相对 ProofForge 已落地的 EVM 工程面，以及一份「能写真实合约」的最小 EVM 剖面，本仓还缺什么？怎样用少数大切片做完，而不是继续一叶一叶加？
-> Related: [04-evm-feasibility.md](04-evm-feasibility.md) · PF [01-evm.md](file:///Users/davirian/orca/projects/proof_forge/docs/targets/01-evm.md)
+> Related: [04-evm-feasibility.md](04-evm-feasibility.md)
 
 ---
 
