@@ -87,7 +87,7 @@ elab "#pf_guard_credits" : command => do
     | .error reason => throwError reason
   let entryNames := program.entries.map (·.ixName)
   for name in #["transferOwnership", "acceptOwnership", "grant", "claim",
-      "pause", "unpause", "ownerOf", "creditOf", "pendingOf", "totalOf", "pausedOf"] do
+      "pause", "unpause", "ownerOf", "pendingOwner", "creditOf", "pendingOf", "totalOf", "pausedOf"] do
     unless entryNames.contains name do
       throwError s!"missing Credits entry {name}"
   let rec storesField (fuel : Nat) (name : String)
@@ -144,6 +144,10 @@ elab "#pf_guard_credits" : command => do
     | throwError "missing Credits ownerOf"
   unless ownerM.view && ownerM.retWidths == #[20] do
     throwError s!"wrong Credits ownerOf: view={ownerM.view} retWidths={ownerM.retWidths}"
+  let some pendingOwnerM := program.entries.find? (·.ixName == "pendingOwner")
+    | throwError "missing Credits pendingOwner"
+  unless pendingOwnerM.view && pendingOwnerM.retWidths == #[20] do
+    throwError s!"wrong Credits pendingOwner: view={pendingOwnerM.view} retWidths={pendingOwnerM.retWidths}"
   let some pausedM := program.entries.find? (·.ixName == "pausedOf")
     | throwError "missing Credits pausedOf"
   unless pausedM.view && pausedM.retWidths == #[1] do

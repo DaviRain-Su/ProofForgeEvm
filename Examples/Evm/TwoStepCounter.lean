@@ -9,9 +9,10 @@ EVM-SDK-1 consumer A: a counter guarded by `Access.requireOwner` /
 
 The owner is an explicit `Address` state field (mutable so `acceptOwnership` can rotate it), the
 paused flag is an explicit `UInt8` state field, and `ownership` contains exactly one pending
-address. All storage writes stay in this file. Successful `acceptOwnership` emits canonical
-`OwnershipTransferred`; successful `pause` / `unpause` emit `Paused` / `Unpaused`. Constructor
-init does not log, and nomination does not emit Ownable2Step `OwnershipTransferStarted`.
+address. All storage writes stay in this file. Successful `transferOwnership` emits Ownable2Step
+`OwnershipTransferStarted`; successful `acceptOwnership` emits canonical `OwnershipTransferred`;
+successful `pause` / `unpause` emit `Paused` / `Unpaused`. Constructor init stores the owner
+argument and empty pending state; it does not log (constructor effects are not lowered).
 -/
 
 def u64Max : UInt64 := ~~~(0 : UInt64)
@@ -33,14 +34,16 @@ def init (owner : Address) : State :=
   { owner, paused := Pausable.running, count := 0, ownership := Access.Ownership.none }
 
 /-- Step 1 of ownership transfer: current owner nominates `candidate`.
-    Non-owner → `Unauthorized(caller)`; zero candidate → `ZeroAddress()`. -/
+    Non-owner → `Unauthorized(caller)`; zero candidate → `ZeroAddress()`.
+    Success emits `OwnershipTransferStarted(owner, candidate)`. -/
 @[pf_entry]
 def transferOwnership (s : State) (candidate : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
     if Address.isZero candidate then
       .ok (s, Revert.zeroAddress)
     else
-      .ok ({ s with ownership := Access.Ownership.nominate s.ownership candidate }, 1)
+      .ok ({ s with ownership := Access.Ownership.nominate s.ownership candidate },
+        Ownable.Log.ownershipTransferStarted s.owner candidate)
   else
     .ok (s, Access.ownerViolation)
 
@@ -103,6 +106,11 @@ def unpause (s : State) : Except Error (State × UInt64) :=
 @[pf_entry]
 def ownerOf (s : State) : Address :=
   s.owner
+
+/-- Sole pending nominee; `Address.zero` when none is live. -/
+@[pf_entry]
+def pendingOwner (s : State) : Address :=
+  s.ownership
 
 @[pf_entry]
 def pendingOf (_s : State) (who : Address) : UInt64 :=

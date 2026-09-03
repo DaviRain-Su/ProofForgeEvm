@@ -1,7 +1,7 @@
 # Fable SDK foundations design / SDK 基础设计
 
 > Status: design proposal. S0, S1a/S1b, S2 (#9), S3 OpenCall (#10), S4a–d (#11–#14), and
-> S5 Base RPC gates (#8) are on `main` as of 2026-09-03. Remaining S4 (ERC-165, `TransferBatch`,
+> S5 Base RPC gates (#8) are on `main` as of 2026-09-03. Remaining S4 (ERC-1155 `TransferBatch`,
 > `RoleAdminChanged`, constructor Ownable logs) is not claimed. Anonymous LOG0 is not a product
 > `Event.emit` shape — typed events are named ABI events (LOG1–4, signature topic always).
 
@@ -245,9 +245,10 @@ Examples land in dependency order and each wave stays honest about its supported
 
 1. **Wave A — policy events:** Ownable/Pausable/Roles examples adopt typed events and ERC-165 where
    applicable. *(S4b landed `OwnershipTransferred` + `Paused`/`Unpaused` on TwoStepCounter,
-   Credits, and Capped; not constructor logs, Ownable2Step `OwnershipTransferStarted`, or
-   ERC-165. S4d landed `RoleGranted` / `RoleRevoked` on EvmStaticCounter / EvmStaticRoster;
-   not `RoleAdminChanged` — `Set2` has no admin-role rotation API.)*
+   Credits, and Capped; not constructor logs. W3 adds Ownable2Step `OwnershipTransferStarted`
+   on `transferOwnership`. Constructor Ownable logs remain unlowered. S4d landed `RoleGranted` /
+   `RoleRevoked` on EvmStaticCounter / EvmStaticRoster; not `RoleAdminChanged` — `Set2` has no
+   admin-role rotation API.)*
 2. **Wave B — ERC-721:** Collectible/Badge adopt `Transfer`, `Approval`, and `ApprovalForAll`;
    advertised interface IDs are limited to implemented functions. *(S4a landed the three
    canonical events; not ERC-165, safe callbacks, or metadata URI.)*

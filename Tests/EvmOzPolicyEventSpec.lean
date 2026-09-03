@@ -6,10 +6,11 @@ import Examples.Evm.Credits
 import Examples.Evm.Capped
 
 /-!
-S4b: canonical Ownable `OwnershipTransferred` (LOG3) and Pausable `Paused`/`Unpaused` (LOG1)
-helpers. TwoStepCounter/Credits adopt both; Capped adopts pause events only (immutable owner).
-Live receipt matrices live in `runtime-tests/evm/anvil_twostep_counter.sh`, `anvil_credits.sh`,
-and `anvil_capped.sh`.
+S4b/W3: canonical Ownable `OwnershipTransferred` (LOG3) on accept, Ownable2Step
+`OwnershipTransferStarted` (LOG3) on nominate, and Pausable `Paused`/`Unpaused` (LOG1).
+Constructor init does not log. TwoStepCounter/Credits adopt both Ownable events; Capped adopts
+pause events only (immutable owner). Live receipt matrices live in
+`runtime-tests/evm/anvil_twostep_counter.sh`, `anvil_credits.sh`, and `anvil_capped.sh`.
 -/
 
 namespace Tests.EvmOzPolicyEventSpec
@@ -19,6 +20,9 @@ open ProofForge.Evm.Sdk
 open Lean Elab Command
 
 #guard Ownable.Log.ownershipTransferred ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ == 0
+#guard Ownable.Log.ownershipTransferStarted ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ == 0
+#guard Ownable.Log.constructorTransferred ⟨4, 5, 6⟩ == 0
+#guard Ownable.canInit ⟨1, 2, 3⟩ == false
 #guard Pausable.Log.paused ⟨1, 2, 3⟩ == 0
 #guard Pausable.Log.unpaused ⟨1, 2, 3⟩ == 0
 
@@ -35,8 +39,16 @@ private def unpausedAbi : String :=
   "{\"type\":\"event\",\"name\":\"Unpaused\",\"inputs\":[" ++
     "{\"name\":\"account\",\"type\":\"address\",\"indexed\":false}],\"anonymous\":false}"
 
+private def ownershipStartedAbi : String :=
+  "{\"type\":\"event\",\"name\":\"OwnershipTransferStarted\",\"inputs\":[" ++
+    "{\"name\":\"previousOwner\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"newOwner\",\"type\":\"address\",\"indexed\":true}],\"anonymous\":false}"
+
 private def ownershipTopic : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString "OwnershipTransferred(address,address)"
+
+private def ownershipStartedTopic : String :=
+  ProofForge.Crypto.Keccak.keccak256HexOfString "OwnershipTransferStarted(address,address)"
 
 private def pausedTopic : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString "Paused(address)"
@@ -104,6 +116,15 @@ private def expectPolicyEvents (moduleName : Name) (wantOwnership : Bool) : Comm
           #[("previousOwner", true), ("newOwner", true)] &&
         acceptFrames[0]!.args[0]!.type == .address20 do
       throwError s!"{moduleName}.acceptOwnership OwnershipTransferred frame diverged: {repr acceptFrames}"
+    let startFrames := sourceTypedFrames (← methodOps source "transferOwnership")
+    unless startFrames.size == 1 &&
+        eventMatches startFrames[0]! "OwnershipTransferStarted"
+          #[("previousOwner", true), ("newOwner", true)] &&
+        startFrames[0]!.args[0]!.type == .address20 do
+      throwError s!"{moduleName}.transferOwnership OwnershipTransferStarted frame diverged: {repr startFrames}"
+    let initFrames := sourceTypedFrames (← methodOps source "initialize")
+    unless initFrames.isEmpty do
+      throwError s!"{moduleName}.init unexpectedly contains typed events: {repr initFrames}"
   let evm ←
     match IR.fromExtracted source with
     | .ok program => pure program
@@ -117,11 +138,11 @@ private def expectPolicyEvents (moduleName : Name) (wantOwnership : Bool) : Comm
   unless abi.contains "{\"type\":\"error\",\"name\":\"Paused\",\"inputs\":[]}" do
     throwError s!"{moduleName} ABI lost Paused() error:\n{abi}"
   if wantOwnership then
-    unless abi.contains ownershipAbi do
-      throwError s!"{moduleName} ABI lost OwnershipTransferred:\n{abi}"
+    unless abi.contains ownershipAbi && abi.contains ownershipStartedAbi do
+      throwError s!"{moduleName} ABI lost OwnershipTransferred/OwnershipTransferStarted:\n{abi}"
   else
-    unless !abi.contains ownershipAbi do
-      throwError s!"{moduleName} ABI unexpectedly contains OwnershipTransferred:\n{abi}"
+    unless !abi.contains ownershipAbi && !abi.contains ownershipStartedAbi do
+      throwError s!"{moduleName} ABI unexpectedly contains Ownable events:\n{abi}"
   let yul ←
     match Emit.emitYul evm with
     | .ok yul => pure yul
@@ -130,18 +151,19 @@ private def expectPolicyEvents (moduleName : Name) (wantOwnership : Bool) : Comm
       yul.contains s!"log1(0, 32, 0x{unpausedTopic}" do
     throwError s!"{moduleName} Yul omitted LOG1 Paused/Unpaused"
   if wantOwnership then
-    unless yul.contains s!"log3(0, 0, 0x{ownershipTopic}" do
-      throwError s!"{moduleName} Yul omitted LOG3 OwnershipTransferred"
+    unless yul.contains s!"log3(0, 0, 0x{ownershipTopic}" &&
+        yul.contains s!"log3(0, 0, 0x{ownershipStartedTopic}" do
+      throwError s!"{moduleName} Yul omitted LOG3 OwnershipTransferred/OwnershipTransferStarted"
   else
-    unless !yul.contains ownershipTopic do
-      throwError s!"{moduleName} Yul unexpectedly contains OwnershipTransferred"
+    unless !yul.contains ownershipTopic && !yul.contains ownershipStartedTopic do
+      throwError s!"{moduleName} Yul unexpectedly contains Ownable events"
 
 private def expectOzPolicy : CommandElabM Unit := do
   expectPolicyEvents `Examples.Evm.TwoStepCounter true
   expectPolicyEvents `Examples.Evm.Credits true
   expectPolicyEvents `Examples.Evm.Capped false
-  expectDigest `Examples.Evm.TwoStepCounter "8aa4d044a935390e"
-  expectDigest `Examples.Evm.Credits "3447fa1464d2897a"
+  expectDigest `Examples.Evm.TwoStepCounter "e23c2f54e43c0be1"
+  expectDigest `Examples.Evm.Credits "bb01c32165d42b5d"
   expectDigest `Examples.Evm.Capped "b0b0b7244ebb8aed"
 
 elab "#pf_guard_evm_oz_policy_events" : command => expectOzPolicy

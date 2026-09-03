@@ -17,7 +17,10 @@ This module owns contract *policy gates*, not storage geometry. Every combinator
 - two-step ownership is one fixed `Ownership` value containing the sole pending address; the
 consumer stores that value as ordinary static state, so an accepted transfer cannot leave an
 older nominee live in another map entry. Canonical `OwnershipTransferred` logs live in
-`Sdk.Ownable.Log` and stay application-owned (typically on `acceptOwnership`).
+`Sdk.Ownable.Log` (typically on `acceptOwnership`). Ownable2Step `OwnershipTransferStarted` is
+application-owned on a successful `nominate`. Constructor owner assignment is the extractable
+init policy (store the argument, pending `Ownership.none`); constructor logs/reverts are not
+lowered.
 
 Storage writes stay explicit: `Ownership.nominate` / `cancel` / `consume` return replacement
 values, while the consumer's state transition writes both ownership policy and owner/paused
