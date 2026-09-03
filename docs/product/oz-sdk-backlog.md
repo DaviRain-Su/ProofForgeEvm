@@ -56,7 +56,7 @@
 
 | Wave | Scope | Status |
 |---|---|---|
-| W1 | Static ERC-165 core (`bytes4` IDs, bounded support predicates), adopt it in both ERC-721 and ERC-1155 examples, compiler/ABI and Anvil gates | Implemented on `cursor/oz-sdk-w1-e4eb` |
+| W1 | Static ERC-165 core (`bytes4` IDs, bounded support predicates), adopt it in both ERC-721 and ERC-1155 examples, compiler/ABI and Anvil gates | Verified on `cursor/oz-sdk-w1-e4eb`: targeted and full `lake build Tests`, plus four Anvil gates |
 | W2 | ERC-20-shaped consumer ergonomics: explicit safe-transfer/allowance policy helpers and a static ERC-2981 royalty profile | Next |
 | W3 | Bounded access/utility closeout: Ownable2Step start event and constructor-init policy where extractable; fixed-capacity role profiles; bounded nonce/rate helpers | Planned |
 | W4 | Static metadata/finance/crypto profiles: bounded ERC-721/1155 URI response, EIP-5267-style static domain fields, single-beneficiary vesting, bounded Merkle proofs | Planned |
