@@ -4,8 +4,8 @@ import ProofForge.Evm.Emit
 import Examples.Evm.VestLink
 
 /-!
-W4 slice 3: bounded single-beneficiary native-ETH vesting — linear schedule, releasable
-accounting, fail-closed schedule gates, EtherReleased typed event.
+W4 slice 3: bounded single-beneficiary native-ETH vesting — linear schedule, constrained
+partial release, ordered reentrancy lock, fail-closed schedule gates, EtherReleased typed event.
 -/
 
 namespace Tests.EvmVestingSpec

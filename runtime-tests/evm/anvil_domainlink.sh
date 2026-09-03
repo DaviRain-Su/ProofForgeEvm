@@ -54,5 +54,14 @@ if [[ ! "$got_dom" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
   echo "FAIL: DOMAIN_SEPARATOR not bytes32: $got_dom" >&2
   exit 1
 fi
+domain_type_hash="$("$cast" keccak \
+  'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)')"
+name_hash="$("$cast" keccak Token)"
+version_hash="$("$cast" keccak 1)"
+domain_frame="$("$cast" abi-encode 'f(bytes32,bytes32,bytes32,uint256,address)' \
+  "$domain_type_hash" "$name_hash" "$version_hash" "$chain_id" "$addr")"
+expected_dom="$("$cast" keccak "$domain_frame")"
+pf_evm_require_equal "${got_dom,,}" "${expected_dom,,}" \
+  "DOMAIN_SEPARATOR matches published Token/1 chainId/verifyingContract"
 
 echo "evm-anvil-domainlink: ok (IERC5267-style static domain fields + DOMAIN_SEPARATOR)"
