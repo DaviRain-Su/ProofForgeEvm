@@ -28,6 +28,7 @@ import Tests.EvmPayableSpec
 import Tests.EvmPrecompileSpec
 import Tests.EvmReentrancySpec
 import Tests.EvmRolesSpec
+import Tests.EvmRolesSet4Spec
 import Tests.EvmNoncesSpec
 import Tests.EvmRateLimitSpec
 import Tests.EvmQuotaSpec

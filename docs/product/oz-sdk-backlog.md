@@ -21,7 +21,7 @@
 | OZ path | Status | ProofForge module / example | Gap relative to OZ | Implementable? (blocker) |
 |---|---|---|---|---|
 | `access/Ownable.sol`, `Ownable2Step.sol` | PARTIAL | `Sdk.Access`, `Sdk.Ownable`, `TwoStepCounter`, `Credits` | Constructor logs/zero-owner revert not lowered; no `renounceOwnership` | Start event: yes — W3; constructor effects: no (`Emit` refuses constructor effects) |
-| `access/AccessControl.sol`, `IAccessControl.sol` | PARTIAL | `Sdk.Roles.Set2`, `EvmStaticCounter`, `EvmStaticRoster` | One fixed capacity-2 role, no role admin hierarchy/enumeration | `RoleAdminChanged`: no (no role-admin state/API); bounded named roles: later |
+| `access/AccessControl.sol`, `IAccessControl.sol` | PARTIAL | `Sdk.Roles.Set2`/`Set4`, `EvmStaticCounter`, `EvmStaticRoster` | Set2/Set4 fixed capacity, no role admin hierarchy/enumeration | `RoleAdminChanged`: no (no role-admin state/API); unbounded named roles: no |
 | `access/extensions/*`, `access/manager/*` | ABSENT | — | Delayed admin rules, enumeration, authority manager | No — require unbounded role/account relations or external authority dispatch |
 | `account/**` | ABSENT | — | ERC-4337/7579 account, paymaster, execution modes | No — AA/paymaster and arbitrary execution are product non-goals |
 | `crosschain/**` | ABSENT | — | Bridge state, remote executor, receiver callbacks | No — cross-chain authentication/callback model is absent |
@@ -59,7 +59,7 @@
 |---|---|---|
 | W1 | Static ERC-165 core (`bytes4` IDs, bounded support predicates), adopt `supportsInterface` in both ERC-721- and ERC-1155-shaped examples, compiler/ABI and Anvil gates | Verified on `cursor/oz-sdk-w1-e4eb`: targeted and full `lake build Tests`, plus four Anvil gates. The examples advertise `IERC165` only: their partial ERC-721/1155 method surfaces must return false for the standard token IDs. |
 | W2 | ERC-20-shaped consumer ergonomics: explicit safe-transfer/allowance policy helpers and a static ERC-2981 royalty profile | Verified on `cursor/oz-sdk-w2-e4eb`: targeted `Tests.EvmSafeErc20Spec` / `Tests.EvmErc2981Spec` and full `lake build Tests` (218 jobs), plus `anvil_safepay.sh` and `anvil_royaltyart.sh`. `forceApprove` is always `approve(0)` then `approve(amount)`. With a nonzero receiver, `RoyaltyArt` advertises IERC165 + complete IERC2981, returns false for IERC721/IERC1155, and quotes the full UInt256 sale-price range; a zero receiver advertises IERC165 only. |
-| W3 | Bounded access/utility closeout: Ownable2Step start event and constructor-init policy where extractable; fixed-capacity role profiles; bounded nonce/rate helpers | In progress on `cursor/oz-sdk-w3-e4eb`: slice 1 merged (PR #18, Ownable2Step); slice 2a ships `Sdk.Nonces`; slice 2b ships `Sdk.RateLimit`; slice 2c ships `EvmQuota`; `Roles.Set4`/`EvmCrew` remain |
+| W3 | Bounded access/utility closeout: Ownable2Step start event and constructor-init policy where extractable; fixed-capacity role profiles; bounded nonce/rate helpers | In progress on `cursor/oz-sdk-w3-e4eb`: slice 1 merged (PR #18, Ownable2Step); slice 2a ships `Sdk.Nonces`; slice 2b ships `Sdk.RateLimit`; slice 2c ships `EvmQuota`; slice 2d ships `Roles.Set4`; `EvmCrew` remains |
 | W4 | Static metadata/finance/crypto profiles: bounded ERC-721/1155 URI response, EIP-5267-style static domain fields, single-beneficiary vesting, bounded Merkle proofs | Planned |
 | W5 | Completion audit: re-inventory the then-current OZ tree, prove every remaining item is either DONE, a restricted PARTIAL profile, or blocked by a documented non-goal | Planned |
 
