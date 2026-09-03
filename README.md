@@ -65,11 +65,15 @@ runtime-tests/evm/anvil.sh     # full Anvil gate suite (skips when Foundry is ab
 ```text
 lake build pf
 export PATH="$PWD/.lake/build/bin:$PATH"
-lake exe pf -- init demo
+pf init demo
 cd demo
 lake build
 lake env pf build
 ```
+
+CI job `pf-init-user-project` (check name **pf init demo**) runs this same path:
+`pf init demo` creates a named project, then `lake build` and `lake env pf build`
+must produce `Counter.bin` / `Counter.yul` / `Counter.abi.json`.
 
 `pf init` currently requires a repo checkout (copies `templates/evm-counter` and
 rewrites a path-`require`). There is no standalone installer yet.

@@ -16,7 +16,7 @@
 
 ## Next
 
-6. **Init smoke in CI** — empty-dir `pf init` → `lake build` → `lake env pf build` (solc) for the counter template. *(landed in CI `evm` job)*
+6. **Named user-project CI gate** — `pf init demo` → `lake build` → `lake env pf build` (solc) for the counter template. *(landed as CI job `pf-init-user-project`)*
 7. **Standard ERC-20 example profile** — `Examples.Evm.Erc20Meta`: `string` name/symbol + standard selectors; Token remains the richer non-standard metadata surface. *(landed)*
 8. **Deploy story docs** — Anvil vs Base Sepolia / VibeNet honesty in `docs/product/deploy.md`. *(landed)*
 9. **Release v0.1** — tagged `pf` binary + template `require … @ tag` path; stop rewriting absolute checkout paths as the only story.

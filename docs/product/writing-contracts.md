@@ -41,7 +41,7 @@ These are product debts tracked in [roadmap.md](roadmap.md), not undocumented fo
 ## Build
 
 ```bash
-# in a pf init project; pf from the checkout `.lake/build/bin` on PATH
+# after `pf init demo` (CI job pf-init-user-project runs this same path)
 lake build
 lake env pf build
 ```

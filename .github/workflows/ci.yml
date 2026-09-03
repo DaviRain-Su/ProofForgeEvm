@@ -65,6 +65,7 @@ jobs:
               - 'Examples/Evm/**'
               - 'runtime-tests/evm/**'
               - 'scripts/check_artifact_manifest.py'
+              - 'scripts/ci_pf_init_named_project.sh'
               - 'lakefile.lean'
               - 'lean-toolchain'
               - 'lake-manifest.json'
@@ -218,40 +219,54 @@ jobs:
       - name: Check EVM artifact manifest
         run: python3 scripts/check_artifact_manifest.py --target evm --out build/evm
 
-      # Product gate: empty-dir `pf init` → `lake build` → `lake env pf build` (solc).
-      # Uses the real CLI surface in ProofForge/Cli.lean + templates/evm-counter.
-      # `lake env` is required so LEAN_PATH includes the user project's .oleans.
-      - name: Init smoke (pf init → lake build → pf build)
-        run: |
-          set -euo pipefail
-          ROOT="$GITHUB_WORKSPACE"
-          PF_BIN="$ROOT/.lake/build/bin/pf"
-          test -x "$PF_BIN"
-          export PATH="$(dirname "$PF_BIN"):$PATH"
-
-          SMOKE_ROOT="$(mktemp -d)"
-          cleanup() { rm -rf "$SMOKE_ROOT"; }
-          trap cleanup EXIT
-
-          pf init "$SMOKE_ROOT/demo"
-          test -f "$SMOKE_ROOT/demo/pf.toml"
-          test -f "$SMOKE_ROOT/demo/lakefile.lean"
-          if grep -E 'from "\.\." / "\.\."|from "\.\./\.\."' "$SMOKE_ROOT/demo/lakefile.lean"; then
-            echo "pf init left the template path-require unrewritten" >&2
-            exit 1
-          fi
-          grep -q 'require «proofforge» from' "$SMOKE_ROOT/demo/lakefile.lean"
-
-          cd "$SMOKE_ROOT/demo"
-          lake build
-          lake env pf build --out build/out
-          test -s build/out/Counter.bin
-          test -s build/out/Counter.yul
-          test -s build/out/Counter.abi.json
-          echo "init smoke ok: $(wc -c < build/out/Counter.bin) byte Counter.bin"
-
       - name: Run Anvil integration suite
         run: runtime-tests/evm/anvil.sh
+
+  # Named user-project build gate: CI types `pf init demo` (a project name, not a
+  # temp path), then `lake build` + `lake env pf build` and asserts Counter artifacts.
+  # Parallel with `evm` so the Examples compile does not hide a broken init path.
+  pf-init-user-project:
+    name: pf init demo
+    needs: changes
+    if: needs.changes.outputs.evm == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache toolchains and Lean dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            ~/.foundry
+            .lake/packages
+          key: toolchains-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', '.agents/setup') }}
+
+      - name: Prepare pinned toolchains
+        run: |
+          ./.agents/setup
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
+
+      - name: Restore Lean build products
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake/build
+          key: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+      - name: Build pf CLI
+        run: lake build pf
+
+      - name: pf init demo then build user-project artifacts
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/.lake/build/bin:$PATH"
+          test -x "$GITHUB_WORKSPACE/.lake/build/bin/pf"
+          # Literal user command: pf init <project-name>
+          ./scripts/ci_pf_init_named_project.sh
 
   # Required-check identity. Intentionally-skipped lanes (path filter) count as success;
   # failed or cancelled lanes still fail the merge gate. The evm-yulc lane lives in
@@ -259,14 +274,15 @@ jobs:
 
   test:
     if: always()
-    needs: [changes, lean, evm]
+    needs: [changes, lean, evm, pf-init-user-project]
     runs-on: ubuntu-24.04
     steps:
-      - name: Require enabled Lean and EVM lanes
+      - name: Require enabled Lean, EVM, and pf init demo lanes
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           LEAN_RESULT: ${{ needs.lean.result }}
           EVM_RESULT: ${{ needs.evm.result }}
+          PF_INIT_RESULT: ${{ needs.pf-init-user-project.result }}
           LEAN_ENABLED: ${{ needs.changes.outputs.lean }}
           EVM_ENABLED: ${{ needs.changes.outputs.evm }}
         run: |
@@ -283,3 +299,4 @@ jobs:
           }
           require_lane Lean "$LEAN_ENABLED" "$LEAN_RESULT"
           require_lane EVM "$EVM_ENABLED" "$EVM_RESULT"
+          require_lane "pf init demo" "$EVM_ENABLED" "$PF_INIT_RESULT"

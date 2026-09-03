@@ -71,12 +71,13 @@ From repo root after toolchain setup:
 ```bash
 lake build pf
 export PATH="$PWD/.lake/build/bin:$PATH"
-lake exe pf -- init demo
+pf init demo
 cd demo
 lake build
 lake env pf build
 ```
 
+CI job `pf-init-user-project` gates this exact command (`pf init demo`, then build artifacts).
 `pf init` currently requires the checkout (template path + require rewrite). A standalone installer / release tarball is roadmap work, not v0.
 
 ## Related

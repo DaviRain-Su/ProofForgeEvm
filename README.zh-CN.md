@@ -63,11 +63,15 @@ runtime-tests/evm/anvil.sh     # 完整 Anvil 门禁（无 Foundry 时跳过）
 ```text
 lake build pf
 export PATH="$PWD/.lake/build/bin:$PATH"
-lake exe pf -- init demo
+pf init demo
 cd demo
 lake build
 lake env pf build
 ```
+
+CI job `pf-init-user-project`（检查名 **pf init demo**）跑同一条路径：
+`pf init demo` 创建命名工程，再 `lake build` 与 `lake env pf build`，并断言
+`Counter.bin` / `Counter.yul` / `Counter.abi.json`。
 
 `pf init` 目前依赖仓库 checkout（复制 `templates/evm-counter` 并改写 path-`require`）。
 尚无独立安装包。
