@@ -37,56 +37,13 @@ def verify (s : State) (proof : BoundedVec Bytes32 8) (leaf : Bytes32) : Bool :=
       proof.length.toUInt64 > 8 then
     false
   else
-    let p1 := MerkleProof.hashPair leaf proof.values[0]!
-    let h1 : Bytes32 :=
-      ⟨if proof.length.toUInt64 > 0 then p1.w0 else leaf.w0,
-       if proof.length.toUInt64 > 0 then p1.w1 else leaf.w1,
-       if proof.length.toUInt64 > 0 then p1.w2 else leaf.w2,
-       if proof.length.toUInt64 > 0 then p1.w3 else leaf.w3⟩
-    let p2 := MerkleProof.hashPair h1 proof.values[1]!
-    let h2 : Bytes32 :=
-      ⟨if proof.length.toUInt64 > 1 then p2.w0 else h1.w0,
-       if proof.length.toUInt64 > 1 then p2.w1 else h1.w1,
-       if proof.length.toUInt64 > 1 then p2.w2 else h1.w2,
-       if proof.length.toUInt64 > 1 then p2.w3 else h1.w3⟩
-    let p3 := MerkleProof.hashPair h2 proof.values[2]!
-    let h3 : Bytes32 :=
-      ⟨if proof.length.toUInt64 > 2 then p3.w0 else h2.w0,
-       if proof.length.toUInt64 > 2 then p3.w1 else h2.w1,
-       if proof.length.toUInt64 > 2 then p3.w2 else h2.w2,
-       if proof.length.toUInt64 > 2 then p3.w3 else h2.w3⟩
-    let p4 := MerkleProof.hashPair h3 proof.values[3]!
-    let h4 : Bytes32 :=
-      ⟨if proof.length.toUInt64 > 3 then p4.w0 else h3.w0,
-       if proof.length.toUInt64 > 3 then p4.w1 else h3.w1,
-       if proof.length.toUInt64 > 3 then p4.w2 else h3.w2,
-       if proof.length.toUInt64 > 3 then p4.w3 else h3.w3⟩
-    let p5 := MerkleProof.hashPair h4 proof.values[4]!
-    let h5 : Bytes32 :=
-      ⟨if proof.length.toUInt64 > 4 then p5.w0 else h4.w0,
-       if proof.length.toUInt64 > 4 then p5.w1 else h4.w1,
-       if proof.length.toUInt64 > 4 then p5.w2 else h4.w2,
-       if proof.length.toUInt64 > 4 then p5.w3 else h4.w3⟩
-    let p6 := MerkleProof.hashPair h5 proof.values[5]!
-    let h6 : Bytes32 :=
-      ⟨if proof.length.toUInt64 > 5 then p6.w0 else h5.w0,
-       if proof.length.toUInt64 > 5 then p6.w1 else h5.w1,
-       if proof.length.toUInt64 > 5 then p6.w2 else h5.w2,
-       if proof.length.toUInt64 > 5 then p6.w3 else h5.w3⟩
-    let p7 := MerkleProof.hashPair h6 proof.values[6]!
-    let h7 : Bytes32 :=
-      ⟨if proof.length.toUInt64 > 6 then p7.w0 else h6.w0,
-       if proof.length.toUInt64 > 6 then p7.w1 else h6.w1,
-       if proof.length.toUInt64 > 6 then p7.w2 else h6.w2,
-       if proof.length.toUInt64 > 6 then p7.w3 else h6.w3⟩
-    let p8 := MerkleProof.hashPair h7 proof.values[7]!
-    let h8 : Bytes32 :=
-      ⟨if proof.length.toUInt64 > 7 then p8.w0 else h7.w0,
-       if proof.length.toUInt64 > 7 then p8.w1 else h7.w1,
-       if proof.length.toUInt64 > 7 then p8.w2 else h7.w2,
-       if proof.length.toUInt64 > 7 then p8.w3 else h7.w3⟩
-    ProofForge.Evm.Runtime.evmEqBytes32
-      h8.w0 h8.w1 h8.w2 h8.w3 s.root0 s.root1 s.root2 s.root3
+    Id.run do
+      let mut computed := leaf
+      for i in [0:8] do
+        if UInt64.ofNat i < proof.length.toUInt64 then
+          computed := MerkleProof.hashPair computed proof.values[i]!
+      return ProofForge.Evm.Runtime.evmEqBytes32
+        computed.w0 computed.w1 computed.w2 computed.w3 s.root0 s.root1 s.root2 s.root3
 
 @[pf_entry]
 def touch (_s : State) (v : UInt64) : Except Error (State × UInt64) :=
