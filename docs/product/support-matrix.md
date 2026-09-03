@@ -47,7 +47,8 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | `Erc1155` | Bounded single-id ownership/balance **core**; typed events are available via `Event.emit` for app-owned logs | Full ERC-1155 (safe callbacks, metadata, TransferBatch, complete event surface) |
 | `Ownable.Log` + `TwoStepCounter` / `Credits` | Canonical `OwnershipTransferred` (LOG3, both addresses indexed) on **`acceptOwnership`**. Constructor init and nomination do not log; no Ownable2Step `OwnershipTransferStarted` | Drop-in OpenZeppelin Ownable / Ownable2Step |
 | `Pausable.Log` + `TwoStepCounter` / `Credits` / `Capped` | Canonical `Paused` / `Unpaused` (LOG1, non-indexed `account` = caller) on **`pause` / `unpause`**. `Token` pause still does not emit these | Drop-in OpenZeppelin Pausable |
-| Roles / Reentrancy | Explicit policy helpers | Drop-in OpenZeppelin clone |
+| `Roles.Log` + `EvmStaticCounter` / `EvmStaticRoster` | Canonical `RoleGranted` / `RoleRevoked` (LOG4, empty data; `bytes32` role + account + sender all indexed) on **actual** bounded `Set2` grant/revoke. Idempotent no-ops do not log. No `RoleAdminChanged`, ERC-165, or `mapping(bytes32 => …)` AccessControl | Drop-in OpenZeppelin AccessControl |
+| Reentrancy | Explicit policy helpers | Drop-in OpenZeppelin clone |
 
 ## Networks / deploy
 

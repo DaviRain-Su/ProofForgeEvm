@@ -9,7 +9,9 @@ source "$here/lib.sh"
 
 pf_evm_evm_init evm-anvil-static-roster
 bin="$root/build/evm/EvmStaticRoster.bin"
+abi="$root/build/evm/EvmStaticRoster.abi.json"
 pf_evm_ensure_bin "$bin"
+[[ -f "$abi" ]] || { echo "FAIL: missing $abi" >&2; exit 1; }
 pf_evm_start_anvil "${PF_EVM_PORT:-18564}" "$root/build/evm/anvil-static-roster.log"
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
@@ -70,9 +72,19 @@ fi
 pf_evm_require_storage "$addr" 3 0 "unauthorized update holds seat[0]"
 
 # EVM-SDK-3 roles: bounded static writer set, two explicit address slots (10..15).
+# S4d: actual grants/revokes emit LOG4 RoleGranted/RoleRevoked; idempotent no-ops do not.
 zero_addr="0x0000000000000000000000000000000000000000"
 wr2="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
 wr3="0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+role_wr="$("$cast" keccak "WRITER_ROLE")"
+sig_granted="$(pf_evm_typed_event_sig "$abi" RoleGranted)"
+sig_revoked="$(pf_evm_typed_event_sig "$abi" RoleRevoked)"
+pf_evm_require_equal "$sig_granted" 'RoleGranted(bytes32,address,address)' \
+  "ABI RoleGranted signature"
+pf_evm_require_equal "$sig_revoked" 'RoleRevoked(bytes32,address,address)' \
+  "ABI RoleRevoked signature"
+topic_granted="$("$cast" keccak "$sig_granted")"
+topic_revoked="$("$cast" keccak "$sig_revoked")"
 
 writer_limbs() {
   "$python" -I -S -c "
@@ -110,8 +122,11 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
 fi
 
 # Admin grant fills slot 0 only (slots 10..12 = address limbs; 13..15 stay zero).
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'grantWriter(address)' "$other" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'grantWriter(address)' "$other")"
+pf_evm_typed_event_check "$abi" "$receipt" RoleGranted "$topic_granted" \
+  "{\"role\": \"$role_wr\", \"account\": \"$other\", \"sender\": \"$sender\"}" \
+  "grant writer slot0 RoleGranted LOG4"
 read -r ow0 ow1 ow2 <<< "$(writer_limbs "$other")"
 pf_evm_require_storage "$addr" 10 "$ow0" "grant writer slot0 w0"
 pf_evm_require_storage "$addr" 11 "$ow1" "grant writer slot0 w1"
@@ -124,17 +139,22 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'isWriter(address)(bool)' "$sender")" false "nonmember view after grant"
 
-# Duplicate grant is a successful idempotent no-op: nothing moves.
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'grantWriter(address)' "$other" >/dev/null
+# Duplicate grant is a successful idempotent no-op: nothing moves, no RoleGranted.
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'grantWriter(address)' "$other")"
+pf_evm_typed_event_absent "$receipt" RoleGranted "$topic_granted" \
+  "duplicate writer grant has no RoleGranted"
 for slot in 13 14 15; do
   pf_evm_require_storage "$addr" "$slot" 0 "duplicate grant holds writer slot1 vacant"
 done
 pf_evm_require_storage "$addr" 10 "$ow0" "duplicate grant holds writer slot0"
 
 # Second distinct grant fills slot 1 (slots 13..15).
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'grantWriter(address)' "$wr2" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'grantWriter(address)' "$wr2")"
+pf_evm_typed_event_check "$abi" "$receipt" RoleGranted "$topic_granted" \
+  "{\"role\": \"$role_wr\", \"account\": \"$wr2\", \"sender\": \"$sender\"}" \
+  "grant writer slot1 RoleGranted LOG4"
 read -r pw0 pw1 pw2 <<< "$(writer_limbs "$wr2")"
 pf_evm_require_storage "$addr" 13 "$pw0" "grant writer slot1 w0"
 pf_evm_require_storage "$addr" 14 "$pw1" "grant writer slot1 w1"
@@ -150,8 +170,10 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
 fi
 
 # Nonmember revoke is a successful idempotent no-op.
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'revokeWriter(address)' "$wr3" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'revokeWriter(address)' "$wr3")"
+pf_evm_typed_event_absent "$receipt" RoleRevoked "$topic_revoked" \
+  "nonmember writer revoke has no RoleRevoked"
 pf_evm_require_storage "$addr" 10 "$ow0" "nonmember revoke holds writer slot0"
 pf_evm_require_storage "$addr" 13 "$pw0" "nonmember revoke holds writer slot1"
 
@@ -189,8 +211,11 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   exit 1
 fi
 
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'revokeWriter(address)' "$other" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'revokeWriter(address)' "$other")"
+pf_evm_typed_event_check "$abi" "$receipt" RoleRevoked "$topic_revoked" \
+  "{\"role\": \"$role_wr\", \"account\": \"$other\", \"sender\": \"$sender\"}" \
+  "closed revoke writer slot0 RoleRevoked LOG4"
 for slot in 10 11 12; do
   pf_evm_require_storage "$addr" "$slot" 0 "closed revoke clears writer slot0"
 done
@@ -200,4 +225,4 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'isWriter(address)(bool)' "$wr2")" true "other writer survives closed revoke"
 
-echo "evm-anvil-static-roster: ok (address/fixed-vector/bool slots + bounds + bounded writer roles; engineering only)"
+echo "evm-anvil-static-roster: ok (address/fixed-vector/bool slots + bounds + bounded writer roles + RoleGranted/RoleRevoked; engineering only)"

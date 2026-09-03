@@ -45,6 +45,8 @@ address behavior. Replacement/clear semantics above are ordinary structural valu
 #guard Ownable.Log.ownershipTransferred sample sample == 0
 #guard Pausable.Log.paused sample == 0
 #guard Pausable.Log.unpaused sample == 0
+#guard Roles.Log.roleGranted ⟨1, 2, 3, 4⟩ sample sample == 0
+#guard Roles.Log.roleRevoked ⟨1, 2, 3, 4⟩ sample sample == 0
 
 /- Revert terminals evaluate to 0 under host stubs. -/
 #guard ownerViolation == 0

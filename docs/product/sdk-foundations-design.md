@@ -241,8 +241,9 @@ Examples land in dependency order and each wave stays honest about its supported
 
 1. **Wave A — policy events:** Ownable/Pausable/Roles examples adopt typed events and ERC-165 where
    applicable. *(S4b landed `OwnershipTransferred` + `Paused`/`Unpaused` on TwoStepCounter,
-   Credits, and Capped; not constructor logs, Ownable2Step `OwnershipTransferStarted`, Roles,
-   or ERC-165.)*
+   Credits, and Capped; not constructor logs, Ownable2Step `OwnershipTransferStarted`, or
+   ERC-165. S4d landed `RoleGranted` / `RoleRevoked` on EvmStaticCounter / EvmStaticRoster;
+   not `RoleAdminChanged` — `Set2` has no admin-role rotation API.)*
 2. **Wave B — ERC-721:** Collectible/Badge adopt `Transfer`, `Approval`, and `ApprovalForAll`;
    advertised interface IDs are limited to implemented functions.
 3. **Wave C — ERC-1155 single-id:** MultiToken/CraftToken adopt `TransferSingle` and

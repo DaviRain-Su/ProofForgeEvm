@@ -601,6 +601,13 @@ def decode(ty, word):
         if v>>bits:
             raise SystemExit(f'FAIL: $label: {ty} word {word} exceeds {bits} bits')
         return v
+    if ty.startswith('bytes'):
+        n=int(ty[5:])
+        if n < 1 or n > 32:
+            raise SystemExit(f'FAIL: $label: unsupported {ty}')
+        if len(word) != 64:
+            raise SystemExit(f'FAIL: $label: {ty} topic/data word {word} is not 32 bytes')
+        return '0x'+word.lower()
     raise SystemExit(f'FAIL: $label: unsupported ABI type {ty} in test decoder')
 got={}
 ti=1
@@ -614,5 +621,18 @@ for inp in inputs:
 norm={k:(v.lower() if isinstance(v,str) else v) for k,v in expected.items()}
 if got!=norm:
     raise SystemExit(f'FAIL: $label: decoded {got} != expected {norm}')
+"
+}
+
+# Assert the receipt has no log whose topic0 equals the ABI event NAME signature hash.
+pf_evm_typed_event_absent() {
+  local receipt="$1" name="$2" topic0="$3" label="$4"
+  printf '%s' "$receipt" | "$python" -I -S -c "
+import json,sys
+want='$topic0'.lower()
+r=json.load(sys.stdin)
+hits=[lg for lg in (r.get('logs') or []) if (lg.get('topics') or []) and lg['topics'][0].lower()==want]
+if hits:
+    raise SystemExit(f'FAIL: $label: expected no $name log, got {len(hits)}')
 "
 }
