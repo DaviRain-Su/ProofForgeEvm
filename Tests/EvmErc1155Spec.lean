@@ -297,7 +297,8 @@ private def expectMultiTokenEvents : CommandElabM Unit := do
     | .ok program => pure program
     | .error reason => throwError reason
   expectMethodNames evm
-    #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "isApprovedForAll"]
+    #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "isApprovedForAll",
+      "supportsInterface"]
   expectTypedAbiYul evm
 
 private def expectCraftTokenEvents : CommandElabM Unit := do
@@ -333,14 +334,14 @@ private def expectCraftTokenEvents : CommandElabM Unit := do
     | .error reason => throwError reason
   expectMethodNames evm
     #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "supplyOf",
-      "isApprovedForAll"]
+      "isApprovedForAll", "supportsInterface"]
   expectTypedAbiYul evm
 
 private def expectErc1155 : CommandElabM Unit := do
   expectMultiTokenEvents
   expectCraftTokenEvents
-  expectDigest `Examples.Evm.MultiToken "6792ca0e2ed8f217"
-  expectDigest `Examples.Evm.CraftToken "138f8b80bb24975b"
+  expectDigest `Examples.Evm.MultiToken "22ffde18b95a2030"
+  expectDigest `Examples.Evm.CraftToken "2252ee4200d2bedc"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!
   let balanceOps := (multi.methods.find? (·.ixName == "balanceOf")).get!.ops

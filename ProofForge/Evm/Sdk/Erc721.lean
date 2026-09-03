@@ -12,6 +12,9 @@ values with a zero top limb. Per-owner balances use a UInt64 address map (NFT co
 below 2^64). Authorization against `Context.caller`, pause/zero-address policy, mint caps,
 receiver hooks, and events remain application-owned.
 
+Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
+interface support from its methods.
+
 There is no new Runtime leaf, hashed-map kind, or Op/IR/Emit recipe. Canonical ERC-721 logs are
 reusable `Event.emit` wrappers (`Log.transfer` / `Log.approval` / `Log.approvalForAll`): LOG4
 `Transfer`/`Approval` with empty data, and LOG3 `ApprovalForAll` with a bool data word. Pause,

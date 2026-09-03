@@ -43,8 +43,9 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 |---|---|---|
 | `Examples.Evm.Erc20Meta` | ERC-20-shaped ABI: `string` name/symbol, standard `allowance` / `transfer` / `approve` selectors | “Audited EIP-20” / mainnet token factory |
 | Fungible + `Examples.Evm.Token` | ERC-20-style ledger / allowance policy; **`name`/`symbol` are packed `bytes32`**, and several views use `*Of` names | “Full ERC-20” / drop-in for MetaMask token import without checking ABI |
-| `Erc721` + `Collectible` / `Badge` | Bounded ownership/approval/balance **core**. These two examples emit the three canonical ERC-721 events via `Erc721.Log` (`Transfer` LOG4, `Approval` LOG4, `ApprovalForAll` LOG3) | Full ERC-721 (ERC-165, safe callbacks, metadata URI, complete function set) |
-| `Erc1155` + `MultiToken` / `CraftToken` | Bounded single-id ownership/balance **core**. These two examples emit canonical ERC-1155 `TransferSingle` (LOG4, `id`+`value` data words) and `ApprovalForAll` (LOG3, bool data) via `Erc1155.Log` | Full ERC-1155 (safe callbacks, metadata URI, TransferBatch, ERC-165, complete function set) |
+| `Erc165` | Static `bytes4` interface IDs and bounded, explicitly declared support predicates. The four partial token examples advertise `IERC165` only and return false for ERC-721/1155, `0xffffffff`, and other undeclared IDs | Runtime discovery, receiver handshakes, inferred interface lists, or claiming an incomplete standard interface |
+| `Erc721` + `Collectible` / `Badge` | Bounded ownership/approval/balance **core**. These two examples emit the three canonical ERC-721 events via `Erc721.Log` (`Transfer` LOG4, `Approval` LOG4, `ApprovalForAll` LOG3); neither advertises the incomplete IERC721 interface ID | Full ERC-721 (safe callbacks, metadata URI, complete function set) |
+| `Erc1155` + `MultiToken` / `CraftToken` | Bounded single-id ownership/balance **core**. These two examples emit canonical ERC-1155 `TransferSingle` (LOG4, `id`+`value` data words) and `ApprovalForAll` (LOG3, bool data) via `Erc1155.Log`; neither advertises the incomplete IERC1155 interface ID | Full ERC-1155 (safe callbacks, metadata URI, TransferBatch, complete function set) |
 | `Ownable.Log` + `TwoStepCounter` / `Credits` | Canonical `OwnershipTransferred` (LOG3, both addresses indexed) on **`acceptOwnership`**. Constructor init and nomination do not log; no Ownable2Step `OwnershipTransferStarted` | Drop-in OpenZeppelin Ownable / Ownable2Step |
 | `Pausable.Log` + `TwoStepCounter` / `Credits` / `Capped` | Canonical `Paused` / `Unpaused` (LOG1, non-indexed `account` = caller) on **`pause` / `unpause`**. `Token` pause still does not emit these | Drop-in OpenZeppelin Pausable |
 | `Roles.Log` + `EvmStaticCounter` / `EvmStaticRoster` | Canonical `RoleGranted` / `RoleRevoked` (LOG4, empty data; `bytes32` role + account + sender all indexed) on **actual** bounded `Set2` grant/revoke. Idempotent no-ops do not log. No `RoleAdminChanged`, ERC-165, or `mapping(bytes32 => …)` AccessControl | Drop-in OpenZeppelin AccessControl |
@@ -93,5 +94,6 @@ CI job `pf-init-user-project` gates this exact command (`pf init demo`, then bui
 - Writing guide: [writing-contracts.md](writing-contracts.md)
 - Deploy story: [deploy.md](deploy.md)
 - Roadmap: [roadmap.md](roadmap.md)
+- OpenZeppelin-shaped SDK backlog: [oz-sdk-backlog.md](oz-sdk-backlog.md)
 - Module internals: [../modules/](../modules/)
 - Historical research (archived): [../research/](../research/)

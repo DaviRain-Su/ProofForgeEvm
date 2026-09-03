@@ -28,6 +28,9 @@ abbrev Bytes32 := ProofForge.Core.Value.FixedBytes 32
 /-- Compatibility constructor for code that named the old EVM-owned structure constructor. -/
 abbrev Bytes32.mk (w0 w1 w2 w3 : UInt64) : Bytes32 := ⟨w0, w1, w2, w3⟩
 
+/-- Four-byte ABI identifier (for selectors and ERC-165 interface ids). -/
+abbrev Bytes4 := ProofForge.Core.Value.FixedBytes 4
+
 /--
 `CALLER` 的低 8 字节：`and(caller(), 0xffffffffffffffff)`。
 这是 20 字节地址的末 8 字节，不是完整 address，也不是 `tx.origin`。
@@ -361,6 +364,10 @@ actual flattened storage schema. Empty, dynamic, unknown, or non-UInt64 fields f
 
 /-- 两份 Addr20 整值相等。Yul pack 成 address 再 `eq`。宿主返回 `true`。 -/
 @[irreducible] def evmEq20 (_a _b : Addr20) : Bool := true
+
+/-- Exact equality of two ABI `bytes4` values. The EVM emitter compares their canonical
+left-aligned words; the host stub is an extraction contract only. -/
+@[irreducible] def evmEqBytes4 (_a _b : Bytes4) : Bool := true
 
 /-- 封闭 Uniswap V2 `swapExactTokensForTokens`，path 长度 2。`to` 是本合约，deadline 是 `uint256.max`。失败 revert。宿主返回 `amtIn.w0`。 -/
 @[irreducible] def evmSwapExact2

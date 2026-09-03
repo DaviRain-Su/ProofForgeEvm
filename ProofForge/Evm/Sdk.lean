@@ -2,6 +2,7 @@ import ProofForge.Core.SafeCast
 import ProofForge.Core.Math
 import ProofForge.Evm.Sdk.Base
 import ProofForge.Evm.Sdk.Fungible
+import ProofForge.Evm.Sdk.Erc165
 import ProofForge.Evm.Sdk.Erc721
 import ProofForge.Evm.Sdk.Erc1155
 import ProofForge.Evm.Sdk.Payments
@@ -23,6 +24,7 @@ import ProofForge.Evm.Sdk.Reentrancy
 
 Contract-facing umbrella for EVM values, typed storage handles, target effects, reusable access /
 pause/Ownable-event/reentrancy/payment/fungible/ERC-721/bounded-ERC-1155 ledger policy components,
+bounded ERC-165 interface-id predicates,
 compile-time static storage declarations, persistent bounded UInt64 storage vectors/bitmaps/ring
 queues/enumerable sets/maps/checkpoints, bounded static role sets with canonical RoleGranted /
 RoleRevoked logs, and shared allocation-free

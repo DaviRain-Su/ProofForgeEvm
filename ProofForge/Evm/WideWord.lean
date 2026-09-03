@@ -36,6 +36,8 @@ inductive Query where
   | compare256 (comparison : Comparison)
   /-- Packed address equality. Six operands: a0..a2, b0..b2. -/
   | eq20
+  /-- Canonical ABI `bytes4` equality. Two left-aligned EVM-word operands. -/
+  | eqBytes4
   /-- Packed binary bitwise operation; `limb` is 0..3. Eight operands. -/
   | bitwise256 (operation : Bitwise) (limb : Nat)
   /-- Packed bitwise complement; `limb` is 0..3. Four operands. -/
@@ -54,9 +56,10 @@ def Query.arity : Query → Nat
   | .not256 _ => 4
   | .shift256 _ _ => 5
   | .eq20 => 6
+  | .eqBytes4 => 2
 
 def Query.wellFormed : Query → Bool
-  | .ge256 | .compare256 _ | .eq20 => true
+  | .ge256 | .compare256 _ | .eq20 | .eqBytes4 => true
   | .bitwise256 _ limb | .not256 limb | .shift256 _ limb |
       .checkedDivMod256 _ limb => limb ≤ 3
   | .arith256 op limb => op ≤ 2 && limb ≤ 3
@@ -73,6 +76,8 @@ def Query.canonical (renderValue : V → String) (operands : Array V) : Query �
         s!"({renderOperands renderValue operands})"
   | .eq20 =>
       s!"ext.ProofForge.Evm.Ops.ValKind.eq20({renderOperands renderValue operands})"
+  | .eqBytes4 =>
+      s!"ext.ProofForge.Evm.Ops.ValKind.eqBytes4({renderOperands renderValue operands})"
   | .bitwise256 operation limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.bitwise256.{repr operation} {limb}" ++
         s!"({renderOperands renderValue operands})"

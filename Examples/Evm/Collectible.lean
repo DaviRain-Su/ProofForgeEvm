@@ -90,4 +90,10 @@ def getApproved (_s : State) (tokenId : UInt256) : UInt256 :=
 def balanceOf (_s : State) (owner : Address) : UInt256 :=
   Erc721.Balances.balanceOf256 balances owner
 
+/-- This partial ERC-721-shaped profile implements only IERC165. It deliberately does not
+advertise the IERC721 identifier until every required ERC-721 method is implemented. -/
+@[pf_entry]
+def supportsInterface (_s : State) (interfaceId : Bytes4) : Bool :=
+  Erc165.supports interfaceId Erc165.erc165
+
 end Examples.Evm.Collectible

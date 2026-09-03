@@ -140,7 +140,8 @@ private def expectCollectibleEvents : CommandElabM Unit := do
     match IR.fromExtracted source with
     | .ok program => pure program
     | .error reason => throwError reason
-  expectMethodNames evm #["mint", "approve", "transferFrom", "ownerOf", "getApproved", "balanceOf"]
+  expectMethodNames evm
+    #["mint", "approve", "transferFrom", "ownerOf", "getApproved", "balanceOf", "supportsInterface"]
   let abi ←
     match Emit.emitAbiChecked evm with
     | .ok abi => pure abi
@@ -192,7 +193,7 @@ private def expectBadgeEvents : CommandElabM Unit := do
     | .error reason => throwError reason
   expectMethodNames evm
     #["mint", "setApprovalForAll", "transferFrom", "burn", "ownerOf", "getApproved",
-      "isApprovedForAll", "balanceOf"]
+      "isApprovedForAll", "balanceOf", "supportsInterface"]
   let abi ←
     match Emit.emitAbiChecked evm with
     | .ok abi => pure abi
@@ -212,8 +213,8 @@ private def expectBadgeEvents : CommandElabM Unit := do
 private def expectErc721 : CommandElabM Unit := do
   expectCollectibleEvents
   expectBadgeEvents
-  expectDigest `Examples.Evm.Collectible "b1d756fc4fc70ed0"
-  expectDigest `Examples.Evm.Badge "486420c933cdc7ac"
+  expectDigest `Examples.Evm.Collectible "df29360114f22d5f"
+  expectDigest `Examples.Evm.Badge "ef61792f697edbd3"
 
 elab "#pf_guard_evm_erc721" : command => expectErc721
 

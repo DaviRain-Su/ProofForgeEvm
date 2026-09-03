@@ -532,6 +532,19 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       | some a0, some a1, some a2, some b0, some b1, some b2 =>
         some (.ext (.evm (.component (.wideWord .eq20))) #[a0, a1, a2, b0, b1, b2])
       | _, _, _, _, _, _ => none
+  else if endsWith e ".evmEqBytes4" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmEqBytes4 then
+    let args := e.getAppArgs
+    if args.size < 2 then none
+    else
+      let aE := unfoldUserHelpers env 8 args[args.size - 2]!
+      let bE := unfoldUserHelpers env 8 args[args.size - 1]!
+      let limb (base : Expr) : Option Ops.Val :=
+        asVal env fuel (mkApp (mkConst ``ProofForge.Core.Value.FixedBytes.w0) base)
+      match limb aE, limb bE with
+      | some a0, some b0 =>
+        some (.ext (.evm (.component (.wideWord .eqBytes4))) #[a0, b0])
+      | _, _ => none
   else if endsWith e ".evmMapGetU64" || isConstNamed e ``ProofForge.Evm.Runtime.evmMapGetU64 then
     let args := e.getAppArgs
     let get (n : Nat) : Ops.Val :=
