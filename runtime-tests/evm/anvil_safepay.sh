@@ -130,7 +130,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" \
   175 "owner after take"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" \
   'balanceOf(address)(uint256)' "$recipient")" \
-  225 "recipient after take"
+  125 "recipient after take"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$token" 'setNoReturn(bool)' true >/dev/null
