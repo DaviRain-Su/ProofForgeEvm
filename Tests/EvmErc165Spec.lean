@@ -24,7 +24,7 @@ open Lean Elab Command
 #guard Erc165.supportsToken Erc165.erc165 Erc165.erc721
 #guard Erc165.supportsToken Erc165.erc721 Erc165.erc721
 
-private partial def valueContainsBytes4Equality : ProofForge.Extract.IR.Val → Bool
+private partial def valueContainsBytes4Equality : Ops.Val → Bool
   | .arg _ | .local _ | .lit _ | .loopIx => false
   | .field base _ | .bitNot base => valueContainsBytes4Equality base
   | .bitAnd lhs rhs | .bitOr lhs rhs | .bitXor lhs rhs
@@ -37,7 +37,7 @@ private partial def valueContainsBytes4Equality : ProofForge.Extract.IR.Val → 
   | .select _ lhs rhs thn els =>
       valueContainsBytes4Equality lhs || valueContainsBytes4Equality rhs ||
         valueContainsBytes4Equality thn || valueContainsBytes4Equality els
-  | .ext (.evm (.component (.wideWord .eqBytes4))) operands => operands.size == 2
+  | .ext (.component (.wideWord .eqBytes4)) operands => operands.size == 2
   | .ext _ operands => operands.any valueContainsBytes4Equality
 
 private def expectErc165Abi (moduleName : Name) : CommandElabM Unit := do
