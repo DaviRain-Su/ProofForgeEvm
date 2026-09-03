@@ -279,7 +279,7 @@ export const DOCS: Record<
       blocks: [
         "ProofForge.Evm.Sdk 是合同源表面：storage、fungible ledger、roles、pausable、reentrancy、payments，以及 ERC-721/1155 的 bounded core。",
         "用户项目只 import ProofForge.Attr 与 ProofForge.Evm.Sdk，不碰 ProofForge 伞模块。SDK 传递闭包不得到达 Emit / Assemble / Registry。",
-        "ERC-721/1155 当前是账本/授权 core，不是完整标准实现（缺规范事件、safe 回调、完整 metadata ABI）。对外请称 core / bounded policy。",
+        "ERC-721/1155 当前是账本/授权 core，不是完整标准实现（已覆盖所列 canonical events；仍缺 safe 回调、完整 metadata ABI）。对外请称 core / bounded policy。",
       ],
     },
     en: {
@@ -287,7 +287,7 @@ export const DOCS: Record<
       blocks: [
         "ProofForge.Evm.Sdk is the contract-facing surface: storage, fungible ledger, roles, pausable, reentrancy, payments, and bounded ERC-721/1155 cores.",
         "User projects import only ProofForge.Attr and ProofForge.Evm.Sdk — never the ProofForge umbrella. The SDK closure must not reach Emit / Assemble / Registry.",
-        "ERC-721/1155 are ledger/approval cores today, not full standard implementations (no full standard events, safe callbacks, or complete metadata ABI). Call them core / bounded policy.",
+        "ERC-721/1155 are ledger/approval cores today, not full standard implementations (the listed canonical events are covered; safe callbacks and complete metadata ABI are absent). Call them core / bounded policy.",
       ],
     },
   },
