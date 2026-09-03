@@ -58,6 +58,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalActionsOf()(u
   "$addr" 'act(uint256,uint64)' 0 2 >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'noncesOf(address)(uint256)' "$sender")" \
   1 "nonce after act"
+windowStart="$("$cast" call --rpc-url "$rpc" "$addr" \
+  'lastTimepointOf(address)(uint64)' "$sender")"
 pf_evm_require_uint "$(pf_evm_quota_available "$addr" "$sender")" \
   3 "quota after act"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalActionsOf()(uint64)')" \
@@ -75,12 +77,24 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalActionsOf()(u
   "$addr" 'act(uint256,uint64)' 1 3 >/dev/null
 pf_evm_require_uint "$(pf_evm_quota_available "$addr" "$sender")" \
   0 "quota exhausted"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'lastTimepointOf(address)(uint64)' "$sender")" "$windowStart" \
+  "within-window consume preserves window start"
 
-# Rate limit exceeded on nonce 2.
+# Zero quantity is admissible even when full and leaves the limiter entry unchanged.
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'act(uint256,uint64)' 2 0 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'lastUsedOf(address)(uint64)' "$sender")" 5 "zero quantity preserves usage"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'lastTimepointOf(address)(uint64)' "$sender")" "$windowStart" \
+  "zero quantity preserves window start"
+
+# Rate limit exceeded on nonce 3.
 pf_evm_require_named_revert "$addr" "$sender" \
-  "$("$cast" calldata 'act(uint256,uint64)' 2 1)" 'rateLimitExceeded()' \
+  "$("$cast" calldata 'act(uint256,uint64)' 3 1)" 'rateLimitExceeded()' \
   "rate limit exceeded"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'noncesOf(address)(uint256)' "$sender")" \
-  2 "rate limit failure is atomic on nonce"
+  3 "rate limit failure is atomic on nonce"
 
 echo "evm-anvil-evmquota: ok (Nonces + RateLimit fixed-window quota; engineering only)"
