@@ -35,8 +35,7 @@ private def expectErc165Abi (moduleName : Name) (tokenId : Erc165.InterfaceId) :
     | .error reason => throwError reason
   let some method := source.methods.find? (·.ixName == "supportsInterface")
     | throwError s!"{moduleName} is missing supportsInterface"
-  unless method.params.size == 1 && method.params[0]!.type == .fixedBytes 4 &&
-      method.returnType == .boolean do
+  unless method.paramTypes == #[.fixedBytes 4] && method.retTypes == #[.boolean] do
     throwError s!"{moduleName}.supportsInterface lost its bytes4/bool source boundary"
   let program ←
     match IR.fromExtracted source with
@@ -51,7 +50,7 @@ private def expectErc165Abi (moduleName : Name) (tokenId : Erc165.InterfaceId) :
       abi.contains "\"type\":\"bool\"" do
     throwError s!"{moduleName} ABI lost supportsInterface(bytes4) -> bool:\n{abi}"
   let supportOps := (program.entries.find? (·.ixName == "supportsInterface")).get!.ops
-  unless supportOps.size > 0 && program.entries.map (·.ixName) |>.contains "supportsInterface" do
+  unless supportOps.size > 0 && (program.entries.map (·.ixName)).contains "supportsInterface" do
     throwError s!"{moduleName}.supportsInterface did not lower to EVM operations"
   -- Keep the exact intended profile present in extracted source. This avoids an ABI-only stub.
   unless Erc165.supportsToken tokenId tokenId do
