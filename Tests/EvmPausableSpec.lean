@@ -26,6 +26,9 @@ open ProofForge.Evm.Sdk
 #guard Pausable.unpause Pausable.paused == Pausable.running
 #guard Pausable.unpause Pausable.running == Pausable.running
 #guard Pausable.violation == 0
+#guard Pausable.Log.paused ⟨1, 2, 3⟩ == 0
+#guard Pausable.Log.unpaused ⟨1, 2, 3⟩ == 0
+#guard Ownable.Log.ownershipTransferred ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ == 0
 
 -- Access keeps compatibility names while delegating pause semantics to the single owner.
 #guard Access.runningFlag == Pausable.running
@@ -40,7 +43,7 @@ open Examples.Evm.TwoStepCounter in
 open Examples.Evm.Credits in
 #guard (init ⟨1, 2, 3⟩).paused == Pausable.running
 
-#guard ProofForge.Evm.Registry.digestOf "TwoStepCounter" == some "3b08dde14972e728"
-#guard ProofForge.Evm.Registry.digestOf "Credits" == some "b419d86e92ae9e9e"
+#guard ProofForge.Evm.Registry.digestOf "TwoStepCounter" == some "8aa4d044a935390e"
+#guard ProofForge.Evm.Registry.digestOf "Credits" == some "3447fa1464d2897a"
 
 end Tests.EvmPausableSpec

@@ -47,7 +47,7 @@ def other : Addr20 := ⟨4, 5, 6⟩
 
 #guard
   match pause (init sample) with
-  | .ok (st, ret) => ret == 1 && st.paused == 1 && pausedOf st == 1
+  | .ok (st, ret) => ret == 0 && st.paused == 1 && pausedOf st == 1
   | .error _ => false
 
 /- Host: bump while paused hits the running-gate terminal (revert stub evaluates to 0). -/

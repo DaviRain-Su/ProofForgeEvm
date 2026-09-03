@@ -41,6 +41,7 @@ import Tests.EvmTypedErrorSpec
 import Tests.EvmTypedEventSpec
 import Tests.EvmChainGuardSpec
 import Tests.EvmOpenCallSpec
+import Tests.EvmOzPolicyEventSpec
 import Tests.Fixtures
 import Tests.FlagSpec
 import Tests.LangSpec

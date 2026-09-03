@@ -33,7 +33,7 @@ See `templates/evm-counter/MyContract/Counter.lean`, `Examples/Evm/TipJar.lean`,
 1. **Effect carrier** — many contracts still park effect results in a `dummy : UInt64` field and thread `hold s`.
 2. **Fake guards** — pure-effect methods may need a trivial branch so Extract treats the method as effectful.
 3. **Constructor effects** — deployment-time map writes / logs / value transfers are tightly constrained.
-4. **Events** — closed LOG helpers (`Event.tipped` / `Event.transfer`) plus typed constructors via `Event.emit` and `Event.Indexed` (S1b; see `Examples.Evm.EvmTypedEvents`). Dynamic/unbounded event payloads are still refused.
+4. **Events** — closed LOG helpers (`Event.tipped` / `Event.transfer`) plus typed constructors via `Event.emit` and `Event.Indexed` (S1b; see `Examples.Evm.EvmTypedEvents`). `TwoStepCounter` / `Credits` emit canonical Ownable `OwnershipTransferred` (on `acceptOwnership`) and Pausable `Paused`/`Unpaused`; `Capped` emits the pause pair. Dynamic/unbounded event payloads are still refused.
 5. **Typed external CALL** — `OpenCall.call` / `callSuccess` / `callValue` / `staticWord` / `staticWords2` take a typed `Address` and an inductive constructor (name = ABI function, fields = args). The compiler assembles calldata and applies one `CallResult` policy. This is not raw CALL: no selector string, bytes buffer, `delegatecall`, or CREATE2. Reentrancy is visible to the callee; OpenCall does not insert a guard (see `Examples.Evm.EvmOpenCall`).
 6. **NFT modules** — use as bounded cores, not “ship ERC-721”.
 7. **`Examples.Evm.Token` metadata** — `name` / `symbol` are packed `bytes32` (Anvil gates use that shape). Prefer `Erc20Meta` when external tools expect ERC-20 `string` metadata.
