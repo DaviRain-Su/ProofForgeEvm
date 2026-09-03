@@ -45,7 +45,8 @@ def verify (s : State) (proof : BoundedVec Bytes32 8) (leaf : Bytes32) : Bool :=
     let h6 := if proof.length.toUInt64 > 5 then MerkleProof.hashPair h5 proof.values[5]! else h5
     let h7 := if proof.length.toUInt64 > 6 then MerkleProof.hashPair h6 proof.values[6]! else h6
     let h8 := if proof.length.toUInt64 > 7 then MerkleProof.hashPair h7 proof.values[7]! else h7
-    MerkleProof.eqRoot256 h8.w0 h8.w1 h8.w2 h8.w3 s.root0 s.root1 s.root2 s.root3
+    ProofForge.Evm.Runtime.evmEqBytes32
+      h8.w0 h8.w1 h8.w2 h8.w3 s.root0 s.root1 s.root2 s.root3
 
 @[pf_entry]
 def touch (_s : State) (v : UInt64) : Except Error (State × UInt64) :=

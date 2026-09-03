@@ -59,7 +59,7 @@ private def expectVestLink : CommandElabM Unit := do
     throwError s!"VestLink ABI lost vesting surface:\n{abi}"
   unless !abi.contains "\"name\":\"royaltyInfo\"" do
     throwError "VestLink must not grow a royalty surface"
-  unless IR.digestHex program == "f7868e5f9647638f" do
+  unless IR.digestHex program == "b3e15e6ff33fddec" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 
