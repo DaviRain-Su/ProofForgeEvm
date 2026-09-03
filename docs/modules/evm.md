@@ -43,6 +43,14 @@ credit/increase 以 `next ≥ current` 拒绝 UInt256 wrap；transfer alias 不�
 decrease/spend 先验证 current ≥ amount。权限、pause、supply/cap、permit 和 event policy 仍在
 应用；这不是隐藏完整 ERC-20 的 recipe。
 
+`Sdk.SafeErc20` 是消费侧 fail-closed 包装：零地址门、closed `transfer`/`approve`/`transferFrom`、
+读 `allowance(address(this), spender)` 再 `approve` 的 increase/decrease，以及 USDT 式
+`forceApprove`（先写 0 再写目标额度）。不接受 raw calldata，也不把失败 CALL 改成可捕获的
+try/retry。`Examples.Evm.SafePay` 是对应消费者。
+
+`Sdk.Erc2981` 是静态 royalty 配置：编译期 receiver + 万分比分子，`royaltyInfo` 忽略
+`tokenId`，乘法溢出返回 0 而不是回绕。`Examples.Evm.RoyaltyArt` 声明 IERC165 + IERC2981。
+
 `Sdk.Reentrancy` 组合一个 explicit `Storage.Static.Handle UInt64`、OpenZeppelin-compatible
 nonzero sentinels 和既有 ordered `storeNow` effect。应用显式书写 enter → closed CALL → leave，
 hostile callback 可见 entered 状态，failed CALL 由交易回滚 lock；没有 raw slot、hidden State

@@ -17,6 +17,7 @@ import Tests.EvmCtxSpec
 import Tests.EvmEffectStateSpec
 import Tests.EvmEnvironmentSpec
 import Tests.EvmErc165Spec
+import Tests.EvmErc2981Spec
 import Tests.EvmErc1155Spec
 import Tests.EvmErc721Spec
 import Tests.EvmExceptErgonomicsSpec
@@ -28,6 +29,7 @@ import Tests.EvmPrecompileSpec
 import Tests.EvmReentrancySpec
 import Tests.EvmRolesSpec
 import Tests.EvmSafeCastSpec
+import Tests.EvmSafeErc20Spec
 import Tests.EvmSdkSpec
 import Tests.EvmSearchSpec
 import Tests.EvmSpec
