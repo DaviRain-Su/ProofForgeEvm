@@ -24,16 +24,18 @@ balance through a view, authorization, or write.
 Single-id checked balance reads, `setApprovalForAll`/`isApprovedForAll`, checked mint/credit,
 checked burn/debit, and alias-safe `transfer` decisions/effects (equal source/destination is a
 successful no-op after the debit gate instead of two writes through the same hashed key). Credit
-rejects UInt256 wraparound; debit rejects underflow.
+rejects UInt256 wraparound; debit rejects underflow. Canonical ERC-1155 logs are reusable
+`Event.emit` wrappers (`Log.transferSingle` / `Log.approvalForAll`): LOG4 `TransferSingle` with
+two data words (`id`, `value`), and LOG3 `ApprovalForAll` with a bool data word.
 
 ## Explicitly unsupported
 
 Batch operations (`safeBatchTransferFrom`, `balanceOfBatch`, mint/burn batches), ERC1155Receiver
-callbacks (`onERC1155Received`), metadata URI, standard typed `TransferSingle`/`TransferBatch`/
-`ApprovalForAll` events, and unbounded inputs. There is no new Runtime leaf, hashed-map kind,
-Op/IR/Component/Emit recipe, protocol opcode, selector/topic/offset magic, or hidden storage
-write: every state write is an existing explicit hashed-map effect. Authorization against
-`Context.caller`, event/error ordering, pause, and supply policy remain application-owned.
+callbacks (`onERC1155Received`), metadata URI, `TransferBatch`, ERC-165, and unbounded inputs.
+There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,
+selector/topic/offset magic, or hidden storage write: every state write is an existing explicit
+hashed-map effect. Authorization against `Context.caller`, event/error ordering, pause, and
+supply policy remain application-owned.
 -/
 
 /-- True when `tokenId` fits the three-limb `Address` map key (top UInt256 limb is zero). This is
@@ -159,5 +161,29 @@ the id-encoding gate). -/
 @[pf_inline] def burn (balances : Balances) (source : Address)
     (tokenId amount : UInt256) : UInt64 :=
   balances.debit source tokenId amount
+
+/-- Canonical ERC-1155 events. Constructor names and field names are the ABI surface
+(`TransferSingle` / `ApprovalForAll`). Indexed flags produce LOG4 (two data words) for
+TransferSingle and LOG3 (bool data word) for ApprovalForAll. -/
+inductive Notice where
+  | TransferSingle (operator : Event.Indexed Address) («from» : Event.Indexed Address)
+      (to : Event.Indexed Address) (id : UInt256) (value : UInt256)
+  | ApprovalForAll (account : Event.Indexed Address) (operator : Event.Indexed Address)
+      (approved : Bool)
+  deriving Repr, DecidableEq, Inhabited
+
+namespace Log
+
+/-- LOG4 `TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)`. -/
+@[pf_inline] def transferSingle (operator source destination : Address)
+    (tokenId amount : UInt256) : UInt64 :=
+  Event.emit (Notice.TransferSingle (Event.indexed operator) (Event.indexed source)
+    (Event.indexed destination) tokenId amount)
+
+/-- LOG3 `ApprovalForAll(address indexed account, address indexed operator, bool approved)`. -/
+@[pf_inline] def approvalForAll (account operator : Address) (approved : Bool) : UInt64 :=
+  Event.emit (Notice.ApprovalForAll (Event.indexed account) (Event.indexed operator) approved)
+
+end Log
 
 end ProofForge.Evm.Sdk.Erc1155

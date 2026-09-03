@@ -44,7 +44,7 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | `Examples.Evm.Erc20Meta` | ERC-20-shaped ABI: `string` name/symbol, standard `allowance` / `transfer` / `approve` selectors | “Audited EIP-20” / mainnet token factory |
 | Fungible + `Examples.Evm.Token` | ERC-20-style ledger / allowance policy; **`name`/`symbol` are packed `bytes32`**, and several views use `*Of` names | “Full ERC-20” / drop-in for MetaMask token import without checking ABI |
 | `Erc721` + `Collectible` / `Badge` | Bounded ownership/approval/balance **core**. These two examples emit the three canonical ERC-721 events via `Erc721.Log` (`Transfer` LOG4, `Approval` LOG4, `ApprovalForAll` LOG3) | Full ERC-721 (ERC-165, safe callbacks, metadata URI, complete function set) |
-| `Erc1155` | Bounded single-id ownership/balance **core**; typed events are available via `Event.emit` for app-owned logs | Full ERC-1155 (safe callbacks, metadata, TransferBatch, complete event surface) |
+| `Erc1155` + `MultiToken` / `CraftToken` | Bounded single-id ownership/balance **core**. These two examples emit canonical ERC-1155 `TransferSingle` (LOG4, `id`+`value` data words) and `ApprovalForAll` (LOG3, bool data) via `Erc1155.Log` | Full ERC-1155 (safe callbacks, metadata URI, TransferBatch, ERC-165, complete function set) |
 | Roles / Pausable / Reentrancy | Explicit policy helpers | Drop-in OpenZeppelin clone |
 
 ## Networks / deploy

@@ -207,7 +207,7 @@ for the stated subset. It does not mean a drop-in or complete OpenZeppelin imple
 | ERC-20 events | Closed `Transfer`/`Approval` logs and ABI | Re-express through typed events only if zero-churn equivalence holds | Existing ERC-20-style subset, not a blanket full-ERC claim |
 | ERC-165 | No SDK implementation found | Bounded `supportsInterface(bytes4)` policy for explicitly implemented interface IDs; `0xffffffff` is false | Reports only interfaces whose required surface is actually present |
 | ERC-721 | O(1) ownership/approval/balance core; events and receiver hooks are app-owned | Standard `Transfer`, `Approval`, and `ApprovalForAll` event descriptors and example adoption; ERC-165 ID only when the full advertised function set exists | No “full ERC-721” claim without safe-transfer/receiver and metadata decisions |
-| ERC-1155 | Bounded single-id balance/operator core; no standard events, batch calls, receiver hooks, or metadata URI | Standard `TransferSingle` and `ApprovalForAll`; `TransferBatch` only with a separately approved bounded dynamic-event plan | Single-id bounded core; no “full ERC-1155” claim |
+| ERC-1155 | Bounded single-id balance/operator core; no standard events, batch calls, receiver hooks, or metadata URI | Standard `TransferSingle` and `ApprovalForAll`; `TransferBatch` only with a separately approved bounded dynamic-event plan | Single-id bounded core with those two events; no “full ERC-1155” claim |
 
 The `TransferBatch` payload contains dynamic arrays and does not fit S1a's one-word-per-argument or
 the current four-data-word `LogPlan` contract. S4 must not fake it with a nonstandard fixed event.
@@ -242,9 +242,12 @@ Examples land in dependency order and each wave stays honest about its supported
 1. **Wave A — policy events:** Ownable/Pausable/Roles examples adopt typed events and ERC-165 where
    applicable.
 2. **Wave B — ERC-721:** Collectible/Badge adopt `Transfer`, `Approval`, and `ApprovalForAll`;
-   advertised interface IDs are limited to implemented functions.
+   advertised interface IDs are limited to implemented functions. *(S4a landed the three
+   canonical events; not ERC-165, safe callbacks, or metadata URI.)*
 3. **Wave C — ERC-1155 single-id:** MultiToken/CraftToken adopt `TransferSingle` and
-   `ApprovalForAll`.
+   `ApprovalForAll`. *(S4c landed LOG4 `TransferSingle` with two data words and LOG3
+   `ApprovalForAll` on both examples; not `TransferBatch`, safe callbacks, metadata URI, or
+   ERC-165.)*
 4. **Wave D — bounded batch/cross-contract examples:** only after the required bounded dynamic
    event and `OpenCall` policies are independently accepted.
 
