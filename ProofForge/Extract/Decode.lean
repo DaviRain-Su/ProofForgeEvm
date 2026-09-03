@@ -1391,10 +1391,17 @@ private partial def staticListNatLits? (env : Environment) (fuel : Nat) (e : Exp
     else if isConstNamed e ``List.cons || endsWith e ".cons" then
       let args := e.getAppArgs
       if args.size ≥ 2 then
-        match staticNatLitFromExpr? 8 args[args.size - 2]! with
+        let headLit :=
+          match staticNatLitFromExpr? 8 args[args.size - 2]! with
+          | some n => some n
+          | none =>
+            match val env args[args.size - 2]! with
+            | some (.lit n) => some n.toNat
+            | _ => none
+        match headLit with
         | some n =>
           match staticListNatLits? env fuel' args[args.size - 1]! with
-          | some tail => some (tail.push n)
+          | some tail => some (#[n] ++ tail)
           | none => none
         | none => none
       else none
@@ -1404,21 +1411,35 @@ private partial def staticListNatLits? (env : Environment) (fuel : Nat) (e : Exp
     else
       e.getAppArgs.findSome? (staticListNatLits? env fuel')
 
+private def staticArrayNatLits? (env : Environment) (e : Expr) : Option (Array Nat) := do
+  let e := strip (unfoldUserHelpers env 16 e)
+  if isConstNamed e ``Array.mk && e.getAppArgs.size ≥ 1 then
+    staticListNatLits? env 80 e.getAppArgs[e.getAppArgs.size - 1]!
+  else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
+    let largs := e.getAppArgs
+    unless largs.size ≥ 1 do none
+    staticListNatLits? env 80 largs[largs.size - 1]!
+  else
+    staticListNatLits? env 80 e
+
+private def staticVectorPayloadBytes? (env : Environment) (vectorE : Expr) : Option (Array Nat) := do
+  let vectorE := strip (unfoldUserHelpers env 32 vectorE)
+  unless isConstNamed vectorE ``Vector.mk || endsWith vectorE "Vector.mk" do none
+  let vArgs := vectorE.getAppArgs
+  unless vArgs.size ≥ 2 do none
+  -- Modern `#v[…]` = `Vector.mk α n #[…] proof`: payload lives at index 2.
+  if vArgs.size ≥ 3 then
+    match staticArrayNatLits? env vArgs[2]! with
+    | some bytes => return bytes
+    | none => pure ()
+  -- Legacy `Vector.mk (List.toArray …)` keeps payload at index 1.
+  staticArrayNatLits? env vArgs[1]!
+
 private def staticBoundedStringVectorBytes? (env : Environment) (e : Expr) : Option (Array Nat) := do
   let e := strip (unfoldUserHelpers env 32 e)
   let args := e.getAppArgs
   unless args.size ≥ 1 do none
-  let vectorE := strip (unfoldUserHelpers env 32 args[args.size - 1]!)
-  unless isConstNamed vectorE ``Vector.mk || endsWith vectorE "Vector.mk" do none
-  let vArgs := vectorE.getAppArgs
-  unless vArgs.size ≥ 2 do none
-  let dataE := strip (unfoldUserHelpers env 16 vArgs[1]!)
-  if isConstNamed dataE ``List.toArray || endsWith dataE ".toArray" then
-    let largs := dataE.getAppArgs
-    unless largs.size ≥ 1 do none
-    staticListNatLits? env 80 largs[largs.size - 1]!
-  else
-    staticListNatLits? env 80 dataE
+  staticVectorPayloadBytes? env args[args.size - 1]!
 
 private def staticBoundedStringCapacityLit? (env : Environment) (e : Expr) : Option Nat :=
   let e := strip (unfoldUserHelpers env 32 e)
@@ -1435,7 +1456,10 @@ private def staticBoundedStringCapacityLit? (env : Environment) (e : Expr) : Opt
           let vectorE := strip (unfoldUserHelpers env 32 args[args.size - 1]!)
           if isConstNamed vectorE ``Vector.mk || endsWith vectorE "Vector.mk" then
             let vArgs := vectorE.getAppArgs
-            if vArgs.size ≥ 1 then staticNatLitFromExpr? 8 vArgs[0]! else none
+            -- Modern `#v[…]` stores capacity at index 1; legacy form used index 0.
+            if vArgs.size ≥ 3 then staticNatLitFromExpr? 8 vArgs[1]!
+            else if vArgs.size ≥ 1 then staticNatLitFromExpr? 8 vArgs[0]!
+            else none
           else
             (staticBoundedStringVectorBytes? env e).map (·.size)
         else none

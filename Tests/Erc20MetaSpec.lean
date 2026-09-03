@@ -113,7 +113,7 @@ elab "#pf_erc20_meta_check" : command => do
     | .ok program => pure program
     | .error reason => throwError reason
   let digest := IR.digestHex program
-  unless digest == "ae22301d623e5734" do
+  unless digest == "b86fa0708b74fc2c" do
     throwError s!"Erc20Meta digest mismatch: {digest}"
   let want := #["allowance", "approve", "balanceOf", "decimals", "initialize",
     "mint", "name", "ownerOf", "symbol", "totalSupply", "transfer", "transferFrom"]

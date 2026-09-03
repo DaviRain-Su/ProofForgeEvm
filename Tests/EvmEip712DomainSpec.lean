@@ -86,7 +86,7 @@ private def expectDomainLink : CommandElabM Unit := do
     throwError s!"DomainLink ABI lost domain field surface:\n{abi}"
   unless !abi.contains "\"name\":\"permit\"" do
     throwError "DomainLink must not grow a permit mutation surface"
-  unless IR.digestHex program == "585fcb1e45ebea2c" do
+  unless IR.digestHex program == "52e88ad42d5a8789" do
     throwError s!"DomainLink digest drifted: {IR.digestHex program}"
   logInfo m!"domainlink: digest={IR.digestHex program} abi-ok"
 
