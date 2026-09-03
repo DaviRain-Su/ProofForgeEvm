@@ -17,14 +17,14 @@ echo "evm-anvil: host=$(uname -s)-$(uname -m) anvil=$anvil cast=$cast" >&2
 failed=0
 ran=0
 skipped=0
-for case in counter pair flag maybe ctx bounded search find_index static_counter static_roster \
+for case in counter pair flag maybe ctx bounded search find_index static_counter static_roster evmcrew evmquota \
     aggregate_storage ordered_storage \
     vec_log vec_stack bitmap_flags bitmap_claims ring_mailbox ring_history reentrancy \
     allowlist id_registry config_map score_map checkpoint_book checkpoint_trace \
     safe_cast_accumulator safe_cast_config typed_errors typed_events chain_guard \
     math_price_band \
     collectible badge tipjar lang vault \
-    ownable token erc20meta safepay royaltyart artlink packlink domainlink vestlink prooflink window phase wide const capped multitoken crafttoken twostep_counter credits \
+    ownable token erc20meta safepay royaltyart artlink packlink domainlink vestlink prooflink auditlink window phase wide const capped multitoken crafttoken twostep_counter credits \
     opencall; do
   script="$here/anvil_$case.sh"
   echo "evm-anvil: $case" >&2

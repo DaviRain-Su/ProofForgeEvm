@@ -14,6 +14,8 @@ import Examples.Evm.EvmSearch
 import Examples.Evm.EvmFindIndex
 import Examples.Evm.EvmStaticCounter
 import Examples.Evm.EvmStaticRoster
+import Examples.Evm.EvmCrew
+import Examples.Evm.EvmQuota
 import Examples.Evm.EvmAggregateStorage
 import Examples.Evm.EvmOrderedStorage
 import Examples.Evm.EvmVecLog
@@ -47,6 +49,7 @@ import Examples.Evm.SafePay
 import Examples.Evm.RoyaltyArt
 import Examples.Evm.VestLink
 import Examples.Evm.ProofLink
+import Examples.Evm.AuditLink
 import Examples.Evm.Capped
 import Examples.Evm.MultiToken
 import Examples.Evm.CraftToken

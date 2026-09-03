@@ -6,20 +6,20 @@ namespace ProofForge.Evm.Sdk.Roles
 /-!
 # EVM SDK bounded static role sets
 
-`Set2` is a fixed-capacity role policy over two explicit `Address` slots;
+`Set2` and `Set4` are fixed-capacity role policies over two or four explicit `Address` slots;
 `Address.zero` denotes a vacancy. It owns membership and slot-selection decisions, while
 applications own authorization, error policy, and literal state-field updates. This keeps all
 storage writes visible and adds no map namespace, runtime layout object, or allocator.
 
-Consumers store two adjacent Address fields, reconstruct `Set2` for decisions, and mirror those
-fields in `Storage.Static`. Duplicate grants and nonmember revokes are idempotent; zero is never a
-member; a third distinct grant is full.
+Consumers store two or four adjacent Address fields, reconstruct the matching set for decisions,
+and mirror those fields in `Storage.Static`. Duplicate grants and nonmember revokes are
+idempotent; zero is never a member; a third `Set2` or fifth `Set4` distinct grant is full.
 
 Canonical OpenZeppelin `RoleGranted` / `RoleRevoked` logs are reusable `Event.emit` wrappers
 (`Log.roleGranted` / `Log.roleRevoked`): LOG4 with empty data, three indexed topics after
 topic0 (`bytes32 role`, `address account`, `address sender`). Applications choose the `Bytes32`
 role id and emit only on an actual slot write; idempotent no-ops must not log. There is no
-`RoleAdminChanged` helper: `Set2` has no admin-role rotation API. This module is not a drop-in
+`RoleAdminChanged` helper: these sets have no admin-role rotation API. This module is not a drop-in
 OpenZeppelin AccessControl (no `mapping(bytes32 => RoleData)`, no ERC-165, no default-admin
 hierarchy).
 
@@ -86,6 +86,93 @@ namespace Set2
   | ⟨_a, b⟩ => !Address.isZero b && Address.eq b who
 
 end Set2
+
+/-- Compile-time capacity of the four-slot role set. -/
+@[pf_inline] def capacity4 : Nat := 4
+
+/-- Four explicit role slots; `Address.zero` marks a vacancy. -/
+structure Set4 where
+  slot0 : Address
+  slot1 : Address
+  slot2 : Address
+  slot3 : Address
+  deriving Repr, DecidableEq, Inhabited
+
+attribute [pf_inline] Set4.slot0 Set4.slot1 Set4.slot2 Set4.slot3
+
+namespace Set4
+
+/-- The empty role set: all slots vacant. -/
+@[pf_inline] def empty : Set4 :=
+  ⟨Address.zero, Address.zero, Address.zero, Address.zero⟩
+
+/-- Membership decision: `who` occupies a nonzero slot. The zero address is never a member. -/
+@[pf_inline] def member (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨a, b, c, d⟩ =>
+    (!Address.isZero a && Address.eq a who) ||
+      (!Address.isZero b && Address.eq b who) ||
+      (!Address.isZero c && Address.eq c who) ||
+      (!Address.isZero d && Address.eq d who)
+
+/-- Vacancy decision: at least one slot is free. -/
+@[pf_inline] def hasVacancy (rs : Set4) : Bool :=
+  match rs with
+  | ⟨a, b, c, d⟩ =>
+    Address.isZero a || Address.isZero b || Address.isZero c || Address.isZero d
+
+/-- Full decision: no slot is free; a grant of a nonmember selects `CapExceeded()`. -/
+@[pf_inline] def full (rs : Set4) : Bool :=
+  !hasVacancy rs
+
+/-- Whether `who` is a new nonzero member and a slot is available. -/
+@[pf_inline] def canGrant (rs : Set4) (who : Address) : Bool :=
+  !Address.isZero who && !member rs who && hasVacancy rs
+
+/-- Whether an admissible grant should fill the first explicit state field. -/
+@[pf_inline] def grantSlot0 (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨a, _, _, _⟩ => canGrant rs who && Address.isZero a
+
+/-- Whether an admissible grant should fill the second explicit state field. -/
+@[pf_inline] def grantSlot1 (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨a, b, _, _⟩ => canGrant rs who && !Address.isZero a && Address.isZero b
+
+/-- Whether an admissible grant should fill the third explicit state field. -/
+@[pf_inline] def grantSlot2 (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨a, b, c, _⟩ =>
+    canGrant rs who && !Address.isZero a && !Address.isZero b && Address.isZero c
+
+/-- Whether an admissible grant should fill the fourth explicit state field. -/
+@[pf_inline] def grantSlot3 (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨a, b, c, d⟩ =>
+    canGrant rs who && !Address.isZero a && !Address.isZero b && !Address.isZero c &&
+      Address.isZero d
+
+/-- Whether revoking `who` should clear the first explicit state field. -/
+@[pf_inline] def revokeSlot0 (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨a, _, _, _⟩ => !Address.isZero a && Address.eq a who
+
+/-- Whether revoking `who` should clear the second explicit state field. -/
+@[pf_inline] def revokeSlot1 (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨_a, b, _, _⟩ => !Address.isZero b && Address.eq b who
+
+/-- Whether revoking `who` should clear the third explicit state field. -/
+@[pf_inline] def revokeSlot2 (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨_a, _b, c, _⟩ => !Address.isZero c && Address.eq c who
+
+/-- Whether revoking `who` should clear the fourth explicit state field. -/
+@[pf_inline] def revokeSlot3 (rs : Set4) (who : Address) : Bool :=
+  match rs with
+  | ⟨_a, _b, _c, d⟩ => !Address.isZero d && Address.eq d who
+
+end Set4
 
 /-- Canonical OZ AccessControl events. Constructor and field names are the ABI surface
 (`RoleGranted` / `RoleRevoked`). Indexed flags produce LOG4 with empty data. -/
