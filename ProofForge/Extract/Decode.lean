@@ -22,8 +22,39 @@ private def isExceptOkHead (e : Expr) : Bool :=
 private def isExceptErrorHead (e : Expr) : Bool :=
   isConstNamed e ``Except.error || isConstNamed e ``ProofForge.Core.Except.err
 
+private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
+  let e := peelLets (strip e)
+  match e.getAppFn.constName? with
+  | none => none
+  | some n =>
+    match env.find? n with
+    | some (.ctorInfo c) =>
+      if (c.induct == uint256Name || c.induct == fixedBytesName) && e.getAppArgs.size ≥ 4 then
+        some (e.getAppArgs.extract (e.getAppArgs.size - 4) e.getAppArgs.size)
+      else none
+    | _ => none
+
 set_option maxRecDepth 2048 in
 mutual
+private partial def bytes32LeavesAsVal (env : Environment) (fuel : Nat) (e : Expr) :
+    Ops.Val × Ops.Val × Ops.Val × Ops.Val :=
+  let e := unfoldUserHelpers env 8 e
+  let projConst : String → Name
+    | "w0" => ``ProofForge.Core.Value.FixedBytes.w0
+    | "w1" => ``ProofForge.Core.Value.FixedBytes.w1
+    | "w2" => ``ProofForge.Core.Value.FixedBytes.w2
+    | _ => ``ProofForge.Core.Value.FixedBytes.w3
+  let proj (name : String) : Ops.Val :=
+    (asVal env fuel (mkApp (mkConst (projConst name)) e)).getD (flattenField (.arg 0) name)
+  match uint256CtorFields env e with
+  | some fields =>
+    let leaf (i : Nat) : Ops.Val := (asVal env fuel fields[i]!).getD (proj s!"w{i}")
+    (leaf 0, leaf 1, leaf 2, leaf 3)
+  | none =>
+    match asVal env fuel e with
+    | some v => (flattenField v "w0", flattenField v "w1", flattenField v "w2", flattenField v "w3")
+    | none => (proj "w0", proj "w1", proj "w2", proj "w3")
+
 private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
   match fuel with
   | 0 => none
@@ -181,6 +212,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
             endsWith baseE ".evmDiv256" then some (.checkedDivMod256 .quotient limb.toNat)
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMod256 ||
             endsWith baseE ".evmMod256" then some (.checkedDivMod256 .remainder limb.toNat)
+        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmKeccak256Pair32 ||
+            endsWith baseE ".evmKeccak256Pair32" then some (.keccak256Pair32 limb.toNat)
         else none
       let unaryQuery? : Option Evm.WideWord.Query :=
         if isConstNamed baseE ``ProofForge.Evm.Runtime.evmNot256 ||
@@ -477,6 +510,35 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       | some b, some a0, some a1, some a2, some b0, some b1, some b2 =>
         some (.mapGetPair b a0 a1 a2 b0 b1 b2)
       | _, _, _, _, _, _, _ => none
+  else if endsWith e ".evmMerkleVerify256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmMerkleVerify256 then
+    let args := e.getAppArgs
+    if args.size < 6 then none
+    else
+      let leafE := args[args.size - 6]!
+      let sibE := args[args.size - 5]!
+      let r0E := args[args.size - 4]!
+      let r1E := args[args.size - 3]!
+      let r2E := args[args.size - 2]!
+      let r3E := args[args.size - 1]!
+      let (l0, l1, l2, l3) := bytes32LeavesAsVal env fuel leafE
+      let (s0, s1, s2, s3) := bytes32LeavesAsVal env fuel sibE
+      match asVal env fuel r0E, asVal env fuel r1E, asVal env fuel r2E, asVal env fuel r3E with
+      | some r0, some r1, some r2, some r3 =>
+        some (.ext (.evm (.component (.wideWord .merkleVerify256)))
+          #[l0, l1, l2, l3, s0, s1, s2, s3, r0, r1, r2, r3])
+      | _, _, _, _ => none
+  else if endsWith e ".evmEqBytes32" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmEqBytes32 then
+    let args := e.getAppArgs
+    if args.size < 8 then none
+    else
+      let get (i : Nat) : Option Ops.Val := asVal env fuel args[args.size - 8 + i]!
+      match get 0, get 1, get 2, get 3, get 4, get 5, get 6, get 7 with
+      | some a0, some a1, some a2, some a3, some b0, some b1, some b2, some b3 =>
+        some (.ext (.evm (.component (.wideWord .eqBytes32)))
+          #[a0, a1, a2, a3, b0, b1, b2, b3])
+      | _, _, _, _, _, _, _, _ => none
   else if endsWith e ".evmGe256" || isConstNamed e ``ProofForge.Evm.Runtime.evmGe256 ||
       endsWith e ".evmEq256" || isConstNamed e ``ProofForge.Evm.Runtime.evmEq256 ||
       endsWith e ".evmLt256" || isConstNamed e ``ProofForge.Evm.Runtime.evmLt256 ||
@@ -967,18 +1029,6 @@ private def addr20CtorFields (env : Environment) (e : Expr) : Option (Array Expr
       else none
     | _ => none
 
-private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
-  let e := peelLets (strip e)
-  match e.getAppFn.constName? with
-  | none => none
-  | some n =>
-    match env.find? n with
-    | some (.ctorInfo c) =>
-      if (c.induct == uint256Name || c.induct == fixedBytesName) && e.getAppArgs.size ≥ 4 then
-        some (e.getAppArgs.extract (e.getAppArgs.size - 4) e.getAppArgs.size)
-      else none
-    | _ => none
-
 private def uint256Leaves (env : Environment) (e : Expr) :
     Ops.Val × Ops.Val × Ops.Val × Ops.Val :=
   let e := unfoldUserHelpers env 8 e
@@ -1004,7 +1054,9 @@ private def uint256Leaves (env : Environment) (e : Expr) :
         isConstNamed e ``ProofForge.Evm.Runtime.evmShl256 || endsWith e ".evmShl256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmShr256 || endsWith e ".evmShr256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmDiv256 || endsWith e ".evmDiv256" ||
-        isConstNamed e ``ProofForge.Evm.Runtime.evmMod256 || endsWith e ".evmMod256" then
+        isConstNamed e ``ProofForge.Evm.Runtime.evmMod256 || endsWith e ".evmMod256" ||
+        isConstNamed e ``ProofForge.Evm.Runtime.evmKeccak256Pair32 ||
+        endsWith e ".evmKeccak256Pair32" then
       (proj "w0", proj "w1", proj "w2", proj "w3")
     else
       match val env e with
@@ -5092,6 +5144,8 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
       isConstNamed e ``ProofForge.Evm.Runtime.evmShr256 || endsWith e ".evmShr256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmDiv256 || endsWith e ".evmDiv256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmMod256 || endsWith e ".evmMod256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmKeccak256Pair32 ||
+      endsWith e ".evmKeccak256Pair32" ||
       (match unfoldUserHelper env e with
         | some (_, unfolded) => (uint256CtorFields env unfolded).isSome
         | none => false) ||

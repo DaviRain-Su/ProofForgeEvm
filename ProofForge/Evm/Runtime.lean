@@ -369,6 +369,20 @@ actual flattened storage schema. Empty, dynamic, unknown, or non-UInt64 fields f
 left-aligned words; the host stub is an extraction contract only. -/
 @[irreducible] def evmEqBytes4 (_a _b : Bytes4) : Bool := true
 
+/-- OpenZeppelin-style sorted pair hash: `keccak256(abi.encodePacked(min(a,b), max(a,b)))`.
+The host stub returns `a`; EVM emission performs the commutative ordering and `keccak256`. -/
+@[irreducible] def evmKeccak256Pair32 (a b : Bytes32) : Bytes32 :=
+  let _ := b; a
+
+/-- True when `keccak256Pair32(leaf, sibling)` equals the four root limbs. The host stub
+returns `true`. -/
+@[irreducible] def evmMerkleVerify256 (leaf sibling : Bytes32) (r0 r1 r2 r3 : UInt64) : Bool :=
+  let _ := sibling; let _ := r0; let _ := r1; let _ := r2; let _ := r3; leaf.w0 == r0
+
+/-- Exact equality of two ABI `bytes32` values. The EVM emitter compares packed words. -/
+@[irreducible] def evmEqBytes32 (a0 a1 a2 a3 b0 b1 b2 b3 : UInt64) : Bool :=
+  a0 == b0 && a1 == b1 && a2 == b2 && a3 == b3
+
 /-- 封闭 Uniswap V2 `swapExactTokensForTokens`，path 长度 2。`to` 是本合约，deadline 是 `uint256.max`。失败 revert。宿主返回 `amtIn.w0`。 -/
 @[irreducible] def evmSwapExact2
     (_router _tokenA _tokenB : Addr20) (amtIn _minOut : UInt256) : UInt64 :=

@@ -22,6 +22,7 @@ import ProofForge.Evm.Sdk.Roles
 import ProofForge.Evm.Sdk.MetadataUri
 import ProofForge.Evm.Sdk.Eip712Domain
 import ProofForge.Evm.Sdk.Vesting
+import ProofForge.Evm.Sdk.MerkleProof
 import ProofForge.Evm.Sdk.Reentrancy
 
 /-!
@@ -34,7 +35,8 @@ royalty quote,
 compile-time static storage declarations, persistent bounded UInt64 storage vectors/bitmaps/ring
 queues/enumerable sets/maps/checkpoints, bounded static role sets with canonical RoleGranted /
 RoleRevoked logs, bounded static ERC-721/1155 metadata URI helpers, EIP-5267-style static EIP-712 domain field
-helpers, bounded single-beneficiary native-ETH vesting schedule helpers, and shared allocation-free
+helpers, bounded single-beneficiary native-ETH vesting schedule helpers, bounded Merkle proof
+verification helpers, and shared allocation-free
 checked wide-to-UInt8/UInt16/UInt32/UInt64 narrowing and bounded UInt64 math. Applications import
 this module rather than target Runtime, Ops, IR, or Emit internals.
 -/

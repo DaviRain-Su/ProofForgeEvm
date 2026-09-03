@@ -23,6 +23,7 @@ import Tests.EvmErc721Spec
 import Tests.EvmMetadataUriSpec
 import Tests.EvmEip712DomainSpec
 import Tests.EvmVestingSpec
+import Tests.EvmMerkleProofSpec
 import Tests.EvmExceptErgonomicsSpec
 import Tests.EvmLogErrorSpec
 import Tests.EvmOrderedStorageSpec

@@ -49,10 +49,18 @@ inductive Query where
   /-- Checked 256-bit `add`/`sub`/`mul`; `limb` is 0..3 (w0 lowest).
   `op` is 0 add, 1 sub, 2 mul. Eight operands: a0..a3, b0..b3. -/
   | arith256 (op : Nat) (limb : Nat)
+  /-- Sorted commutative `keccak256` of two `bytes32` values; `limb` is 0..3 (w0 lowest). -/
+  | keccak256Pair32 (limb : Nat)
+  /-- True when sorted pair hash of two `bytes32` values equals a third; twelve operands. -/
+  | merkleVerify256
+  /-- Exact equality of two `bytes32` values; eight operands: a0..a3, b0..b3. -/
+  | eqBytes32
   deriving BEq, Repr, Inhabited
 
 def Query.arity : Query → Nat
-  | .ge256 | .compare256 _ | .bitwise256 _ _ | .checkedDivMod256 _ _ | .arith256 _ _ => 8
+  | .ge256 | .compare256 _ | .bitwise256 _ _ | .checkedDivMod256 _ _ | .arith256 _ _
+  | .keccak256Pair32 _ | .eqBytes32 => 8
+  | .merkleVerify256 => 12
   | .not256 _ => 4
   | .shift256 _ _ => 5
   | .eq20 => 6
@@ -63,6 +71,8 @@ def Query.wellFormed : Query → Bool
   | .bitwise256 _ limb | .not256 limb | .shift256 _ limb |
       .checkedDivMod256 _ limb => limb ≤ 3
   | .arith256 op limb => op ≤ 2 && limb ≤ 3
+  | .keccak256Pair32 limb => limb ≤ 3
+  | .merkleVerify256 | .eqBytes32 => true
 
 private def renderOperands (renderValue : V → String) (operands : Array V) : String :=
   String.intercalate "," (operands.map renderValue).toList
@@ -93,5 +103,12 @@ def Query.canonical (renderValue : V → String) (operands : Array V) : Query �
   | .arith256 op limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.arith256 {op} {limb}" ++
         s!"({renderOperands renderValue operands})"
+  | .keccak256Pair32 limb =>
+      s!"ext.ProofForge.Evm.Ops.ValKind.keccak256Pair32 {limb}" ++
+        s!"({renderOperands renderValue operands})"
+  | .merkleVerify256 =>
+      s!"ext.ProofForge.Evm.Ops.ValKind.merkleVerify256({renderOperands renderValue operands})"
+  | .eqBytes32 =>
+      s!"ext.ProofForge.Evm.Ops.ValKind.eqBytes32({renderOperands renderValue operands})"
 
 end ProofForge.Evm.WideWord
