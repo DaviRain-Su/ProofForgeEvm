@@ -47,7 +47,15 @@ products and their sum in UInt256 for every valid fraction, including `salePrice
 the `(address,uint256)` product. Precondition: `canReceive receiver`. -/
 @[pf_inline] def royaltyInfo (receiver : Address) (feeNumerator salePrice : UInt256) :
     Address × UInt256 :=
-  let amt := amount salePrice feeNumerator
+  -- Keep the decomposition explicit at this fixed-width tuple boundary: Extract flattens each
+  -- checked arithmetic limb before constructing the ABI `(address,uint256)` result.
+  let whole :=
+    UInt256.mul (UInt256.div salePrice feeDenominator) feeNumerator
+  let fraction :=
+    UInt256.div
+      (UInt256.mul (UInt256.mod salePrice feeDenominator) feeNumerator)
+      feeDenominator
+  let amt := UInt256.add whole fraction
   (⟨receiver.w0, receiver.w1, receiver.w2⟩, ⟨amt.w0, amt.w1, amt.w2, amt.w3⟩)
 
 end ProofForge.Evm.Sdk.Erc2981
