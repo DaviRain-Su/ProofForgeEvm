@@ -2357,33 +2357,29 @@ private inductive DecodedEvent where
   | typed (frame : Core.Ops.EventFrame Ops.Val)
   | unsupported (reason : String)
 
-private def eventIndexedTypeName : Name := ``ProofForge.Evm.Sdk.Event.Indexed
-
 private def isEvmLogTypedApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped || endsWith e ".evmLogTyped"
 
 private def isIndexedType (ty : Expr) : Bool :=
   match ty.consumeMData.getAppFn.constName? with
-  | some n => n == eventIndexedTypeName || n.toString.endsWith ".Event.Indexed"
+  | some n => n.toString.endsWith ".Event.Indexed"
   | none => false
 
 private def indexedPayloadType (ty : Expr) : Option Expr :=
   if isIndexedType ty then ty.consumeMData.getAppArgs.back? else none
 
 private def unwrapIndexedValue (env : Environment) (e : Expr) : Expr :=
-  let e := peelLets (strip e)
+  let e := unfoldUserHelpers env 8 (peelLets (strip e))
   match e.getAppFn.constName? with
   | none => e
   | some n =>
     match env.find? n with
     | some (.ctorInfo ctor) =>
-      if (ctor.induct == eventIndexedTypeName ||
-          ctor.induct.toString.endsWith ".Event.Indexed") && e.getAppArgs.size ≥ 1 then
+      if ctor.induct.toString.endsWith ".Event.Indexed" && e.getAppArgs.size ≥ 1 then
         e.getAppArgs[e.getAppArgs.size - 1]!
       else e
     | _ =>
-      if (n == ``ProofForge.Evm.Sdk.Event.Indexed.value || n.toString.endsWith ".Indexed.value") &&
-          e.getAppArgs.size ≥ 1 then
+      if n.toString.endsWith ".Event.Indexed.value" && e.getAppArgs.size ≥ 1 then
         e.getAppArgs[e.getAppArgs.size - 1]!
       else e
 
@@ -2427,6 +2423,18 @@ private def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar) (e : E
         some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
       else none
 
+/-- User-written explicit binders only. Hygienic `_`, implicit/instance binders, and generated
+numeric names must not become ABI field names. -/
+private def explicitEventFieldBinder (fieldName : Name) (binderInfo : BinderInfo) : Bool :=
+  binderInfo == .default &&
+    !fieldName.isAnonymous &&
+    !fieldName.hasMacroScopes &&
+    !fieldName.isInaccessibleUserName &&
+    match fieldName with
+    | .str .anonymous s =>
+        !s.isEmpty && s.front.isAlpha && s.all (fun c => c.isAlphanum || c == '_')
+    | _ => false
+
 /-- Preserve a typed event constructor applied to `Runtime.evmLogTyped` / `Sdk.Event.emit` as one
 target-local frame. Names, ABI types, and `Indexed` flags stay structured; unsupported shapes
 must not degrade to closed LOG helpers. -/
@@ -2454,7 +2462,7 @@ private def decodeEventPayload (env : Environment) (applied : Expr) : DecodedEve
             for fieldIndex in [:ctor.numFields] do
               let .forallE fieldName domain body binderInfo := strip type
                 | return .unsupported "typed event lost field metadata"
-              if fieldName.isAnonymous || binderInfo != .default then
+              unless explicitEventFieldBinder fieldName binderInfo do
                 return .unsupported "typed event fields must be explicitly named"
               let (fieldType, indexed) :=
                 match indexedPayloadType domain with
@@ -2490,9 +2498,9 @@ private def decodeEventCtor (env : Environment) (e : Expr) : DecodedEvent :=
   let e := unfoldUserHelpers env 8 (peelLets (strip e))
   if isEvmLogTypedApp e then
     let args := e.getAppArgs
-    if h : args.size > 0 then
-      decodeEventPayload env args[args.size - 1]!
-    else .unsupported "typed event lost constructor"
+    match args.back? with
+    | some event => decodeEventPayload env event
+    | none => .unsupported "typed event lost constructor"
   else .notEvent
 
 private def findTypedEventFailure (env : Environment) (e : Expr) : Option String :=
@@ -2503,7 +2511,8 @@ private def findTypedEventFailure (env : Environment) (e : Expr) : Option String
       let e := e.consumeMData
       match decodeEventCtor env e with
       | .unsupported reason => some reason
-      | .typed _ | .notEvent =>
+      | .typed _ => none
+      | .notEvent =>
         if let some (_, unfolded) := unfoldUserHelper env e then
           walk fuel' unfolded
         else

@@ -349,8 +349,8 @@ open Lean Elab Command
 open ProofForge.Evm.Sdk
 open Examples.Evm.EvmTypedEvents
 
-#guard Event.emit (.Ticked 3) == 0
-#guard Event.indexed (⟨1, 2, 3⟩ : Address) |>.value == ⟨1, 2, 3⟩
+#guard Event.emit (Notice.Ticked 3) == 0
+#guard (Event.indexed (⟨1, 2, 3⟩ : Address)).value == ⟨1, 2, 3⟩
 
 private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     Array (ProofForge.Core.Ops.EventFrame ProofForge.Extract.IR.Val) :=
@@ -395,26 +395,26 @@ inductive OptionEvent where
   | wide (value : Option UInt64)
 
 def optionField (value : Option UInt64) : UInt64 :=
-  Event.emit (.wide value)
+  Event.emit (OptionEvent.wide value)
 
 inductive FourIndexed where
   | many (a b c d : Event.Indexed UInt64)
 
 def fifthTopic (value : UInt64) : UInt64 :=
-  Event.emit (.many (Event.indexed value) (Event.indexed value)
+  Event.emit (FourIndexed.many (Event.indexed value) (Event.indexed value)
     (Event.indexed value) (Event.indexed value))
 
 inductive AnonymousEvent where
   | hidden (_ : UInt64)
 
 def anonymous (value : UInt64) : UInt64 :=
-  Event.emit (.hidden value)
+  Event.emit (AnonymousEvent.hidden value)
 
 inductive ImplicitEvent where
   | hidden {code : UInt64}
 
 def implicitField (value : UInt64) : UInt64 :=
-  Event.emit (.hidden (code := value))
+  Event.emit (ImplicitEvent.hidden (code := value))
 
 inductive TippedAmt where
   | Tipped (amt : UInt64)
@@ -500,7 +500,7 @@ elab "#pf_guard_evm_typed_event_source" : command => do
 
   expectUnsupported env ``Unsupported.optionField "closed EVM scalar"
   expectUnsupported env ``Unsupported.fifthTopic "malformed typed event"
-  expectUnsupported env ``Unsupported.anonymous "extract/unsupported"
+  expectUnsupported env ``Unsupported.anonymous "explicitly named"
   expectUnsupported env ``Unsupported.implicitField "explicitly named"
   match ProofForge.Extract.extractMethod env .get ``Unsupported.conflict with
   | .error reason => throwError s!"conflict unexpectedly failed extract: {reason}"

@@ -21,7 +21,7 @@ inductive Error where
 /-- Approved typed events for this contract. `Transferred` is address-indexed plus `uint256`
 data; `Flagged` is boolean data; `Ticked` is used from both sides of a nested `ite`. -/
 inductive Notice where
-  | Transferred (from : Event.Indexed Address) (to : Event.Indexed Address) (value : UInt256)
+  | Transferred («from» : Event.Indexed Address) (to : Event.Indexed Address) (value : UInt256)
   | Flagged (ok : Bool)
   | Ticked (n : UInt64)
   deriving Repr, DecidableEq, Inhabited
@@ -42,19 +42,19 @@ def flagOf (s : State) : Bool :=
 @[pf_entry]
 def transfer (_s : State) (src dest : Address) (amount : UInt256) : Except Error (State × Bool) :=
   .ok (_s, Effect.thenTrue (Event.emit
-    (.Transferred (Event.indexed src) (Event.indexed dest) amount)))
+    (Notice.Transferred (Event.indexed src) (Event.indexed dest) amount)))
 
 /-- LOG1 `Flagged(bool)` data word. -/
 @[pf_entry]
 def setFlag (s : State) (ok : Bool) : Except Error (State × Bool) :=
-  .ok ({ s with flag := ok }, Effect.thenTrue (Event.emit (.Flagged ok)))
+  .ok ({ s with flag := ok }, Effect.thenTrue (Event.emit (Notice.Flagged ok)))
 
 /-- Both branches emit `Ticked`; ABI metadata must include it once. -/
 @[pf_entry]
 def pulse (s : State) (n : UInt64) : Except Error (State × UInt64) :=
   if n == 0 then
-    .ok (s, Event.emit (.Ticked 0))
+    .ok (s, Event.emit (Notice.Ticked 0))
   else
-    .ok ({ s with ticks := n }, Event.emit (.Ticked n))
+    .ok ({ s with ticks := n }, Event.emit (Notice.Ticked n))
 
 end Examples.Evm.EvmTypedEvents
