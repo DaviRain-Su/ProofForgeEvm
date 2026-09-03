@@ -17,17 +17,18 @@
 ## Next
 
 6. **Init smoke in CI** — empty-dir `pf init` → `lake build` → `lake env pf build` (solc) for the counter template. *(landed in CI `evm` job)*
-7. **Release v0.1** — tagged `pf` binary + template `require … @ tag` path; stop rewriting absolute checkout paths as the only story.
-8. **Website artifact honesty** — generate Forge panel excerpts from real `pf build` output, or keep them clearly labeled illustrative.
-9. **Standard ERC-20 example profile** — ABI/metadata that external tools recognize, without over-claiming NFT standards.
+7. **Standard ERC-20 example profile** — `Examples.Evm.Erc20Meta`: `string` name/symbol + standard selectors; Token remains the richer non-standard metadata surface. *(landed)*
+8. **Deploy story docs** — Anvil vs Base Sepolia / VibeNet honesty in `docs/product/deploy.md`. *(landed)*
+9. **Release v0.1** — tagged `pf` binary + template `require … @ tag` path; stop rewriting absolute checkout paths as the only story.
+10. **Website artifact honesty** — generate Forge panel excerpts from real `pf build` output, or keep them clearly labeled illustrative.
 
 ## Later (compiler depth; not P0 product copy)
 
-10. Effect representation rewrite (remove `dummy` / `hold` / fake guards).
-11. Reference `World` semantics + Lean↔Anvil differential.
-12. Generic typed events; richer constructors.
-13. Decide yulc: full second backend vs permanent experimental subset.
-14. Formal powdr bridge beyond probe status.
+11. Effect representation rewrite (remove `dummy` / `hold` / fake guards).
+12. Reference `World` semantics + Lean↔Anvil differential.
+13. Generic typed events; richer constructors.
+14. Decide yulc: full second backend vs permanent experimental subset.
+15. Formal powdr bridge beyond probe status.
 
 ## Explicit non-goals
 
