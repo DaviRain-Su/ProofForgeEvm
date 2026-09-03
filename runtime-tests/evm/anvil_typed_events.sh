@@ -23,7 +23,7 @@ addr="$(pf_evm_deploy_ctor_u64 "$bytecode" 0)"
 pf_evm_require_storage "$addr" 0 0 "constructor ticks"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'ticksOf()(uint64)')" 0 \
   "initial ticks"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'flagOf()(bool)')" 0 \
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'flagOf()(bool)')" false \
   "initial flag"
 
 dest_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
@@ -107,7 +107,7 @@ data=int(hit.get('data') or '0x0', 16)
 if data!=1:
     raise SystemExit(f'FAIL: Flagged data {data} != 1')
 "
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'flagOf()(bool)')" 1 \
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'flagOf()(bool)')" true \
   "flag persisted"
 
 topic_tick="$("$cast" keccak 'Ticked(uint64)')"
