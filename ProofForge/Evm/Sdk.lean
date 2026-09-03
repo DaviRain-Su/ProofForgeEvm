@@ -26,6 +26,7 @@ import ProofForge.Evm.Sdk.MetadataUri
 import ProofForge.Evm.Sdk.Eip712Domain
 import ProofForge.Evm.Sdk.Vesting
 import ProofForge.Evm.Sdk.MerkleProof
+import ProofForge.Evm.Sdk.BlockHeader
 import ProofForge.Evm.Sdk.OzAudit
 import ProofForge.Evm.Sdk.Reentrancy
 
@@ -41,6 +42,7 @@ queues/enumerable sets/maps/checkpoints, bounded static role sets with canonical
 RoleRevoked logs, bounded per-address nonce and fixed-window rate-limit helpers, bounded static
 ERC-721/1155 metadata URI helpers, EIP-5267-style static EIP-712 domain field helpers, bounded
 single-beneficiary native-ETH vesting schedule helpers, bounded Merkle proof verification helpers,
+bounded block header / blockhash observation helpers,
 OZ completion-audit inventory counters, and shared allocation-free checked wide-to-UInt8/UInt16/UInt32/UInt64
 narrowing and bounded UInt64 math. Applications import this module rather than target Runtime, Ops,
 IR, or Emit internals.

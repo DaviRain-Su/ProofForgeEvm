@@ -24,6 +24,7 @@ import Tests.EvmMetadataUriSpec
 import Tests.EvmEip712DomainSpec
 import Tests.EvmVestingSpec
 import Tests.EvmMerkleProofSpec
+import Tests.EvmBlockHeaderSpec
 import Tests.EvmOzAuditSpec
 import Tests.EvmExceptErgonomicsSpec
 import Tests.EvmLogErrorSpec
