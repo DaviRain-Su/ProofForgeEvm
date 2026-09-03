@@ -85,7 +85,7 @@ private def selectEvmNames (names : Array String) : Except String (Array String)
 /-- Dual-target fixtures stay at `Examples.<Name>`; EVM-only fixtures live under
 `Examples.Evm.<Name>`. Program registry names are the last component. -/
 private def sharedFixtureNames : Array String :=
-  #["Counter", "Flag", "Lang", "Maybe", "Pair", "Phase", "Window"]
+  #["Counter", "Flag", "Lang", "Maybe", "Pair", "Phase", "TokenShape", "Window"]
 
 /-- Ergonomics fixtures not yet moved under `Examples.Evm.`. -/
 private def rootFixtureNames : Array String :=

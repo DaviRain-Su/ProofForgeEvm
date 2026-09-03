@@ -5,6 +5,7 @@ import Examples.Maybe
 import Examples.Window
 import Examples.Phase
 import Examples.Lang
+import Examples.TokenShape
 import Examples.EvmExceptErgonomics
 import Examples.EvmTokenErgonomics
 import Examples.Evm.EvmCtx
