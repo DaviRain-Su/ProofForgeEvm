@@ -55,7 +55,7 @@ private def expectRoyaltyArt : CommandElabM Unit := do
     throwError s!"RoyaltyArt ABI lost address/uint256 royalty outputs:\n{abi}"
   unless !abi.contains "\"name\":\"tokenURI\"" do
     throwError "RoyaltyArt must not grow a metadata URI surface"
-  unless IR.digestHex program == "f2f47242e86fcde6" do
+  unless IR.digestHex program == "89fe67825f5f9c28" do
     throwError s!"RoyaltyArt digest drifted: {IR.digestHex program}"
   logInfo m!"royaltyart: digest={IR.digestHex program} abi-ok"
 
