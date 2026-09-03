@@ -33,7 +33,7 @@ def entries : Array Entry := #[
   { name := "PackLink", digest := "58b4fe91408c541e" },
   { name := "DomainLink", digest := "91defc704d253605" },
   { name := "VestLink", digest := "b3e15e6ff33fddec" },
-  { name := "ProofLink", digest := "c2070bfd6bf58831" },
+  { name := "ProofLink", digest := "c41e5e834c987462" },
   { name := "AuditLink", digest := "ffadbb3d4aa7c20a" },
   { name := "Collectible", digest := "df29360114f22d5f" },
   { name := "Badge", digest := "ef61792f697edbd3" },
