@@ -9,8 +9,10 @@ the handles are compile-time descriptor data erased before extraction, and every
 reads and writes state through ordinary typed `State` field/`Vector` accesses (including the
 existing dynamic-index vector path for `seats`). Writer role decisions rebuild a
 `Roles.Set2` value from the two explicit fields and every role write is a literal-slot field
-update. `Tests/EvmStaticStorageSpec` proves the extracted slots and the `seats` vector entry
-equal the declared layout; `Tests/EvmRolesSpec` pins the writer role slots and terminals.
+update. Successful grants/revokes emit canonical `RoleGranted` / `RoleRevoked` for
+`WRITER_ROLE`; idempotent no-ops do not log. `Tests/EvmStaticStorageSpec` proves the extracted
+slots and the `seats` vector entry equal the declared layout; `Tests/EvmRolesSpec` pins the
+writer role slots and terminals.
 -/
 
 namespace Examples.Evm.EvmStaticRoster
@@ -62,6 +64,10 @@ inductive Error where
   | overflow
   deriving Repr, DecidableEq, Inhabited, BEq
 
+/-- keccak256("WRITER_ROLE") as source-order `Bytes32` limbs. -/
+@[pf_inline] def WRITER_ROLE : Bytes32 :=
+  ⟨0x39c11a368f168f2b, 0x9a89faadd43e163a, 0x675164717c7bbe87, 0xc853e42a82ddadbd⟩
+
 @[pf_entry]
 def init (admin : Address) : State :=
   { admin
@@ -112,8 +118,9 @@ def closedOf (s : State) : Bool :=
 
 /-- Admin-gated writer grant. Closed roster → `Paused()`; otherwise the pure `Roles.Set2`
 decisions over the two explicit fields select the terminal or the literal-slot field write:
-zero candidate → `ZeroAddress()`, duplicate → idempotent no-op, `grantSlot0`/`grantSlot1` →
-explicit slot write, full set → `CapExceeded()`. -/
+zero candidate → `ZeroAddress()`, duplicate → idempotent no-op (no log),
+`grantSlot0`/`grantSlot1` → explicit slot write plus `RoleGranted(WRITER_ROLE, who, caller)`,
+full set → `CapExceeded()`. -/
 @[pf_entry]
 def grantWriter (s : State) (who : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.admin then
@@ -126,25 +133,29 @@ def grantWriter (s : State) (who : Address) : Except Error (State × UInt64) :=
       else if rs.member who then
         .ok (s, 0)
       else if rs.grantSlot0 who then
-        .ok ({ s with writer0 := who }, 1)
+        .ok ({ s with writer0 := who },
+          Roles.Log.roleGranted WRITER_ROLE who Context.caller)
       else if rs.grantSlot1 who then
-        .ok ({ s with writer1 := who }, 1)
+        .ok ({ s with writer1 := who },
+          Roles.Log.roleGranted WRITER_ROLE who Context.caller)
       else
         .ok (s, Revert.capExceeded)
   else
     .ok (s, Access.ownerViolation)
 
 /-- Admin-gated writer revoke; the pure `Roles.Set2.revokeSlot0`/`revokeSlot1` decisions
-select the literal-slot clear, and a nonmember candidate is an idempotent no-op. Closed
-rosters still allow revocation so membership can be wound down. -/
+select the literal-slot clear plus `RoleRevoked`, and a nonmember candidate is an idempotent
+no-op with no log. Closed rosters still allow revocation so membership can be wound down. -/
 @[pf_entry]
 def revokeWriter (s : State) (who : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.admin then
     let rs : Roles.Set2 := ⟨s.writer0, s.writer1⟩
     if rs.revokeSlot0 who then
-      .ok ({ s with writer0 := Address.zero }, 1)
+      .ok ({ s with writer0 := Address.zero },
+        Roles.Log.roleRevoked WRITER_ROLE who Context.caller)
     else if rs.revokeSlot1 who then
-      .ok ({ s with writer1 := Address.zero }, 1)
+      .ok ({ s with writer1 := Address.zero },
+        Roles.Log.roleRevoked WRITER_ROLE who Context.caller)
     else
       .ok (s, 0)
   else

@@ -9,7 +9,8 @@ declared ones — with no vector entry for role storage.
 
 Host note: the checked-runtime stubs keep `Address.eq`/`Address.isZero` host-`true`, so
 host evaluation cannot test the real role decisions. Extraction pins their target form and the
-focused Anvil matrices test membership, grant, full-set, and revoke semantics.
+focused Anvil matrices test membership, grant, full-set, and revoke semantics, including
+canonical `RoleGranted` / `RoleRevoked` receipts (`Tests.EvmOzRolesEventSpec`).
 -/
 
 namespace Tests.EvmRolesSpec
