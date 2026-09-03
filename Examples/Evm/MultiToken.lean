@@ -6,7 +6,7 @@ Owner-minted bounded ERC-1155 consumer. The SDK owns the token-id key envelope, 
 movement. This contract owns the immutable minter gate, zero-address policy, error ordering
 (`Unauthorized`/`ZeroAddress`/`Insufficient`) and canonical ERC-1155 `TransferSingle` /
 `ApprovalForAll` logs (`Erc1155.Log`). There is no `TransferBatch` or safe callback;
-`supportsInterface` explicitly declares the static ERC-165 + ERC-1155 profile.
+`supportsInterface` exposes IERC165 only, not the incomplete IERC1155 interface.
 -/
 
 namespace Examples.Evm.MultiToken
@@ -92,9 +92,10 @@ def balanceOf (_s : State) (owner : Address) (tokenId : UInt256) : UInt256 :=
 def isApprovedForAll (_s : State) (owner operator : Address) : Bool :=
   Erc1155.Operators.isApprovedForAll operators owner operator
 
-/-- Explicit bounded ERC-165 declaration for this ERC-1155-shaped profile. -/
+/-- This partial ERC-1155-shaped profile implements only IERC165. It deliberately does not
+advertise the IERC1155 identifier until every required ERC-1155 method is implemented. -/
 @[pf_entry]
 def supportsInterface (_s : State) (interfaceId : Bytes4) : Bool :=
-  Erc165.supportsToken interfaceId Erc165.erc1155
+  Erc165.supports interfaceId Erc165.erc165
 
 end Examples.Evm.MultiToken

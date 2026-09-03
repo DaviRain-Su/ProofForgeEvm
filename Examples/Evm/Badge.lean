@@ -105,9 +105,10 @@ def isApprovedForAll (_s : State) (owner operator : Address) : Bool :=
 def balanceOf (_s : State) (owner : Address) : UInt256 :=
   Erc721.Balances.balanceOf256 balances owner
 
-/-- Explicit bounded ERC-165 declaration for this ERC-721-shaped profile. -/
+/-- This partial ERC-721-shaped profile implements only IERC165. It deliberately does not
+advertise the IERC721 identifier until every required ERC-721 method is implemented. -/
 @[pf_entry]
 def supportsInterface (_s : State) (interfaceId : Bytes4) : Bool :=
-  Erc165.supportsToken interfaceId Erc165.erc721
+  Erc165.supports interfaceId Erc165.erc165
 
 end Examples.Evm.Badge

@@ -24,8 +24,23 @@ open Lean Elab Command
 #guard Erc165.supportsToken Erc165.erc165 Erc165.erc721
 #guard Erc165.supportsToken Erc165.erc721 Erc165.erc721
 
-private def expectErc165Abi (moduleName : Name) (tokenId : Erc165.InterfaceId) :
-    CommandElabM Unit := do
+private partial def valueContainsBytes4Equality : IR.Val → Bool
+  | .arg _ | .local _ | .lit _ | .loopIx => false
+  | .field base _ | .bitNot base => valueContainsBytes4Equality base
+  | .bitAnd lhs rhs | .bitOr lhs rhs | .bitXor lhs rhs
+  | .shiftL lhs rhs | .shiftR lhs rhs
+  | .addU64 lhs rhs | .subU64 lhs rhs | .mulU64 lhs rhs
+  | .divU64 lhs rhs | .modU64 lhs rhs =>
+      valueContainsBytes4Equality lhs || valueContainsBytes4Equality rhs
+  | .indexGet base _ idx _ _ =>
+      valueContainsBytes4Equality base || valueContainsBytes4Equality idx
+  | .select _ lhs rhs thn els =>
+      valueContainsBytes4Equality lhs || valueContainsBytes4Equality rhs ||
+        valueContainsBytes4Equality thn || valueContainsBytes4Equality els
+  | .ext (.evm (.component (.wideWord .eqBytes4))) operands => operands.size == 2
+  | .ext _ operands => operands.any valueContainsBytes4Equality
+
+private def expectErc165Abi (moduleName : Name) : CommandElabM Unit := do
   let env ← getEnv
   let source ←
     match ProofForge.Extract.extractModuleIR env moduleName with
@@ -50,15 +65,16 @@ private def expectErc165Abi (moduleName : Name) (tokenId : Erc165.InterfaceId) :
   let supportOps := (program.entries.find? (·.ixName == "supportsInterface")).get!.ops
   unless supportOps.size > 0 && (program.entries.map (·.ixName)).contains "supportsInterface" do
     throwError s!"{moduleName}.supportsInterface did not lower to EVM operations"
-  -- Keep the exact intended profile present in extracted source. This avoids an ABI-only stub.
-  unless Erc165.supportsToken tokenId tokenId do
-    throwError s!"{moduleName} lost its static token interface declaration"
+  unless supportOps.any fun
+      | .returnU64 value => valueContainsBytes4Equality value
+      | _ => false do
+    throwError s!"{moduleName}.supportsInterface did not use the closed bytes4 equality leaf"
 
 private def expectErc165 : CommandElabM Unit := do
-  expectErc165Abi `Examples.Evm.Collectible Erc165.erc721
-  expectErc165Abi `Examples.Evm.Badge Erc165.erc721
-  expectErc165Abi `Examples.Evm.MultiToken Erc165.erc1155
-  expectErc165Abi `Examples.Evm.CraftToken Erc165.erc1155
+  expectErc165Abi `Examples.Evm.Collectible
+  expectErc165Abi `Examples.Evm.Badge
+  expectErc165Abi `Examples.Evm.MultiToken
+  expectErc165Abi `Examples.Evm.CraftToken
 
 elab "#pf_guard_evm_erc165" : command => expectErc165
 

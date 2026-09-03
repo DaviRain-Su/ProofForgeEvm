@@ -13,6 +13,10 @@ escape hatch.
 The helpers intentionally model only a finite, source-declared interface set. They do not infer an
 interface from a method list, probe another contract, or emulate the ERC-165 receiver handshake.
 Consumers must explicitly select every supported id, including `IERC165` itself.
+
+A standard identifier such as `IERC721` or `IERC1155` may be selected only after the consumer
+implements that interface's complete required method surface. Partial token profiles must return
+`false` for the corresponding standard identifier.
 -/
 
 /-- ABI-facing ERC-165 interface identifier. -/

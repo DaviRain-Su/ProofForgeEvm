@@ -8,8 +8,9 @@
 > `641ba990cad2f7f70878e0d66be1bfbef95710e8`](https://api.github.com/repos/OpenZeppelin/openzeppelin-contracts/git/trees/641ba990cad2f7f70878e0d66be1bfbef95710e8),
 > fetched on 2026-09-03 with
 > `gh api 'repos/OpenZeppelin/openzeppelin-contracts/git/trees/master?recursive=1'`.
-> It contained 452 `contracts/` paths under `access`, `account`, `crosschain`, `finance`,
-> `governance`, `interfaces`, `metatx`, `mocks`, `proxy`, `token`, `utils`, and `vendor`.
+> It contained 452 `contracts/` tree paths (367 Solidity sources), spanning `access`, `account`,
+> `crosschain`, `finance`, `governance`, `interfaces`, `metatx`, `mocks`, `proxy`, `token`,
+> `utils`, `vendor`, documentation, and package metadata.
 >
 > Status labels describe the fail-closed ProofForge product boundary, not source-code similarity:
 > **DONE** means the bounded runtime capability is shipped; **PARTIAL** means a named restricted
@@ -26,7 +27,7 @@
 | `crosschain/**` | ABSENT | — | Bridge state, remote executor, receiver callbacks | No — cross-chain authentication/callback model is absent |
 | `finance/VestingWallet*.sol` | ABSENT | `Context.timestamp`, static storage primitives | Vesting schedule/releasable accounting | Yes — W4 bounded single-beneficiary schedule profile |
 | `governance/**` | ABSENT | `Sdk.StorageCheckpoints` only | Proposal/vote/quorum/timelock lifecycle | No — Governor requires unconstrained proposal/voter relations and token snapshot semantics |
-| `interfaces/IERC165.sol` | DONE | `Sdk.Erc165`, `Collectible`, `Badge`, `MultiToken`, `CraftToken` | Static, explicitly declared support set only | Yes — W1 shipped |
+| `interfaces/IERC165.sol` | DONE | `Sdk.Erc165`, `Collectible`, `Badge`, `MultiToken`, `CraftToken` | Static, explicitly declared `IERC165` only; incomplete token interfaces return false | Yes — W1 shipped |
 | `interfaces/IERC20*.sol`, `IERC2612.sol` | PARTIAL | `Sdk.Fungible`, `Erc20Meta`, `Token`, `Sdk.Payments` | Profiles, not a complete audited token implementation; permit is a closed call/internal profile | Yes — W2 standard helper/event/profile gaps |
 | `interfaces/IERC721*.sol`, `IERC4906.sol`, `IERC2309.sol` | PARTIAL | `Sdk.Erc721`, `Collectible`, `Badge`, `Sdk.Erc165` | No safe receiver callback, metadata URI, enumeration, consecutive mint | Receiver/enumeration: no; bounded metadata: W4 |
 | `interfaces/IERC1155*.sol` | PARTIAL | `Sdk.Erc1155`, `MultiToken`, `CraftToken`, `Sdk.Erc165` | No callbacks, metadata URI, `balanceOfBatch`, or `TransferBatch` | `TransferBatch`: no (dynamic arrays/events); bounded URI: W4 |
@@ -56,7 +57,7 @@
 
 | Wave | Scope | Status |
 |---|---|---|
-| W1 | Static ERC-165 core (`bytes4` IDs, bounded support predicates), adopt it in both ERC-721 and ERC-1155 examples, compiler/ABI and Anvil gates | Verified on `cursor/oz-sdk-w1-e4eb`: targeted and full `lake build Tests`, plus four Anvil gates |
+| W1 | Static ERC-165 core (`bytes4` IDs, bounded support predicates), adopt `supportsInterface` in both ERC-721- and ERC-1155-shaped examples, compiler/ABI and Anvil gates | Verified on `cursor/oz-sdk-w1-e4eb`: targeted and full `lake build Tests`, plus four Anvil gates. The examples advertise `IERC165` only: their partial ERC-721/1155 method surfaces must return false for the standard token IDs. |
 | W2 | ERC-20-shaped consumer ergonomics: explicit safe-transfer/allowance policy helpers and a static ERC-2981 royalty profile | Next |
 | W3 | Bounded access/utility closeout: Ownable2Step start event and constructor-init policy where extractable; fixed-capacity role profiles; bounded nonce/rate helpers | Planned |
 | W4 | Static metadata/finance/crypto profiles: bounded ERC-721/1155 URI response, EIP-5267-style static domain fields, single-beneficiary vesting, bounded Merkle proofs | Planned |

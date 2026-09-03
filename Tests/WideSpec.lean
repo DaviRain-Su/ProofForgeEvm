@@ -39,6 +39,7 @@ def bytes12 : FixedBytes 12 := ⟨0x0706050403020100, 0x0b0a0908, 0, 0⟩
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.compare256 .le)
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.compare256 .gt)
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.compare256 .ge)
+#guard ProofForge.Evm.WideWord.Query.wellFormed .eqBytes4
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.bitwise256 .and 3)
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.not256 3)
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.shift256 .left 3)
@@ -78,6 +79,7 @@ private def emitsQuery (query : ProofForge.Evm.WideWord.Query)
   | .error _ => false
   | .ok (text, result, st) => text.contains needle && result == value && st == finalState
 
+#guard emitsQuery .eqBytes4 (Array.replicate 2 (.lit 0)) " := eq(x0, x1)" "v2" 3
 #guard emitsQuery (.bitwise256 .and 0) operands " := and(v8, v9)" "v11" 12
 #guard emitsQuery (.bitwise256 .or 1) operands " := or(v8, v9)" "v11" 12
 #guard emitsQuery (.bitwise256 .xor 2) operands " := xor(v8, v9)" "v11" 12
