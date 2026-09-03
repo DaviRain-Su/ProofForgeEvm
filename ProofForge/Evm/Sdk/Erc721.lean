@@ -12,9 +12,10 @@ values with a zero top limb. Per-owner balances use a UInt64 address map (NFT co
 below 2^64). Authorization against `Context.caller`, pause/zero-address policy, mint caps,
 receiver hooks, and events remain application-owned.
 
-There is no new Runtime leaf, hashed-map kind, Op/IR/Emit recipe, or ERC-721 LOG4 topic. Consumers
-may reuse `Event.transfer` / `Event.approval` with the token id in the amount limb, or keep logging
-application-local.
+There is no new Runtime leaf, hashed-map kind, or Op/IR/Emit recipe. Canonical ERC-721 logs are
+reusable `Event.emit` wrappers (`Log.transfer` / `Log.approval` / `Log.approvalForAll`): LOG4
+`Transfer`/`Approval` with empty data, and LOG3 `ApprovalForAll` with a bool data word. Pause,
+zero-address policy, mint caps, receiver hooks, ERC-165, and metadata remain application-owned.
 -/
 
 /-- UInt256 unit used only for application event amount limbs. -/
@@ -176,5 +177,35 @@ clears approval. Precondition: `canTransfer owners balances source to tokenId`. 
       owners.putOwner tokenId to |||
       balances.debit source |||
       balances.credit to
+
+/-- Canonical ERC-721 events. Constructor names and field names are the ABI surface
+(`Transfer` / `Approval` / `ApprovalForAll`). Indexed flags produce LOG4 (empty data) for
+Transfer/Approval and LOG3 (bool data word) for ApprovalForAll. -/
+inductive Notice where
+  | Transfer («from» : Event.Indexed Address) (to : Event.Indexed Address)
+      (tokenId : Event.Indexed UInt256)
+  | Approval (owner : Event.Indexed Address) (approved : Event.Indexed Address)
+      (tokenId : Event.Indexed UInt256)
+  | ApprovalForAll (owner : Event.Indexed Address) (operator : Event.Indexed Address)
+      (approved : Bool)
+  deriving Repr, DecidableEq, Inhabited
+
+namespace Log
+
+/-- LOG4 `Transfer(address indexed from, address indexed to, uint256 indexed tokenId)`. -/
+@[pf_inline] def transfer (source destination : Address) (tokenId : UInt256) : UInt64 :=
+  Event.emit (Notice.Transfer (Event.indexed source) (Event.indexed destination)
+    (Event.indexed tokenId))
+
+/-- LOG4 `Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)`. -/
+@[pf_inline] def approval (owner approved : Address) (tokenId : UInt256) : UInt64 :=
+  Event.emit (Notice.Approval (Event.indexed owner) (Event.indexed approved)
+    (Event.indexed tokenId))
+
+/-- LOG3 `ApprovalForAll(address indexed owner, address indexed operator, bool approved)`. -/
+@[pf_inline] def approvalForAll (owner operator : Address) (approved : Bool) : UInt64 :=
+  Event.emit (Notice.ApprovalForAll (Event.indexed owner) (Event.indexed operator) approved)
+
+end Log
 
 end ProofForge.Evm.Sdk.Erc721

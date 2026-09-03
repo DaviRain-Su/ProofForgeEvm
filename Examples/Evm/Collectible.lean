@@ -3,7 +3,8 @@ import ProofForge.Evm.Sdk
 /-!
 Owner-minted ERC-721 consumer. The SDK owns token-id encoding, ownership/approval maps, and
 checked mint/transfer movement. This contract owns the immutable minter gate, zero-address
-policy, and event ordering (token id carried in the existing transfer/approval amount limb).
+policy, and canonical ERC-721 `Transfer` / `Approval` logs (`Erc721.Log`). Operator
+`ApprovalForAll` is not part of this method surface.
 -/
 
 namespace Examples.Evm.Collectible
@@ -39,7 +40,7 @@ def mint (s : State) (to : Address) (tokenId : UInt256) : Except Error (State ×
   if Address.eqImmutable Context.caller then
     if Erc721.canMint owners balances to tokenId then
       .ok ({ dummy := Erc721.mint owners balances to tokenId },
-        Event.transfer Address.zero to tokenId)
+        Erc721.Log.transfer Address.zero to tokenId)
     else if Address.isZero to then
       .ok (s, Revert.zeroAddress)
     else
@@ -54,7 +55,7 @@ def approve (s : State) (spender : Address) (tokenId : UInt256) :
     .ok (s, Revert.unauthorized Context.caller)
   else if Address.eq (Erc721.Owners.ownerOf owners tokenId) Context.caller then
     .ok ({ dummy := Erc721.TokenApprovals.approve approvals tokenId spender },
-      Event.approval Context.caller spender tokenId)
+      Erc721.Log.approval Context.caller spender tokenId)
   else
     .ok (s, Revert.unauthorized Context.caller)
 
@@ -67,7 +68,7 @@ def transferFrom (s : State) (source to : Address) (tokenId : UInt256) :
     .ok (s, Revert.zeroAddress)
   else if Erc721.canTransfer owners balances source to tokenId then
     .ok ({ dummy := Erc721.transfer owners approvals balances source to tokenId },
-      Event.transfer source to tokenId)
+      Erc721.Log.transfer source to tokenId)
   else
     .ok (s, Revert.unauthorized Context.caller)
 
