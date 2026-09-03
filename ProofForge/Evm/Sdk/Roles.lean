@@ -11,15 +11,15 @@ namespace ProofForge.Evm.Sdk.Roles
 applications own authorization, error policy, and literal state-field updates. This keeps all
 storage writes visible and adds no map namespace, runtime layout object, or allocator.
 
-Consumers store two adjacent Address fields, reconstruct `Set2` for decisions, and mirror those
-fields in `Storage.Static`. Duplicate grants and nonmember revokes are idempotent; zero is never a
-member; a third distinct grant is full.
+Consumers store two or four adjacent Address fields, reconstruct the matching set for decisions,
+and mirror those fields in `Storage.Static`. Duplicate grants and nonmember revokes are
+idempotent; zero is never a member; a third `Set2` or fifth `Set4` distinct grant is full.
 
 Canonical OpenZeppelin `RoleGranted` / `RoleRevoked` logs are reusable `Event.emit` wrappers
 (`Log.roleGranted` / `Log.roleRevoked`): LOG4 with empty data, three indexed topics after
 topic0 (`bytes32 role`, `address account`, `address sender`). Applications choose the `Bytes32`
 role id and emit only on an actual slot write; idempotent no-ops must not log. There is no
-`RoleAdminChanged` helper: `Set2` has no admin-role rotation API. This module is not a drop-in
+`RoleAdminChanged` helper: these sets have no admin-role rotation API. This module is not a drop-in
 OpenZeppelin AccessControl (no `mapping(bytes32 => RoleData)`, no ERC-165, no default-admin
 hierarchy).
 

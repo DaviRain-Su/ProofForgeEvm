@@ -3,8 +3,8 @@ import ProofForge
 /-!
 W3 quota consumer: bounded per-address nonces plus a fixed-window rate limiter.
 
-The SDK owns pure nonce and rate-limit decisions; this contract owns three disjoint hashed-map
-namespaces (`nonces`, `lastUsed`, `lastTimepoint`), authorization, and closed failure terminals.
+The SDK owns pure nonce and rate-limit decisions; this contract owns three disjoint per-caller
+hashed-map namespaces (`nonces`, `lastUsed`, `lastTimepoint`) and closed failure terminals.
 Successful `act` checks the caller nonce, consumes quota, advances the nonce, and increments a
 scalar action counter. A stale nonce reverts as `Insufficient(current, provided)`; rate exhaustion
 uses the typed `rateLimitExceeded()` error.
