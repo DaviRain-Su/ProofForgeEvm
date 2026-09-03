@@ -48,13 +48,12 @@ the `(address,uint256)` product. A zero receiver returns the all-zero no-royalty
 @[pf_inline] def royaltyInfo (receiver : Address) (feeNumerator salePrice : UInt256) :
     Address × UInt256 :=
   let amt := amount salePrice feeNumerator
-  let enabled := canReceive receiver
-  (⟨if enabled then receiver.w0 else 0,
-      if enabled then receiver.w1 else 0,
-      if enabled then receiver.w2 else 0⟩,
-    ⟨if enabled then amt.w0 else 0,
-      if enabled then amt.w1 else 0,
-      if enabled then amt.w2 else 0,
-      if enabled then amt.w3 else 0⟩)
+  (⟨if canReceive receiver = true then receiver.w0 else 0,
+      if canReceive receiver = true then receiver.w1 else 0,
+      if canReceive receiver = true then receiver.w2 else 0⟩,
+    ⟨if canReceive receiver = true then amt.w0 else 0,
+      if canReceive receiver = true then amt.w1 else 0,
+      if canReceive receiver = true then amt.w2 else 0,
+      if canReceive receiver = true then amt.w3 else 0⟩)
 
 end ProofForge.Evm.Sdk.Erc2981
