@@ -10,11 +10,10 @@ permissions:
   contents: read
   pull-requests: read
 
-# Cancel superseded PR runs only. Pushes to main must each finish so every main
-# commit keeps a completed CI result.
+# A newer push supersedes older runs of the same ref: cancel the in-progress run.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   # Decide which lanes must run for this PR. Pushes to main and manual dispatches
@@ -28,7 +27,7 @@ jobs:
       lean: ${{ steps.gate.outputs.lean }}
       evm: ${{ steps.gate.outputs.evm }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Detect changed paths
         id: filter
@@ -116,7 +115,7 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Cache toolchains and Lean dependencies
         uses: actions/cache@v4
@@ -185,7 +184,7 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Cache toolchains and Lean dependencies
         uses: actions/cache@v4
