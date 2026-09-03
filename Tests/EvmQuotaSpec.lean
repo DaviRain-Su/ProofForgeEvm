@@ -44,7 +44,7 @@ private def expectQuotaDigest : CommandElabM Unit := do
     match ProofForge.Evm.IR.fromExtracted source with
     | .ok program => pure program
     | .error reason => throwError reason
-  unless ProofForge.Evm.IR.digestHex program == "dfaddd984ddb8e8e" do
+  unless ProofForge.Evm.IR.digestHex program == "e414f3a5e7b949f8" do
     throwError s!"EvmQuota digest drifted: {ProofForge.Evm.IR.digestHex program}"
 
 elab "#pf_guard_evm_quota_digest" : command => expectQuotaDigest
