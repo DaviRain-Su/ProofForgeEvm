@@ -1290,6 +1290,62 @@ private def boundedCanPublishVal (env : Environment) (nameE versionE : Expr) : O
   let verLen ← staticBoundedStringLengthLit? env versionE
   if nameLen > 0 && verLen > 0 then return .lit 1 else return .lit 0
 
+private def staticUInt64Lit? (env : Environment) (e : Expr) : Option Nat :=
+  let e := strip (unfoldUserHelpers env 16 e)
+  match e with
+  | .lit (.natVal n) => some n
+  | _ =>
+    match val env e with
+    | some (.lit n) => some n.toNat
+    | _ => none
+
+private def staticAddressIsZeroLit? (env : Environment) (e : Expr) : Option Bool :=
+  let e := strip (unfoldUserHelpers env 16 e)
+  if endsWith e ".evmImm20" || isConstNamed e ``ProofForge.Evm.Runtime.evmImm20 ||
+      endsWith e ".address" then
+    none
+  else
+    match val env e with
+    | some (.lit 0) => some true
+    | some (.lit _) => some false
+    | _ =>
+      match e with
+      | .lit (.natVal 0) => some true
+      | .lit _ => some false
+      | _ => none
+
+private def immBeneficiaryNonZeroVal : Ops.Val :=
+  let eqZero : Ops.Val :=
+    .ext (.evm (.component (.wideWord .eq20)))
+      #[.ext (.evm .immW0) #[], .ext (.evm .immW1) #[], .ext (.evm .immW2) #[],
+        .lit 0, .lit 0, .lit 0]
+  .select .eq eqZero (.lit 0) (.lit 0) (.lit 1)
+
+private def immDurationWellFormedVal : Ops.Val :=
+  let limit : Ops.Val := .subU64 (.lit 0xFFFFFFFFFFFFFFFF) (.ext (.evm .immU64b) #[])
+  .select .ge limit (.ext (.evm .immU64) #[]) (.lit 1) (.lit 0)
+
+private def boundedCanScheduleVal (env : Environment)
+    (beneficiaryE startE durationE : Expr) : Option Ops.Val := do
+  let b := strip (unfoldUserHelpers env 16 beneficiaryE)
+  let s := strip (unfoldUserHelpers env 16 startE)
+  let d := strip (unfoldUserHelpers env 16 durationE)
+  match staticAddressIsZeroLit? env b with
+  | some true => return .lit 0
+  | some false =>
+    let start ← staticUInt64Lit? env s
+    let duration ← staticUInt64Lit? env d
+    if duration == 0 || start + duration ≥ start then return .lit 1 else return .lit 0
+  | none =>
+    if (endsWith b ".evmImm20" || isConstNamed b ``ProofForge.Evm.Runtime.evmImm20 ||
+          endsWith b ".address") &&
+        (endsWith s ".evmImmU64" || isConstNamed s ``ProofForge.Evm.Runtime.evmImmU64 ||
+          endsWith s ".u64") &&
+        (endsWith d ".evmImmU64b" || isConstNamed d ``ProofForge.Evm.Runtime.evmImmU64b ||
+          endsWith d ".u64b") then
+      return .bitAnd immBeneficiaryNonZeroVal immDurationWellFormedVal
+    else none
+
 private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
   match fuel with
   | 0 => none
@@ -1327,6 +1383,8 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       asBoolVal env fuel' args[args.size - 2]!
     else if endsWith e ".canPublish" && args.size ≥ 2 then
       boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
+    else if endsWith e ".canSchedule" && args.size ≥ 3 then
+      boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
     else if isConstNamed e ``Eq && args.size ≥ 2 then
       let lhs := strip args[args.size - 2]!
       let rhs := strip args[args.size - 1]!
@@ -2192,6 +2250,8 @@ private partial def boundedMetadataGateVal (env : Environment) (fuel : Nat) (e :
       boundedCanEncode721Val env args[args.size - 1]!
     else if endsWith raw ".canPublish" && args.size ≥ 2 then
       boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
+    else if endsWith raw ".canSchedule" && args.size ≥ 3 then
+      boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
     else if (isConstNamed raw ``Bool.and || isConstNamed raw ``HAnd.hAnd || endsWith raw ".hAnd") &&
         args.size ≥ 2 then
       match boundedMetadataGateVal env fuel' args[args.size - 2]!,

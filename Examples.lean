@@ -45,6 +45,7 @@ import Examples.Evm.Token
 import Examples.Evm.Erc20Meta
 import Examples.Evm.SafePay
 import Examples.Evm.RoyaltyArt
+import Examples.Evm.VestLink
 import Examples.Evm.Capped
 import Examples.Evm.MultiToken
 import Examples.Evm.CraftToken
