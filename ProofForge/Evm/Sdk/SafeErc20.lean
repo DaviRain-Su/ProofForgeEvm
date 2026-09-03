@@ -20,15 +20,15 @@ a failed CALL cannot be caught and retried.
 @[pf_inline] def canSend (destination : Address) : Bool :=
   !Address.isZero destination
 
-/-- Closed `transfer`; empty or canonical nonzero return data succeeds. -/
+/-- Closed `transfer`; code-backed empty returndata or canonical ABI `true` succeeds. -/
 @[pf_inline] def transfer (token destination : Address) (amount : UInt256) : UInt64 :=
   ERC20.transfer token destination amount
 
-/-- Closed `approve`; empty or canonical nonzero return data succeeds. -/
+/-- Closed `approve`; code-backed empty returndata or canonical ABI `true` succeeds. -/
 @[pf_inline] def approve (token spender : Address) (amount : UInt256) : UInt64 :=
   ERC20.approve token spender amount
 
-/-- Closed `transferFrom`; empty or canonical nonzero return data succeeds. -/
+/-- Closed `transferFrom`; code-backed empty returndata or canonical ABI `true` succeeds. -/
 @[pf_inline] def transferFrom (token owner destination : Address) (amount : UInt256) : UInt64 :=
   ERC20.transferFrom token owner destination amount
 
