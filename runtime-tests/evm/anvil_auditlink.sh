@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AuditLink: OZ completion-audit bounded static table (path tag + status + blocker per row). Darwin + Linux.
+# AuditLink: OZ completion-audit table (path tag + status + blocker + non-goal evidence per row). Darwin + Linux.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,10 +63,24 @@ for row in $(seq 0 31); do
   [[ "$tag" != "0" ]] || { echo "FAIL: row $row missing path tag" >&2; exit 1; }
   if [[ "$status" == "3" ]]; then
     [[ "$blocked" == "true" ]] || { echo "FAIL: row $row ABSENT but not blocked" >&2; exit 1; }
+    ngtag="$("$cast" call --rpc-url "$rpc" "$addr" "nonGoalTagOf(uint64)(uint8)" "$row")"
+    [[ "$ngtag" != "0" ]] || { echo "FAIL: row $row blocked but missing non-goal tag" >&2; exit 1; }
   else
     [[ "$blocked" == "false" ]] || { echo "FAIL: row $row DONE/PARTIAL but blocked" >&2; exit 1; }
+    ngtag="$("$cast" call --rpc-url "$rpc" "$addr" "nonGoalTagOf(uint64)(uint8)" "$row")"
+    [[ "$ngtag" == "0" ]] || { echo "FAIL: row $row DONE/PARTIAL but carries non-goal tag" >&2; exit 1; }
   fi
 done
+
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'nonGoalTagOf(uint64)(uint8)' 18)" \
+  1 "proxy row non-goal tag"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'nonGoalTagOf(uint64)(uint8)' 3)" \
+  3 "account row non-goal tag"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'nonGoalTagOf(uint64)(uint8)' 7)" \
+  0 "IERC165 row has no non-goal tag"
 
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'auditOk(uint64,uint64)(bool)' 452 367)" \
@@ -76,4 +90,4 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'auditOk(uint64,uint64)(bool)' 451 367)" \
   false "stale tree path count fails closed"
 
-echo "evm-anvil-auditlink: ok (OZ audit table witness + per-row classification + fail-closed auditOk gate)"
+echo "evm-anvil-auditlink: ok (OZ audit table witness + per-row classification + non-goal evidence + fail-closed auditOk gate)"

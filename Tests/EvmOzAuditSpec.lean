@@ -4,8 +4,8 @@ import ProofForge.Evm.Emit
 import Examples.Evm.AuditLink
 
 /-!
-W5 slice 2: OZ completion-audit bounded static table — per-row path tag, DONE/PARTIAL/ABSENT
-status, blocker bit, and fail-closed allRowsClassified gate.
+W5 slice 3: OZ completion-audit permanent non-goal evidence — per-row nonGoalTagOf aligned with
+`oz-sdk-backlog.md` § Permanent non-goals, fail-closed allBlockedRowsTagged gate.
 -/
 
 namespace Tests.EvmOzAuditSpec
@@ -30,6 +30,21 @@ open Lean Elab Command
 #guard !OzAudit.auditOk 451 367
 #guard OzAudit.auditOkClassified 452 367
 #guard !OzAudit.auditOkClassified 451 367
+#guard OzAudit.allBlockedRowsTagged
+#guard OzAudit.auditOkEvidence 452 367
+#guard !OzAudit.auditOkEvidence 451 367
+
+#guard OzAudit.nonGoalTagOf 0 == OzAudit.nonGoalNone
+#guard OzAudit.nonGoalTagOf 2 == OzAudit.nonGoalUnboundedGovernance
+#guard OzAudit.nonGoalTagOf 3 == OzAudit.nonGoalAccountAbstraction
+#guard OzAudit.nonGoalTagOf 18 == OzAudit.nonGoalProxyCreateSlot
+#guard OzAudit.nonGoalTagOf 25 == OzAudit.nonGoalArbitraryCall
+#guard OzAudit.nonGoalTagOf 31 == OzAudit.nonGoalNotRuntime
+#guard OzAudit.isKnownNonGoalTag OzAudit.nonGoalProxyCreateSlot
+#guard !OzAudit.isKnownNonGoalTag 0
+#guard OzAudit.blockedRowTagged 2
+#guard OzAudit.blockedRowTagged 7
+#guard !OzAudit.blockedRowTagged 32
 
 #guard OzAudit.pathTagOf 0 == OzAudit.tagAccessOwnable
 #guard OzAudit.statusOf 0 == OzAudit.statusPartial
@@ -78,7 +93,7 @@ private def expectAuditLink : CommandElabM Unit := do
     | .error reason => throwError reason
   for ixName in #[
       "coverageRows", "classifiedCount", "blockedCount", "isComplete", "isClassified",
-      "pathTagOf", "statusOf", "isBlocked", "auditOk", "touch"
+      "pathTagOf", "statusOf", "isBlocked", "nonGoalTagOf", "auditOk", "touch"
     ] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"AuditLink is missing {ixName}"
@@ -94,10 +109,11 @@ private def expectAuditLink : CommandElabM Unit := do
       abi.contains "\"name\":\"pathTagOf\"" &&
       abi.contains "\"name\":\"statusOf\"" &&
       abi.contains "\"name\":\"isBlocked\"" &&
+      abi.contains "\"name\":\"nonGoalTagOf\"" &&
       abi.contains "\"name\":\"isClassified\"" &&
       abi.contains "\"name\":\"auditOk\"" do
     throwError s!"AuditLink ABI lost audit surface:\n{abi}"
-  unless IR.digestHex program == "ffadbb3d4aa7c20a" do
+  unless IR.digestHex program == "46dd623883b2ee8e" do
     throwError s!"AuditLink digest drifted: {IR.digestHex program}"
   logInfo m!"auditlink: digest={IR.digestHex program} abi-ok"
 

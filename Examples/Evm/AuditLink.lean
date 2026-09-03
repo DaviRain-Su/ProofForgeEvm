@@ -139,6 +139,24 @@ def isBlocked (_s : State) (row : UInt64) : Bool :=
   else false
 
 @[pf_entry]
+def nonGoalTagOf (_s : State) (row : UInt64) : UInt8 :=
+  if row == 2 then 4
+  else if row == 3 then 3
+  else if row == 4 then 5
+  else if row == 6 then 4
+  else if row == 12 then 2
+  else if row == 13 then 2
+  else if row == 14 then 5
+  else if row == 16 then 5
+  else if row == 17 then 2
+  else if row == 18 then 1
+  else if row == 22 then 4
+  else if row == 25 then 2
+  else if row == 29 then 1
+  else if row == 31 then 6
+  else 0
+
+@[pf_entry]
 def isClassified (_s : State) (row : UInt64) : Bool :=
   if row == 32 then false
   else if row == 0 then true

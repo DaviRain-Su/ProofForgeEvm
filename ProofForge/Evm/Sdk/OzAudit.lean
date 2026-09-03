@@ -16,7 +16,9 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - 32 backlog coverage rows: 2 DONE, 16 PARTIAL, 14 ABSENT (14 blocked by non-goals)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
-and a blocker bit (`true` when the row is ABSENT because of a documented permanent non-goal).
+a blocker bit (`true` when the row is ABSENT because of a documented permanent non-goal), and for
+blocked rows a permanent non-goal category tag aligned with `oz-sdk-backlog.md` § Permanent
+non-goals.
 -/
 
 /-- Rows in the coverage table (`oz-sdk-backlog.md`). -/
@@ -51,6 +53,27 @@ def statusPartial : UInt8 := 2
 
 /-- No corresponding profile shipped (blocked by non-goal). -/
 def statusAbsent : UInt8 := 3
+
+/-- No permanent non-goal tag (DONE/PARTIAL rows). -/
+def nonGoalNone : UInt8 := 0
+
+/-- Proxies, delegatecall, CREATE/CREATE2/CREATE3, storage-slot escape hatches. -/
+def nonGoalProxyCreateSlot : UInt8 := 1
+
+/-- Raw/arbitrary calldata, low-level calls, multicall, ERC-2771, callback/receiver hooks. -/
+def nonGoalArbitraryCall : UInt8 := 2
+
+/-- Account abstraction, ERC-4337/7579 execution, paymasters. -/
+def nonGoalAccountAbstraction : UInt8 := 3
+
+/-- Governor/timelock/votes and unbounded proposal/voter/account relations. -/
+def nonGoalUnboundedGovernance : UInt8 := 4
+
+/-- Cross-chain bridge/executor protocols and global registries. -/
+def nonGoalCrossChainRegistry : UInt8 := 5
+
+/-- Upstream vendor/mocks — not runtime SDK surface. -/
+def nonGoalNotRuntime : UInt8 := 6
 
 /-- Path tag: `access/Ownable.sol`, `Ownable2Step.sol`. -/
 def tagAccessOwnable : UInt8 := 1
@@ -236,6 +259,50 @@ def statusOf (row : UInt64) : UInt8 :=
 def isBlocked (row : UInt64) : Bool :=
   statusOf row == statusAbsent
 
+/-- Permanent non-goal category for blocked row `row`; `nonGoalNone` when not blocked. -/
+def nonGoalTagOf (row : UInt64) : UInt8 :=
+  if row == 2 then nonGoalUnboundedGovernance
+  else if row == 3 then nonGoalAccountAbstraction
+  else if row == 4 then nonGoalCrossChainRegistry
+  else if row == 6 then nonGoalUnboundedGovernance
+  else if row == 12 then nonGoalArbitraryCall
+  else if row == 13 then nonGoalArbitraryCall
+  else if row == 14 then nonGoalCrossChainRegistry
+  else if row == 16 then nonGoalCrossChainRegistry
+  else if row == 17 then nonGoalArbitraryCall
+  else if row == 18 then nonGoalProxyCreateSlot
+  else if row == 22 then nonGoalUnboundedGovernance
+  else if row == 25 then nonGoalArbitraryCall
+  else if row == 29 then nonGoalProxyCreateSlot
+  else if row == 31 then nonGoalNotRuntime
+  else nonGoalNone
+
+/-- True when `tag` is one of the documented permanent non-goal categories. -/
+def isKnownNonGoalTag (tag : UInt8) : Bool :=
+  tag == nonGoalProxyCreateSlot || tag == nonGoalArbitraryCall ||
+    tag == nonGoalAccountAbstraction || tag == nonGoalUnboundedGovernance ||
+    tag == nonGoalCrossChainRegistry || tag == nonGoalNotRuntime
+
+/-- True when blocked rows carry a known tag and non-blocked rows carry `nonGoalNone`. -/
+def blockedRowTagged (row : UInt64) : Bool :=
+  if row >= coverageRows then false
+  else if isBlocked row then
+    nonGoalTagOf row != nonGoalNone && isKnownNonGoalTag (nonGoalTagOf row)
+  else
+    nonGoalTagOf row == nonGoalNone
+
+/-- True when every in-range row has consistent non-goal evidence. -/
+def allBlockedRowsTagged : Bool :=
+  blockedRowTagged 0 && blockedRowTagged 1 && blockedRowTagged 2 && blockedRowTagged 3 &&
+  blockedRowTagged 4 && blockedRowTagged 5 && blockedRowTagged 6 && blockedRowTagged 7 &&
+  blockedRowTagged 8 && blockedRowTagged 9 && blockedRowTagged 10 && blockedRowTagged 11 &&
+  blockedRowTagged 12 && blockedRowTagged 13 && blockedRowTagged 14 && blockedRowTagged 15 &&
+  blockedRowTagged 16 && blockedRowTagged 17 && blockedRowTagged 18 && blockedRowTagged 19 &&
+  blockedRowTagged 20 && blockedRowTagged 21 && blockedRowTagged 22 && blockedRowTagged 23 &&
+  blockedRowTagged 24 && blockedRowTagged 25 && blockedRowTagged 26 && blockedRowTagged 27 &&
+  blockedRowTagged 28 && blockedRowTagged 29 && blockedRowTagged 30 && blockedRowTagged 31 &&
+  !blockedRowTagged 32
+
 /-- True when `row` is in range and carries a known status. -/
 def isClassified (row : UInt64) : Bool :=
   row < coverageRows && isKnownStatus (statusOf row)
@@ -267,5 +334,9 @@ def allRowsClassified : Bool :=
 /-- Compile-time audit gate including per-row classification (not lowered to EVM). -/
 def auditOkClassified (paths sources : UInt64) : Bool :=
   auditOk paths sources && allRowsClassified
+
+/-- Compile-time audit gate including permanent non-goal evidence on blocked rows. -/
+def auditOkEvidence (paths sources : UInt64) : Bool :=
+  auditOkClassified paths sources && allBlockedRowsTagged
 
 end ProofForge.Evm.Sdk.OzAudit
