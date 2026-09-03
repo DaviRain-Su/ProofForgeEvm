@@ -51,8 +51,8 @@ export const PIPELINE = [
     zh: "EVM IR",
     en: "EVM IR",
     detail: {
-      zh: "Core 降到 EVM IR。物化 storage slot / selector / ABI。Registry 钉 47 个示例 digest。",
-      en: "Core lowers to EVM IR. Owns storage slots / selector / ABI. The registry pins 47 example digests.",
+      zh: "Core 降到 EVM IR。物化 storage slot / selector / ABI。Registry 钉 52 个示例 digest。",
+      en: "Core lowers to EVM IR. Owns storage slots / selector / ABI. The registry pins 52 example digests.",
     },
   },
   {
@@ -107,13 +107,13 @@ export const TARGETS = [
       zh: [
         "Lean → Extract IR → EVM IR → Yul → 钉死的 solc 0.8.34",
         "pf build 默认写出 Name.bin / Name.yul / Name.abi.json",
-        "Registry 钉 47 个示例 digest；抽出不匹配即拒绝",
+        "Registry 钉 52 个示例 digest；抽出不匹配即拒绝",
         "Anvil 工程门；v0 拒绝公网 broadcast",
       ],
       en: [
         "Lean → Extract IR → EVM IR → Yul → pinned solc 0.8.34",
         "pf build writes Name.bin / Name.yul / Name.abi.json by default",
-        "The registry pins 47 example digests; a mismatch is a refusal",
+        "The registry pins 52 example digests; a mismatch is a refusal",
         "Anvil engineering gate; v0 refuses public broadcast",
       ],
     },
@@ -260,7 +260,7 @@ export const DOCS: Record<
       title: "编译链",
       blocks: [
         "Profile → Extract.IR / Core → Evm.IR → Yul Emit → Assemble（默认 solc；可选 yulc）。Core 拥有 schema、control、checked arithmetic。",
-        "CLI 构建必须重新从用户模块抽 IR，不能组装 legacy Golden fixture。Registry 只钉仓内 Examples 的 47 个 digest。",
+        "CLI 构建必须重新从用户模块抽 IR，不能组装 legacy Golden fixture。Registry 只钉仓内 Examples 的 52 个 digest。",
         "详细边界见 docs/product/support-matrix.md。",
       ],
     },
@@ -268,7 +268,7 @@ export const DOCS: Record<
       title: "Pipeline",
       blocks: [
         "Profile → Extract.IR / Core → Evm.IR → Yul Emit → Assemble (solc by default; optional yulc). Core owns schema, control, checked arithmetic.",
-        "CLI build re-extracts IR from the user module. It does not assemble a legacy Golden fixture. The registry pins 47 in-tree Examples digests only.",
+        "CLI build re-extracts IR from the user module. It does not assemble a legacy Golden fixture. The registry pins 52 in-tree Examples digests only.",
         "See docs/product/support-matrix.md for the detailed boundary.",
       ],
     },
