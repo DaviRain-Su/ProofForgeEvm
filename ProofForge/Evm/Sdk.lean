@@ -19,6 +19,7 @@ import ProofForge.Evm.Sdk.StorageEnumerableSet
 import ProofForge.Evm.Sdk.StorageEnumerableMap
 import ProofForge.Evm.Sdk.StorageCheckpoints
 import ProofForge.Evm.Sdk.Roles
+import ProofForge.Evm.Sdk.Nonces
 import ProofForge.Evm.Sdk.Reentrancy
 
 /-!
@@ -30,7 +31,7 @@ bounded ERC-165 interface-id predicates, fail-closed ERC-20 consumer helpers, a 
 royalty quote,
 compile-time static storage declarations, persistent bounded UInt64 storage vectors/bitmaps/ring
 queues/enumerable sets/maps/checkpoints, bounded static role sets with canonical RoleGranted /
-RoleRevoked logs, and shared allocation-free
+RoleRevoked logs, bounded per-address nonce helpers, and shared allocation-free
 checked wide-to-UInt8/UInt16/UInt32/UInt64 narrowing and bounded UInt64 math. Applications import
 this module rather than target Runtime, Ops, IR, or Emit internals.
 -/
