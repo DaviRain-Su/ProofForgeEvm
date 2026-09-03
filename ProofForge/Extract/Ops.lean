@@ -183,6 +183,10 @@ private def opValuesAny (predicate : Val → Bool) : Op → Bool
   | .indexSetLeaf _ lhs rhs _ _ | .indexSet _ lhs rhs _ _ => predicate lhs || predicate rhs
   | .evmComponent call => call.anyValue predicate
   | .errorTyped frame => frame.values.any predicate
+  -- Psy-target effects; a source program for EVM cannot contain them, but the
+  -- shared Core Ops now define them, so the matcher must stay exhaustive.
+  | .emitEvent _ payload => predicate payload
+  | .externalCall _ args => args.any predicate
   | .joinLocal _ | .forBody _ _ | .errorOverflow | .errorNamed _ => false
 
 private partial def isEvmContext : Val → Bool

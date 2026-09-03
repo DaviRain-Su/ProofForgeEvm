@@ -126,6 +126,10 @@ private def opValues : ProofForge.Extract.IR.Op → Array ProofForge.Extract.IR.
   | .indexSetLeaf _ idx value _ _ | .indexSet _ idx value _ _ => #[idx, value]
   | .ext payload => ProofForge.Extract.IR.OpExt.values payload
   | .errorTyped frame => frame.values
+  -- Psy-target effects; unreachable for EVM sources but the shared Core Ops
+  -- define them, so the matcher must stay exhaustive.
+  | .emitEvent _ payload => #[payload]
+  | .externalCall _ args => args
   | .joinLocal _ | .forBody _ _ | .errorOverflow | .errorNamed _ => #[]
 
 private partial def opsContainBalanceRead (ops : Array ProofForge.Extract.IR.Op) : Bool :=

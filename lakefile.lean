@@ -4,8 +4,10 @@ open Lake DSL
 package «proofforge» where
   version := v!"0.0.1"
 
-/-- Shared Attr + Core/Crypto surface, now maintained in ProofForgeCommon. -/
-require «proofforge-common» from "../ProofForgeCommon"
+/-- Shared Attr + Core/Crypto surface, maintained in ProofForgeCommon.
+    Bump the pin when ProofForgeCommon publishes a new Core/Crypto change. -/
+require «proofforge-common» from git
+  "https://github.com/DaviRain-Su/ProofForgeCommon.git" @ "v0.1.0"
 
 /-- Contract-facing EVM SDK (+ Runtime/Source needed for `pf_inline` erase). No Emit. -/
 lean_lib ProofForgeEvmSdk where

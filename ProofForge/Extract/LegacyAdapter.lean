@@ -214,6 +214,8 @@ partial def toLegacyOp : Op → Except String ProofForge.Ops.Op
       return .evmDeposit (← toLegacyVal amount)
   | .ext (.evm (.component (.nativeFx (.deposit256 ..)))) =>
       throw "extract/unsupported: legacy adapter cannot represent 256-bit deposit"
+  | .emitEvent .. | .externalCall .. =>
+      throw "extract/unsupported: legacy adapter cannot represent Psy-target effects"
   | .ext (.evm (.component (.nativeFx (.sendEth w0 w1 w2 amount)))) =>
       return .evmSendEth (← toLegacyVal w0) (← toLegacyVal w1)
         (← toLegacyVal w2) (← toLegacyVal amount)

@@ -56,6 +56,10 @@ private partial def lowerOp : Ops.Op → Except String Op
   | .errorTyped frame => pure (.errorTyped frame)
   | .returnU64 value => pure (.returnU64 value)
   | .returnState value => pure (.returnState value)
+  -- Psy-target effects; a source program for EVM cannot contain them, but the
+  -- shared Core Ops now define them, so the matcher must stay exhaustive.
+  | .emitEvent .. | .externalCall .. =>
+      throw "extract/ir: emitEvent/externalCall are Psy-target effects"
   | .ext (.component call) => pure (.component call)
 
 where
