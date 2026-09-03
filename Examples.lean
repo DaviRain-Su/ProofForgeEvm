@@ -50,6 +50,7 @@ import Examples.Evm.RoyaltyArt
 import Examples.Evm.VestLink
 import Examples.Evm.ProofLink
 import Examples.Evm.HeaderLink
+import Examples.Evm.AdminDelayLink
 import Examples.Evm.AuditLink
 import Examples.Evm.Vault4626Link
 import Examples.Evm.NineLink

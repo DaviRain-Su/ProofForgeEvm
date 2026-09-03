@@ -35,6 +35,7 @@ def entries : Array Entry := #[
   { name := "VestLink", digest := "b3e15e6ff33fddec" },
   { name := "ProofLink", digest := "c41e5e834c987462" },
   { name := "HeaderLink", digest := "e0e09d52039478fc" },
+  { name := "AdminDelayLink", digest := "376071c5220a95b7" },
   { name := "AuditLink", digest := "f8f4b79c4ff80d0a" },
   { name := "Vault4626Link", digest := "b67fcd513855d1d" },
   { name := "NineLink", digest := "2aed9bb07eb36ab9" },
