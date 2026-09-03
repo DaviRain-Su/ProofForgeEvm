@@ -51,12 +51,11 @@ def mint (s : State) (to : Address) (tokenId : UInt256) : Except Error (State ×
   else
     .ok (s, Revert.unauthorized Context.caller)
 
-/-- Bounded static `tokenURI(uint256) → string`. Unencodable ids fail closed to empty via
-length zero. Mint-state gating uses `MetadataUri.canRespond721` once extract accepts that
-predicate in bounded length fields (W4 slice 1b); this consumer gates the key envelope only. -/
+/-- Bounded static `tokenURI(uint256) → string`. Unencodable ids and unminted tokens fail closed
+to empty via length zero (`MetadataUri.canRespond721`). -/
 @[pf_entry]
 def tokenURI (_s : State) (tokenId : UInt256) : BoundedString 32 :=
-  { length := if Erc721.canEncode tokenId then 15 else 0
+  { length := if MetadataUri.canRespond721 owners tokenId then 15 else 0
     values := #v[0x69, 0x70, 0x66, 0x73, 0x3a, 0x2f, 0x2f, 0x51, 0x6d, 0x50, 0x66, 0x4c, 0x69, 0x6e, 0x6b, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
 
 @[pf_entry]

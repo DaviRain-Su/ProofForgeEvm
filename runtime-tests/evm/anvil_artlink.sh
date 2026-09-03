@@ -51,6 +51,10 @@ pf_evm_typed_event_check "$abi" "$receipt" Transfer "$topic_xfer" \
 pf_evm_require_equal "$(strip_string "$("$cast" call --rpc-url "$rpc" "$addr" \
   'tokenURI(uint256)(string)' "$token_id")")" "$static_uri" "minted tokenURI is static"
 
+# Unminted encodable id returns empty tokenURI (mint-state fail-closed).
+pf_evm_require_equal "$(strip_string "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'tokenURI(uint256)(string)' 42)")" "" "unminted tokenURI is empty"
+
 alias_id="$("$python" -I -S -c "print($token_id + (1 << 192))")"
 pf_evm_require_equal "$(strip_string "$("$cast" call --rpc-url "$rpc" "$addr" \
   'tokenURI(uint256)(string)' "$alias_id")")" "" "unencodable alias tokenURI is empty"

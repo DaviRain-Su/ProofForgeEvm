@@ -24,7 +24,7 @@ for case in counter pair flag maybe ctx bounded search find_index static_counter
     safe_cast_accumulator safe_cast_config typed_errors typed_events chain_guard \
     math_price_band \
     collectible badge tipjar lang vault \
-    ownable token erc20meta safepay royaltyart window phase wide const capped multitoken crafttoken twostep_counter credits \
+    ownable token erc20meta safepay royaltyart artlink packlink window phase wide const capped multitoken crafttoken twostep_counter credits \
     opencall; do
   script="$here/anvil_$case.sh"
   echo "evm-anvil: $case" >&2

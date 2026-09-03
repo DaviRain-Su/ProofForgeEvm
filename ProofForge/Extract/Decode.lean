@@ -2116,14 +2116,96 @@ private def scalarResultValues (env : Environment) (fuel : Nat) (e : Expr) :
         <|> asRegisteredBoundaryCtorFields env e <|>
         (asBoolVal env fuel e <|> val env e).map (#[·])
 
+private def peelProofLam (value : Expr) : Expr :=
+  match strip value with
+  | .lam _ _ body _ => body.lowerLooseBVars 1 1
+  | value => value
+
+private def ownersMapBaseVal (env : Environment) (ownersE : Expr) : Ops.Val :=
+  let ownersE := unfoldUserHelpers env 16 (strip ownersE)
+  foldClosedU64 <| (asEvmMapBaseLit env 64 ownersE <|> val env ownersE).getD (.lit 0)
+
+private def boundedCanEncode721Val (env : Environment) (tokenIdE : Expr) : Option Ops.Val := do
+  let tokenIdE := unfoldUserHelpers env 8 (strip tokenIdE)
+  let w3 ← val env (mkApp (mkConst ``ProofForge.Core.Value.UInt256.w3) tokenIdE)
+  some (.select .eq w3 (.lit 0) (.lit 1) (.lit 0))
+
+/-- True when an ERC-721 token id is minted: owner map load is non-zero at `tokenKey`. -/
+private def boundedIsMinted721Val (env : Environment) (ownersE tokenIdE : Expr) : Option Ops.Val := do
+  let base := ownersMapBaseVal env ownersE
+  let tokenIdE := unfoldUserHelpers env 8 (strip tokenIdE)
+  let w0 ← val env (mkApp (mkConst ``ProofForge.Core.Value.UInt256.w0) tokenIdE)
+  let w1 ← val env (mkApp (mkConst ``ProofForge.Core.Value.UInt256.w1) tokenIdE)
+  let w2 ← val env (mkApp (mkConst ``ProofForge.Core.Value.UInt256.w2) tokenIdE)
+  let o0 : Ops.Val := .ext (.evm (.component (.hashedMap (.getAddr256 0)))) #[base, w0, w1, w2]
+  let o1 : Ops.Val := .ext (.evm (.component (.hashedMap (.getAddr256 1)))) #[base, w0, w1, w2]
+  let o2 : Ops.Val := .ext (.evm (.component (.hashedMap (.getAddr256 2)))) #[base, w0, w1, w2]
+  let eqZero : Ops.Val := .ext (.evm (.component (.wideWord .eq20))) #[o0, o1, o2, .lit 0, .lit 0, .lit 0]
+  some (.select .eq eqZero (.lit 0) (.lit 1) (.lit 0))
+
+private def boundedCanRespond721Val (env : Environment) (ownersE tokenIdE : Expr) : Option Ops.Val := do
+  let enc ← boundedCanEncode721Val env tokenIdE
+  let minted ← boundedIsMinted721Val env ownersE tokenIdE
+  some (.bitAnd enc minted)
+
+private partial def boundedMetadataGateVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
+  match fuel with
+  | 0 => none
+  | fuel' + 1 =>
+    let raw := strip e
+    let args := raw.getAppArgs
+    if endsWith raw ".canRespond1155" && args.size ≥ 1 then
+      boundedCanEncode721Val env args[args.size - 1]!
+    else if endsWith raw ".canRespond721" && args.size ≥ 2 then
+      boundedCanRespond721Val env args[args.size - 2]! args[args.size - 1]!
+    else if endsWith raw ".isMinted" && args.size ≥ 2 then
+      boundedIsMinted721Val env args[args.size - 2]! args[args.size - 1]!
+    else if endsWith raw ".canEncode" && args.size ≥ 1 then
+      boundedCanEncode721Val env args[args.size - 1]!
+    else if (isConstNamed raw ``Bool.and || isConstNamed raw ``HAnd.hAnd || endsWith raw ".hAnd") &&
+        args.size ≥ 2 then
+      match boundedMetadataGateVal env fuel' args[args.size - 2]!,
+          boundedMetadataGateVal env fuel' args[args.size - 1]! with
+      | some lhs, some rhs => some (.bitAnd lhs rhs)
+      | _, _ => none
+    else if isConstNamed raw ``Decidable.decide && args.size ≥ 2 then
+      boundedMetadataGateVal env fuel' args[args.size - 2]!
+    else if isConstNamed raw ``Bool.not && args.size ≥ 1 then
+      (boundedMetadataGateVal env fuel' args[args.size - 1]!).map fun v =>
+        .select .eq v (.lit 0) (.lit 1) (.lit 0)
+    else
+      match unfoldUserHelper env raw with
+      | some (_, unfolded) => boundedMetadataGateVal env fuel' unfolded
+      | none => none
+
+/-- Decode bounded-string `length` fields, including conditional gates that consult mint state
+(`canRespond721` / `isMinted`) via hashed-map reads. The ordinary `val` path handles simple
+encodable-id comparisons; this fallback completes `ite` length policies using the same
+`asCondition` decoder as mutation guards (including `evmEq20` mint checks). -/
 private def boundedLengthVal (env : Environment) (e : Expr) : Option Ops.Val :=
   let e := strip e
-  match val env e with
-  | some v => some v
-  | none =>
-    match scalarResultValues env 16 e with
-    | some #[v] => some v
-    | _ => none
+  if (isConstNamed e ``ite || isConstNamed e ``dite) && e.getAppArgs.size ≥ 4 then
+    let args := e.getAppArgs
+    let cond := args[args.size - 4]!
+    let thn := peelProofLam args[args.size - 2]!
+    let els := peelProofLam args[args.size - 1]!
+    let condVal? :=
+      match boundedMetadataGateVal env 32 cond with
+      | some v => some v
+      | none =>
+        match asCondition env cond with
+        | some (cmp, lhs, rhs) => some (.select cmp lhs rhs (.lit 1) (.lit 0))
+        | none => asBoolVal env 128 cond
+    match condVal?, val env thn, val env els with
+    | some condVal, some thnVal, some elsVal => some (.select .ne condVal (.lit 0) thnVal elsVal)
+    | _, _, _ => none
+  else
+    match val env e with
+    | some v => some v
+    | none =>
+      match scalarResultValues env 16 e with
+      | some #[v] => some v
+      | _ => none
 
 private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
   let e := substLets 32 (strip e)
@@ -3878,7 +3960,19 @@ private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   | some (.evmComponent (.openCall _)) => .lit 0
   | _ => .arg 0
 
+private partial def isBoundedStringReturn (env : Environment) (fuel : Nat) (e : Expr) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel' + 1 =>
+    (asBoundedCtorFields env e).isSome ||
+      match strip e with
+      | .letE _ _ value body _ =>
+        isBoundedStringReturn env fuel' value ||
+          isBoundedStringReturn env fuel' (body.instantiate1 value)
+      | _ => false
+
 private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
+  if isBoundedStringReturn env 32 e then none else
   let writes := collectEvmEffectOps env e
   if writes.size ≥ 1 then
     some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
@@ -4790,6 +4884,8 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
   -- 必须在 peelLets 之前找效应：剥掉 `have sent := …` 后调用就没了。
   if let some reason := findTypedSourceFailure env e then
     .error s!"extract/unsupported: {reason}"
+  else if let some vs := asBoundedCtorFields env e then
+    .ok (returnStatesOf vs)
   else if let some ops := decodeEvmEffect env e then
     .ok (mergeEvmStores localDepth ops (evmEffectStores env e))
   else if let some (n, addend) := findForIn env e then
