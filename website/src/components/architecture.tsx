@@ -30,8 +30,8 @@ const BRANCHES = [
   {
     id: "yulc",
     ir: { zh: "Emit Yul", en: "Emit Yul" },
-    irBody: { zh: "同一 IR，powdr 汇编", en: "same IR, powdr assemble" },
-    out: { zh: "yulc .bin / .yul", en: "yulc .bin / .yul" },
+    irBody: { zh: "同一 IR；周跑 / 手动 CI", en: "same IR; weekly / manual CI" },
+    out: { zh: "yulc .bin / .yul（实验）", en: "yulc .bin / .yul (experimental)" },
   },
 ] as const;
 
@@ -62,8 +62,8 @@ export function Architecture() {
       </div>
       <p className="mx-auto mt-6 max-w-xl text-center text-sm leading-relaxed text-muted">
         {copy(lang, {
-          zh: "证明和编译钉同一 IR digest。Core 不做 syscall；solc 与 yulc 汇编同一份 Yul。",
-          en: "Proof and compile pin the same IR digest. Core emits no syscalls. solc and yulc assemble the same Yul.",
+          zh: "证明和编译钉同一 IR digest。Core 不做 syscall。solc 是产品后端；yulc 是实验汇编车道。",
+          en: "Proof and compile pin the same IR digest. Core emits no syscalls. solc is the product backend; yulc is an experimental assembly lane.",
         })}
       </p>
     </div>

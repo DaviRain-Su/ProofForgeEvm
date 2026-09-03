@@ -197,7 +197,7 @@ def mint (s : State) (value : UInt256) : Except Error (State × UInt64) :=
   {
     id: "Token",
     name: "Token",
-    targets: ["solc", "yulc"],
+    targets: ["solc"],
     tags: [
       { zh: "Evm.Sdk", en: "Evm.Sdk" },
       { zh: "hashed map", en: "hashed map" },
@@ -289,7 +289,7 @@ def transfer (s : State) (destination : Address) (amount : UInt256) :
   {
     id: "Vault",
     name: "Vault",
-    targets: ["solc", "yulc"],
+    targets: ["solc"],
     tags: [{ zh: "托管", en: "custody" }, { zh: "ERC-20", en: "ERC-20" }],
     summary: {
       zh: "份额 hashed map + 封闭 ERC-20 / WETH call facade。storage cursor 分配 namespace。",
@@ -345,7 +345,7 @@ def pull (_s : State) (token dest : Address) (amt : UInt256) :
   {
     id: "Ownable",
     name: "Ownable",
-    targets: ["solc", "yulc"],
+    targets: ["solc"],
     tags: [{ zh: "所有权", en: "ownership" }, { zh: "roles", en: "roles" }],
     summary: {
       zh: "构造期 immutable owner。非 owner 走 Unauthorized(caller)；零地址走 ZeroAddress()。",
