@@ -42,6 +42,10 @@ private def eip712PermitTypeHash : String :=
   Keccak.keccak256HexOfString
     "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
 
+private def eip712TransferWithAuthorizationTypeHash : String :=
+  Keccak.keccak256HexOfString
+    "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+
 private def eip712NameHash : String := Keccak.keccak256HexOfString "Token"
 
 private def eip712VersionHash : String := Keccak.keccak256HexOfString "1"
@@ -595,6 +599,137 @@ private def emitPermit (context : Context σ)
     approvalTxt
   return (acc, n0, st36)
 
+private def emitTransferWithAuthorization (context : Context σ)
+    (f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Ops.Val)
+    (st : σ) : Except String (String × String × σ) := do
+  let indent := context.indent
+  let (p0, fw0, s0) ← context.materialize f0 st
+  let (p1, fw1, s1) ← context.materialize f1 s0
+  let (p2, fw2, s2) ← context.materialize f2 s1
+  let (q0, tw0, s3) ← context.materialize t0 s2
+  let (q1, tw1, s4) ← context.materialize t1 s3
+  let (q2, tw2, s5) ← context.materialize t2 s4
+  let (u0, x0, s6) ← context.materialize v0 s5
+  let (u1, x1, s7) ← context.materialize v1 s6
+  let (u2, x2, s8) ← context.materialize v2 s7
+  let (u3, x3, s9) ← context.materialize v3 s8
+  let (k0p, k0, s10) ← context.materialize a0 s9
+  let (k1p, k1, s11) ← context.materialize a1 s10
+  let (k2p, k2, s12) ← context.materialize a2 s11
+  let (k3p, k3, s13) ← context.materialize a3 s12
+  let (l0p, l0, s14) ← context.materialize b0 s13
+  let (l1p, l1, s15) ← context.materialize b1 s14
+  let (l2p, l2, s16) ← context.materialize b2 s15
+  let (l3p, l3, s17) ← context.materialize b3 s16
+  let (m0p, m0, s18) ← context.materialize n0 s17
+  let (m1p, m1, s19) ← context.materialize n1 s18
+  let (m2p, m2, s20) ← context.materialize n2 s19
+  let (m3p, m3, s21) ← context.materialize n3 s20
+  let (pv, vbyte, s22) ← context.materialize vv s21
+  let (rA0, hr0, s23) ← context.materialize r0 s22
+  let (rA1, hr1, s24) ← context.materialize r1 s23
+  let (rA2, hr2, s25) ← context.materialize r2 s24
+  let (rA3, hr3, s26) ← context.materialize r3 s25
+  let (sA0, hs0, s27) ← context.materialize z0 s26
+  let (sA1, hs1, s28) ← context.materialize z1 s27
+  let (sA2, hs2, s29) ← context.materialize z2 s28
+  let (sA3, hs3, s30) ← context.materialize z3 s29
+  let (fromA, st31) := context.fresh s30
+  let (toA, st32) := context.fresh st31
+  let (amt, st33) := context.fresh st32
+  let (validAfter, st34) := context.fresh st33
+  let (validBefore, st35) := context.fresh st34
+  let (nonceWord, st36) := context.fresh st35
+  let (rword, st37) := context.fresh st36
+  let (sword, st38) := context.fresh st37
+  let (structH, st39) := context.fresh st38
+  let (domPre, domainH, st40) := emitDomainSeparator context st39
+  let (digest, st41) := context.fresh st40
+  let (precompileTxt, signer, st42) ← Precompile.Emit.emit context.precompile .ecrecover st41
+  let (authSlot, st43) := context.fresh st42
+  let (fromSlot, st44) := context.fresh st43
+  let (fromBal, st45) := context.fresh st44
+  let (toSlot, st46) := context.fresh st45
+  let (toBal, st47) := context.fresh st46
+  let expiredSel := Keccak.selector "Expired" #[]
+  let expiredTxt ← LogError.Emit.emitRevert { indent := indent ++ "  " } { selector := expiredSel }
+  let unauthorizedTxt ← LogError.Emit.emitRevert { indent := indent ++ "  " }
+    { selector := Keccak.selector "Unauthorized" #["address"], args := #[signer] }
+  let transferTxt ← LogError.Emit.emitLog context.logError
+    { data := #[amt]
+      topics := #["0x" ++ Keccak.keccak256HexOfString "Transfer(address,address,uint256)", fromA, toA] }
+  let mut acc := ""
+  acc := acc ++ p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++
+    u0 ++ u1 ++ u2 ++ u3 ++ k0p ++ k1p ++ k2p ++ k3p ++ l0p ++ l1p ++ l2p ++ l3p ++
+    m0p ++ m1p ++ m2p ++ m3p ++ pv ++ rA0 ++ rA1 ++ rA2 ++ rA3 ++ sA0 ++ sA1 ++ sA2 ++ sA3 ++
+    indent ++ "if shr(32, " ++ fw2 ++ ") { " ++ revert0 ++ " }" ++ nl ++
+    indent ++ "if shr(32, " ++ tw2 ++ ") { " ++ revert0 ++ " }" ++ nl ++
+    indent ++ "mstore(0, 0)" ++ nl ++
+    packAddrMstore8 indent fw0 fw1 fw2 ++
+    indent ++ "let " ++ fromA ++ " := mload(0)" ++ nl ++
+    indent ++ "mstore(0, 0)" ++ nl ++
+    packAddrMstore8 indent tw0 tw1 tw2 ++
+    indent ++ "let " ++ toA ++ " := mload(0)" ++ nl ++
+    indent ++ "let " ++ amt ++ " := " ++ packU256 x0 x1 x2 x3 ++ nl ++
+    indent ++ "let " ++ validAfter ++ " := " ++ packU256 k0 k1 k2 k3 ++ nl ++
+    indent ++ "let " ++ validBefore ++ " := " ++ packU256 l0 l1 l2 l3 ++ nl ++
+    packBytes32At indent 0 m0 m1 m2 m3 ++
+    indent ++ "let " ++ nonceWord ++ " := mload(0)" ++ nl ++
+    packBytes32At indent 0 hr0 hr1 hr2 hr3 ++
+    indent ++ "let " ++ rword ++ " := mload(0)" ++ nl ++
+    packBytes32At indent 0 hs0 hs1 hs2 hs3 ++
+    indent ++ "let " ++ sword ++ " := mload(0)" ++ nl ++
+    indent ++ "if gt(" ++ validAfter ++ ", timestamp()) {" ++ nl ++ expiredTxt ++ indent ++ "}" ++ nl ++
+    indent ++ "if lt(" ++ validBefore ++ ", timestamp()) {" ++ nl ++ expiredTxt ++ indent ++ "}" ++ nl ++
+    indent ++ "mstore(0, " ++ fw0 ++ ")" ++ nl ++
+    indent ++ "mstore(32, " ++ fw1 ++ ")" ++ nl ++
+    indent ++ "mstore(64, " ++ fw2 ++ ")" ++ nl ++
+    indent ++ "mstore(96, " ++ nonceWord ++ ")" ++ nl ++
+    indent ++ "mstore(128, 3)" ++ nl ++
+    indent ++ "let " ++ authSlot ++ " := keccak256(0, 160)" ++ nl ++
+    indent ++ "if sload(" ++ authSlot ++ ") { " ++ revert0 ++ " }" ++ nl ++
+    indent ++ "mstore(0, 0x" ++ eip712TransferWithAuthorizationTypeHash ++ ")" ++ nl ++
+    indent ++ "mstore(32, " ++ fromA ++ ")" ++ nl ++
+    indent ++ "mstore(64, " ++ toA ++ ")" ++ nl ++
+    indent ++ "mstore(96, " ++ amt ++ ")" ++ nl ++
+    indent ++ "mstore(128, " ++ validAfter ++ ")" ++ nl ++
+    indent ++ "mstore(160, " ++ validBefore ++ ")" ++ nl ++
+    indent ++ "mstore(192, " ++ nonceWord ++ ")" ++ nl ++
+    indent ++ "let " ++ structH ++ " := keccak256(0, 224)" ++ nl ++
+    domPre ++
+    indent ++ "mstore(0, 0x1901000000000000000000000000000000000000000000000000000000000000)" ++ nl ++
+    indent ++ "mstore(2, " ++ domainH ++ ")" ++ nl ++
+    indent ++ "mstore(34, " ++ structH ++ ")" ++ nl ++
+    indent ++ "let " ++ digest ++ " := keccak256(0, 66)" ++ nl ++
+    indent ++ "mstore(0, " ++ digest ++ ")" ++ nl ++
+    indent ++ "mstore(32, " ++ vbyte ++ ")" ++ nl ++
+    indent ++ "mstore(64, " ++ rword ++ ")" ++ nl ++
+    indent ++ "mstore(96, " ++ sword ++ ")" ++ nl ++
+    precompileTxt ++
+    indent ++ "if iszero(eq(" ++ signer ++ ", " ++ fromA ++ ")) {" ++ nl ++ unauthorizedTxt ++ indent ++ "}" ++ nl ++
+    indent ++ "sstore(" ++ authSlot ++ ", 1)" ++ nl ++
+    indent ++ "mstore(0, " ++ fw0 ++ ")" ++ nl ++
+    indent ++ "mstore(32, " ++ fw1 ++ ")" ++ nl ++
+    indent ++ "mstore(64, " ++ fw2 ++ ")" ++ nl ++
+    indent ++ "mstore(96, 0)" ++ nl ++
+    indent ++ "let " ++ fromSlot ++ " := keccak256(0, 128)" ++ nl ++
+    indent ++ "let " ++ fromBal ++ " := 0" ++ nl ++
+    indent ++ "if sload(" ++ fromSlot ++ ") { " ++ fromBal ++ " := sload(add(" ++ fromSlot ++ ", 1)) }" ++ nl ++
+    indent ++ "if lt(" ++ fromBal ++ ", " ++ amt ++ ") { " ++ revert0 ++ " }" ++ nl ++
+    indent ++ "sstore(" ++ fromSlot ++ ", 1)" ++ nl ++
+    indent ++ "sstore(add(" ++ fromSlot ++ ", 1), sub(" ++ fromBal ++ ", " ++ amt ++ "))" ++ nl ++
+    indent ++ "mstore(0, " ++ tw0 ++ ")" ++ nl ++
+    indent ++ "mstore(32, " ++ tw1 ++ ")" ++ nl ++
+    indent ++ "mstore(64, " ++ tw2 ++ ")" ++ nl ++
+    indent ++ "mstore(96, 0)" ++ nl ++
+    indent ++ "let " ++ toSlot ++ " := keccak256(0, 128)" ++ nl ++
+    indent ++ "let " ++ toBal ++ " := 0" ++ nl ++
+    indent ++ "if sload(" ++ toSlot ++ ") { " ++ toBal ++ " := sload(add(" ++ toSlot ++ ", 1)) }" ++ nl ++
+    indent ++ "sstore(" ++ toSlot ++ ", 1)" ++ nl ++
+    indent ++ "sstore(add(" ++ toSlot ++ ", 1), add(" ++ toBal ++ ", " ++ amt ++ "))" ++ nl ++
+    transferTxt
+  return (acc, x0, st47)
+
 private def emitTokenPermit (context : Context σ)
     (tw0 tw1 tw2 ow0 ow1 ow2 sw0 sw1 sw2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Ops.Val)
     (st : σ) : Except String (String × String × σ) := do
@@ -675,6 +810,8 @@ def emitCall (context : Context σ) (call : ClosedCall.Call Ops.Val) (st : σ) :
       emitSwapExact3 context rw0 rw1 rw2 a0 a1 a2 b0 b1 b2 c0 c1 c2 i0 i1 i2 i3 m0 m1 m2 m3 st
   | .permit o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       emitPermit context o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
+  | .transferWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      emitTransferWithAuthorization context f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
   | .tokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       emitTokenPermit context t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
 

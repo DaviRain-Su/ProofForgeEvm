@@ -13,8 +13,9 @@ claimed credits, and one fixed pending owner. `credits` uses namespace 0 of `Add
 shape whose get/condition/put binding `Examples.Evm.Token` already proves end to end. Application
 policy and typed State writes stay in this file; reusable balance debit mechanics live in
 `Sdk.Fungible`. Successful `transferOwnership` emits `OwnershipTransferStarted`; successful
-`acceptOwnership` emits `OwnershipTransferred`; successful `pause` / `unpause` emit `Paused` /
-`Unpaused`. Constructor init stores the owner argument and empty pending state; it does not log.
+`acceptOwnership` and `renounceOwnership` emit `OwnershipTransferred`; renunciation clears both
+owner and pending nominee. Successful `pause` / `unpause` emit `Paused` / `Unpaused`. Constructor
+init stores the owner argument and empty pending state; it does not log.
 -/
 
 structure State where
@@ -58,6 +59,16 @@ def acceptOwnership (s : State) : Except Error (State × UInt64) :=
     .ok ({ owner := s.ownership, paused := s.paused, total := s.total, ownership :=
       Access.Ownership.consume s.ownership },
       Ownable.Log.ownershipTransferred s.owner s.ownership)
+  else
+    .ok (s, Access.ownerViolation)
+
+/-- Permanently remove the current owner and clear any pending nominee. Non-owner →
+    `Unauthorized(caller)`. Success emits `OwnershipTransferred(previousOwner, address(0))`. -/
+@[pf_entry]
+def renounceOwnership (s : State) : Except Error (State × UInt64) :=
+  if Access.requireOwner s.owner then
+    .ok ({ s with owner := Address.zero, ownership := Access.Ownership.cancel s.ownership },
+      Ownable.Log.ownershipTransferred s.owner Address.zero)
   else
     .ok (s, Access.ownerViolation)
 

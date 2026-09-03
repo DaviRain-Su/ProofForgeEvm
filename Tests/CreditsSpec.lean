@@ -70,6 +70,12 @@ def zero256 : UInt256 := ⟨0, 0, 0, 0⟩
   | .ok (st, ret) => ret == 0 && st.owner == sample
   | .error _ => false
 
+#guard
+  match renounceOwnership (init sample) with
+  | .ok (st, ret) =>
+      ret == 0 && st.owner == Address.zero && st.ownership == Access.Ownership.none
+  | .error _ => false
+
 #pf_evm_build Examples.Evm.Credits
 
 open Lean Elab Command
@@ -86,7 +92,7 @@ elab "#pf_guard_credits" : command => do
     | .ok program => pure program
     | .error reason => throwError reason
   let entryNames := program.entries.map (·.ixName)
-  for name in #["transferOwnership", "acceptOwnership", "grant", "claim",
+  for name in #["transferOwnership", "acceptOwnership", "renounceOwnership", "grant", "claim",
       "pause", "unpause", "ownerOf", "pendingOwner", "creditOf", "pendingOf", "totalOf", "pausedOf"] do
     unless entryNames.contains name do
       throwError s!"missing Credits entry {name}"
@@ -140,6 +146,12 @@ elab "#pf_guard_credits" : command => do
   for field in #["ownership_w0", "ownership_w1", "ownership_w2"] do
     unless storesZero 16 field acceptM.ops do
       throwError s!"Credits acceptOwnership did not clear {field}"
+  let some renounceM := program.entries.find? (·.ixName == "renounceOwnership")
+    | throwError "missing Credits renounceOwnership"
+  for field in #["owner_w0", "owner_w1", "owner_w2", "ownership_w0", "ownership_w1",
+      "ownership_w2"] do
+    unless storesZero 16 field renounceM.ops do
+      throwError s!"Credits renounceOwnership did not clear {field}"
   let some ownerM := program.entries.find? (·.ixName == "ownerOf")
     | throwError "missing Credits ownerOf"
   unless ownerM.view && ownerM.retWidths == #[20] do
@@ -167,7 +179,7 @@ elab "#pf_guard_credits" : command => do
   let abi := ProofForge.Evm.Emit.emitAbi program
   for name in #["\"name\":\"Unauthorized\"", "\"name\":\"Paused\"", "\"name\":\"ZeroAddress\"",
       "\"name\":\"Insufficient\"", "\"name\":\"transferOwnership\"",
-      "\"name\":\"acceptOwnership\"", "\"name\":\"grant\"", "\"name\":\"claim\"",
+      "\"name\":\"acceptOwnership\"", "\"name\":\"renounceOwnership\"", "\"name\":\"grant\"", "\"name\":\"claim\"",
       "\"name\":\"creditOf\"", "\"name\":\"totalOf\""] do
     unless abi.contains name do
       throwError s!"Credits abi missing {name}"

@@ -10,9 +10,10 @@ EVM-SDK-1 consumer A: a counter guarded by `Access.requireOwner` /
 The owner is an explicit `Address` state field (mutable so `acceptOwnership` can rotate it), the
 paused flag is an explicit `UInt8` state field, and `ownership` contains exactly one pending
 address. All storage writes stay in this file. Successful `transferOwnership` emits Ownable2Step
-`OwnershipTransferStarted`; successful `acceptOwnership` emits canonical `OwnershipTransferred`;
-successful `pause` / `unpause` emit `Paused` / `Unpaused`. Constructor init stores the owner
-argument and empty pending state; it does not log (constructor effects are not lowered).
+`OwnershipTransferStarted`; successful `acceptOwnership` and `renounceOwnership` emit canonical
+`OwnershipTransferred`; renunciation clears both owner and pending nominee. Successful `pause` /
+`unpause` emit `Paused` / `Unpaused`. Constructor init stores the owner argument and empty pending
+state; it does not log (constructor effects are not lowered).
 -/
 
 def u64Max : UInt64 := ~~~(0 : UInt64)
@@ -68,6 +69,16 @@ def acceptOwnership (s : State) : Except Error (State × UInt64) :=
     .ok ({ owner := s.ownership, paused := s.paused, count := s.count, ownership :=
       Access.Ownership.consume s.ownership },
       Ownable.Log.ownershipTransferred s.owner s.ownership)
+  else
+    .ok (s, Access.ownerViolation)
+
+/-- Permanently remove the current owner and clear any pending nominee. Non-owner →
+    `Unauthorized(caller)`. Success emits `OwnershipTransferred(previousOwner, address(0))`. -/
+@[pf_entry]
+def renounceOwnership (s : State) : Except Error (State × UInt64) :=
+  if Access.requireOwner s.owner then
+    .ok ({ s with owner := Address.zero, ownership := Access.Ownership.cancel s.ownership },
+      Ownable.Log.ownershipTransferred s.owner Address.zero)
   else
     .ok (s, Access.ownerViolation)
 

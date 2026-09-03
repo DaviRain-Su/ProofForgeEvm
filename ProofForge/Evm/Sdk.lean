@@ -2,10 +2,13 @@ import ProofForge.Core.SafeCast
 import ProofForge.Core.Math
 import ProofForge.Evm.Sdk.Base
 import ProofForge.Evm.Sdk.Fungible
+import ProofForge.Evm.Sdk.Erc20Meta
 import ProofForge.Evm.Sdk.Erc165
 import ProofForge.Evm.Sdk.Erc2981
 import ProofForge.Evm.Sdk.Erc721
 import ProofForge.Evm.Sdk.Erc1155
+import ProofForge.Evm.Sdk.Erc4626
+import ProofForge.Evm.Sdk.Erc6909
 import ProofForge.Evm.Sdk.Payments
 import ProofForge.Evm.Sdk.SafeErc20
 import ProofForge.Evm.Sdk.Pausable
@@ -21,6 +24,17 @@ import ProofForge.Evm.Sdk.StorageCheckpoints
 import ProofForge.Evm.Sdk.Roles
 import ProofForge.Evm.Sdk.Nonces
 import ProofForge.Evm.Sdk.RateLimit
+import ProofForge.Evm.Sdk.MetadataUri
+import ProofForge.Evm.Sdk.Eip712Domain
+import ProofForge.Evm.Sdk.Ierc5313
+import ProofForge.Evm.Sdk.Ierc6372
+import ProofForge.Evm.Sdk.Ecdsa
+import ProofForge.Evm.Sdk.Vesting
+import ProofForge.Evm.Sdk.MerkleProof
+import ProofForge.Evm.Sdk.BlockHeader
+import ProofForge.Evm.Sdk.DefaultAdminDelay
+import ProofForge.Evm.Sdk.Erc3009
+import ProofForge.Evm.Sdk.OzAudit
 import ProofForge.Evm.Sdk.Reentrancy
 
 /-!
@@ -32,7 +46,12 @@ bounded ERC-165 interface-id predicates, fail-closed ERC-20 consumer helpers, a 
 royalty quote,
 compile-time static storage declarations, persistent bounded UInt64 storage vectors/bitmaps/ring
 queues/enumerable sets/maps/checkpoints, bounded static role sets with canonical RoleGranted /
-RoleRevoked logs, bounded per-address nonce helpers, and shared allocation-free
-checked wide-to-UInt8/UInt16/UInt32/UInt64 narrowing and bounded UInt64 math. Applications import
-this module rather than target Runtime, Ops, IR, or Emit internals.
+RoleRevoked logs, bounded per-address nonce and fixed-window rate-limit helpers, bounded static
+ERC-721/1155 metadata URI helpers, EIP-5267-style static EIP-712 domain field helpers, IERC5313
+owner and IERC6372 clock mode helpers, public typed ECDSA recover (`Sdk.Ecdsa`), bounded
+single-beneficiary native-ETH vesting schedule helpers, bounded Merkle proof verification helpers,
+bounded block header / blockhash observation helpers,
+OZ completion-audit inventory counters, and shared allocation-free checked wide-to-UInt8/UInt16/UInt32/UInt64
+narrowing and bounded UInt64 math. Applications import this module rather than target Runtime, Ops,
+IR, or Emit internals.
 -/

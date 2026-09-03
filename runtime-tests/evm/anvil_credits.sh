@@ -187,4 +187,25 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'creditOf(address)(uint256)' "$third")" \
   0 "new-owner claim debits credit"
 
-echo "evm-anvil-credits: ok (Access reuse + OwnershipTransferStarted LOG3 + OwnershipTransferred LOG3 + Paused/Unpaused LOG1)"
+# Renunciation clears both the owner and a live pending nomination.
+"$cast" send --rpc-url "$rpc" --private-key "$third_key" \
+  "$addr" 'transferOwnership(address)' "$sender" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$third_key" \
+  "$addr" 'renounceOwnership()')"
+pf_evm_typed_event_check "$abi" "$receipt" OwnershipTransferred "$topic_own" \
+  "{\"previousOwner\": \"$third\", \"newOwner\": \"0x0000000000000000000000000000000000000000\"}" \
+  "renounceOwnership OwnershipTransferred LOG3"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'ownerOf()(address)')" \
+  "0x0000000000000000000000000000000000000000" "owner cleared after renounce"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'pendingOwner()(address)')" \
+  "0x0000000000000000000000000000000000000000" "pendingOwner cleared after renounce"
+if "$cast" send --rpc-url "$rpc" --private-key "$third_key" \
+    "$addr" 'grant(address,uint256)' "$third" 1 >/dev/null 2>&1; then
+  echo "FAIL: owner action after renounce unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_unauthorized "$addr" "$third" \
+  "$("$cast" calldata 'grant(address,uint256)' "$third" 1)" "$third" \
+  "owner action after renounce"
+
+echo "evm-anvil-credits: ok (Access reuse + ownership transfer/renounce LOG3 + Paused/Unpaused LOG1)"

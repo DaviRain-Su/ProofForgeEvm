@@ -6,10 +6,10 @@ import Examples.Evm.Credits
 import Examples.Evm.Capped
 
 /-!
-S4b/W3: canonical Ownable `OwnershipTransferred` (LOG3) on accept, Ownable2Step
+S4b/W3/W5: canonical Ownable `OwnershipTransferred` (LOG3) on accept/renounce, Ownable2Step
 `OwnershipTransferStarted` (LOG3) on nominate, and Pausable `Paused`/`Unpaused` (LOG1).
-Constructor init does not log. TwoStepCounter/Credits adopt both Ownable events; Capped adopts
-pause events only (immutable owner). Live receipt matrices live in
+Constructor init does not log. TwoStepCounter/Credits adopt both Ownable events, including
+renunciation to the zero owner; Capped adopts pause events only (immutable owner). Live receipt matrices live in
 `runtime-tests/evm/anvil_twostep_counter.sh`, `anvil_credits.sh`, and `anvil_capped.sh`.
 -/
 
@@ -116,6 +116,12 @@ private def expectPolicyEvents (moduleName : Name) (wantOwnership : Bool) : Comm
           #[("previousOwner", true), ("newOwner", true)] &&
         acceptFrames[0]!.args[0]!.type == .address20 do
       throwError s!"{moduleName}.acceptOwnership OwnershipTransferred frame diverged: {repr acceptFrames}"
+    let renounceFrames := sourceTypedFrames (← methodOps source "renounceOwnership")
+    unless renounceFrames.size == 1 &&
+        eventMatches renounceFrames[0]! "OwnershipTransferred"
+          #[("previousOwner", true), ("newOwner", true)] &&
+        renounceFrames[0]!.args[0]!.type == .address20 do
+      throwError s!"{moduleName}.renounceOwnership OwnershipTransferred frame diverged: {repr renounceFrames}"
     let startFrames := sourceTypedFrames (← methodOps source "transferOwnership")
     unless startFrames.size == 1 &&
         eventMatches startFrames[0]! "OwnershipTransferStarted"
@@ -162,8 +168,8 @@ private def expectOzPolicy : CommandElabM Unit := do
   expectPolicyEvents `Examples.Evm.TwoStepCounter true
   expectPolicyEvents `Examples.Evm.Credits true
   expectPolicyEvents `Examples.Evm.Capped false
-  expectDigest `Examples.Evm.TwoStepCounter "e23c2f54e43c0be1"
-  expectDigest `Examples.Evm.Credits "bb01c32165d42b5d"
+  expectDigest `Examples.Evm.TwoStepCounter "9e20eb417583ce6e"
+  expectDigest `Examples.Evm.Credits "c2ceddddbf415d40"
   expectDigest `Examples.Evm.Capped "b0b0b7244ebb8aed"
 
 elab "#pf_guard_evm_oz_policy_events" : command => expectOzPolicy

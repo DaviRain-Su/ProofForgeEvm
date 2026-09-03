@@ -59,6 +59,10 @@ def fungibleAllowances : Fungible.Allowances := secondMap.handle
   UInt256.zero
 #guard Fungible.Allowances.approve fungibleAllowances paymentAddress paymentAddress paymentAmount == 9
 #guard Fungible.Allowances.increase fungibleAllowances paymentAddress paymentAddress paymentAmount == 0
+#guard Fungible.Log.transfer paymentAddress paymentAddress paymentAmount == 0
+#guard Fungible.Log.approval paymentAddress paymentAddress paymentAmount == 0
+#guard Erc20Meta.defaultDecimals == 18
+#guard Erc20Meta.canPublish Erc20Meta.emptyName Erc20Meta.emptySymbol == false
 
 /-- Compile-time surface check for the checked debit/credit/transfer branches. Comparison and
 revert Runtime leaves are extraction contracts and therefore are not assigned host-evaluation

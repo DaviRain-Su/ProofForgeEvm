@@ -1,5 +1,6 @@
 import ProofForge.Evm.WideWord
 import ProofForge.Evm.Ops
+import ProofForge.Evm.Precompile.Emit
 
 namespace ProofForge.Evm.WideWord.Emit
 
@@ -251,6 +252,160 @@ private def emitArith256 (context : Context σ) (op limb : Nat)
         indent ++ "let " ++ nm ++ " := " ++ packU256Word rv limb ++ nl
       return (txt, nm, t7)
 
+private def emitKeccak256Pair32 (context : Context σ) (limb : Nat)
+    (a0 a1 a2 a3 b0 b1 b2 b3 : Ops.Val) (st : σ) :
+    Except String (String × String × σ) := do
+  let indent := context.indent
+  let (p0, x0, s0) ← context.materialize a0 st
+  let (p1, x1, s1) ← context.materialize a1 s0
+  let (p2, x2, s2) ← context.materialize a2 s1
+  let (p3, x3, s3) ← context.materialize a3 s2
+  let (q0, y0, t0) ← context.materialize b0 s3
+  let (q1, y1, t1) ← context.materialize b1 t0
+  let (q2, y2, t2) ← context.materialize b2 t1
+  let (q3, y3, t3) ← context.materialize b3 t2
+  let cacheKey :=
+    "keccak256Pair32|" ++ context.valKey a0 ++ "|" ++ context.valKey a1 ++ "|" ++
+      context.valKey a2 ++ "|" ++ context.valKey a3 ++ "|" ++ context.valKey b0 ++ "|" ++
+      context.valKey b1 ++ "|" ++ context.valKey b2 ++ "|" ++ context.valKey b3
+  match context.lookupWide t3 cacheKey with
+  | some rv =>
+      let (nm, t4) := context.fresh t3
+      return (p0 ++ p1 ++ p2 ++ p3 ++ q0 ++ q1 ++ q2 ++ q3 ++
+        indent ++ "let " ++ nm ++ " := " ++ packU256Word rv limb ++ nl, nm, t4)
+  | none =>
+      let (lv, t4) := context.fresh t3
+      let (sv, t5) := context.fresh t4
+      let (left, t6) := context.fresh t5
+      let (right, t7) := context.fresh t6
+      let (hash, t8) := context.fresh t7
+      let (nm, t9) := context.fresh t8
+      let txt := p0 ++ p1 ++ p2 ++ p3 ++ q0 ++ q1 ++ q2 ++ q3 ++
+        indent ++ "pf_store_fixed_bytes(0, " ++ x0 ++ ", " ++ x1 ++ ", " ++ x2 ++ ", " ++ x3 ++ ", 32)" ++ nl ++
+        indent ++ "pf_store_fixed_bytes(32, " ++ y0 ++ ", " ++ y1 ++ ", " ++ y2 ++ ", " ++ y3 ++ ", 32)" ++ nl ++
+        indent ++ "let " ++ lv ++ " := mload(0)" ++ nl ++
+        indent ++ "let " ++ sv ++ " := mload(32)" ++ nl ++
+        indent ++ "let " ++ left ++ " := " ++ lv ++ nl ++
+        indent ++ "let " ++ right ++ " := " ++ sv ++ nl ++
+        indent ++ "if gt(" ++ left ++ ", " ++ right ++ ") {" ++ nl ++
+        indent ++ "  " ++ left ++ " := " ++ sv ++ nl ++
+        indent ++ "  " ++ right ++ " := " ++ lv ++ nl ++
+        indent ++ "}" ++ nl ++
+        indent ++ "mstore(0, " ++ left ++ ")" ++ nl ++
+        indent ++ "mstore(32, " ++ right ++ ")" ++ nl ++
+        indent ++ "let " ++ hash ++ " := keccak256(0, 64)" ++ nl ++
+        indent ++ "let " ++ nm ++ " := " ++ packU256Word hash limb ++ nl
+      return (txt, nm, context.rememberWide t9 hash cacheKey)
+
+private def emitMerkleVerify256 (context : Context σ) (operands : Array Ops.Val) (st : σ) :
+    Except String (String × String × σ) := do
+  unless operands.size == 41 do
+    throw s!"extract/unsupported: depth-8 Merkle verify arity {operands.size}"
+  let indent := context.indent
+  let mut text := ""
+  let mut names : Array String := #[]
+  let mut state := st
+  for operand in operands do
+    let (pre, name, next) ← context.materialize operand state
+    text := text ++ pre
+    names := names.push name
+    state := next
+  let (computed, s0) := context.fresh state
+  let (rootv, s1) := context.fresh s0
+  let (result, s2) := context.fresh s1
+  state := s2
+  text := text ++
+    indent ++ "let " ++ computed ++ " := 0" ++ nl ++
+    indent ++ "let " ++ result ++ " := 0" ++ nl ++
+    indent ++ "if iszero(gt(" ++ names[0]! ++ ", 8)) {" ++ nl ++
+    indent ++ "  pf_store_fixed_bytes(0, " ++ names[1]! ++ ", " ++ names[2]! ++
+      ", " ++ names[3]! ++ ", " ++ names[4]! ++ ", 32)" ++ nl ++
+    indent ++ "  " ++ computed ++ " := mload(0)" ++ nl
+  for i in [0:8] do
+    let base := 5 + 4 * i
+    let (sibling, t0) := context.fresh state
+    let (left, t1) := context.fresh t0
+    let (right, t2) := context.fresh t1
+    state := t2
+    text := text ++
+      indent ++ "  if gt(" ++ names[0]! ++ ", " ++ toString i ++ ") {" ++ nl ++
+      indent ++ "    pf_store_fixed_bytes(32, " ++ names[base]! ++ ", " ++
+        names[base + 1]! ++ ", " ++ names[base + 2]! ++ ", " ++ names[base + 3]! ++
+        ", 32)" ++ nl ++
+      indent ++ "    let " ++ sibling ++ " := mload(32)" ++ nl ++
+      indent ++ "    let " ++ left ++ " := " ++ computed ++ nl ++
+      indent ++ "    let " ++ right ++ " := " ++ sibling ++ nl ++
+      indent ++ "    if gt(" ++ left ++ ", " ++ right ++ ") {" ++ nl ++
+      indent ++ "      " ++ left ++ " := " ++ sibling ++ nl ++
+      indent ++ "      " ++ right ++ " := " ++ computed ++ nl ++
+      indent ++ "    }" ++ nl ++
+      indent ++ "    mstore(0, " ++ left ++ ")" ++ nl ++
+      indent ++ "    mstore(32, " ++ right ++ ")" ++ nl ++
+      indent ++ "    " ++ computed ++ " := keccak256(0, 64)" ++ nl ++
+      indent ++ "  }" ++ nl
+  text := text ++
+    indent ++ "  pf_store_fixed_bytes(64, " ++ names[37]! ++ ", " ++ names[38]! ++
+      ", " ++ names[39]! ++ ", " ++ names[40]! ++ ", 32)" ++ nl ++
+    indent ++ "  let " ++ rootv ++ " := mload(64)" ++ nl ++
+    indent ++ "  " ++ result ++ " := eq(" ++ computed ++ ", " ++ rootv ++ ")" ++ nl ++
+    indent ++ "}" ++ nl
+  return (text, result, state)
+
+private def packFixedBytesAt (indent : String) (off : Nat) (w0 w1 w2 w3 : String) : String :=
+  indent ++ "pf_store_fixed_bytes(" ++ toString off ++ ", " ++ w0 ++ ", " ++ w1 ++
+    ", " ++ w2 ++ ", " ++ w3 ++ ", 32)" ++ nl
+
+/-- Convert EVM's big-endian 20-byte address word into source Addr20 little-endian limbs. -/
+private def packAddrWord (src : String) (word : Nat) : String :=
+  let rec orBytes (index remaining : Nat) (acc : String) : String :=
+    match remaining with
+    | 0 => acc
+    | count + 1 =>
+        let byteExpr := "byte(" ++ toString (12 + 8 * word + index) ++ ", " ++ src ++ ")"
+        let next :=
+          if index == 0 then byteExpr
+          else "or(" ++ acc ++ ", shl(" ++ toString (8 * index) ++ ", " ++ byteExpr ++ "))"
+        orBytes (index + 1) count next
+  orBytes 0 (if word == 2 then 4 else 8) "0"
+
+private def precompileContext (context : Context σ) : Precompile.Emit.Context σ :=
+  { fresh := context.fresh, indent := context.indent }
+
+private def emitEcrecover20 (context : Context σ) (limb : Nat) (operands : Array Ops.Val)
+    (st : σ) : Except String (String × String × σ) := do
+  unless operands.size == 13 do
+    throw s!"extract/unsupported: ecrecover arity {operands.size}"
+  let cacheKey :=
+    "ecrecover20|" ++ String.intercalate "|" (operands.map context.valKey).toList
+  match context.lookupWide st cacheKey with
+  | some packed =>
+      let (name, next) := context.fresh st
+      return (context.indent ++ "let " ++ name ++ " := " ++ packAddrWord packed limb ++ nl,
+        name, next)
+  | none =>
+    let indent := context.indent
+    let mut text := ""
+    let mut names : Array String := #[]
+    let mut state := st
+    for operand in operands do
+      let (pre, name, next) ← context.materialize operand state
+      text := text ++ pre
+      names := names.push name
+      state := next
+    let (packed, s0) := context.fresh state
+    let (result, s1) := context.fresh s0
+    let (precompileTxt, signer, s2) ← Precompile.Emit.emit (precompileContext context)
+      Precompile.Plan.ecrecover s1
+    text := text ++
+      packFixedBytesAt indent 0 names[0]! names[1]! names[2]! names[3]! ++
+      indent ++ "mstore(32, " ++ names[4]! ++ ")" ++ nl ++
+      packFixedBytesAt indent 64 names[5]! names[6]! names[7]! names[8]! ++
+      packFixedBytesAt indent 96 names[9]! names[10]! names[11]! names[12]! ++
+      precompileTxt ++
+      indent ++ "let " ++ packed ++ " := " ++ signer ++ nl ++
+      indent ++ "let " ++ result ++ " := " ++ packAddrWord packed limb ++ nl
+    return (text, result, context.rememberWide s2 cacheKey packed)
+
 def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array Ops.Val)
     (st : σ) : Except String (String × String × σ) :=
   match query, operands.toList with
@@ -272,6 +427,14 @@ def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array 
       emitCheckedDivMod256 context operation limb a0 a1 a2 a3 b0 b1 b2 b3 st
   | .arith256 op limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitArith256 context op limb a0 a1 a2 a3 b0 b1 b2 b3 st
+  | .keccak256Pair32 limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
+      emitKeccak256Pair32 context limb a0 a1 a2 a3 b0 b1 b2 b3 st
+  | .merkleVerify256, operands =>
+      emitMerkleVerify256 context operands.toArray st
+  | .ecrecover20 limb, operands =>
+      emitEcrecover20 context limb operands.toArray st
+  | .eqBytes32, [a0, a1, a2, a3, b0, b1, b2, b3] =>
+      emitCompare256 context .eq a0 a1 a2 a3 b0 b1 b2 b3 st
   | _, _ =>
       .error s!"extract/unsupported: evm wide-word query arity {operands.size}"
 

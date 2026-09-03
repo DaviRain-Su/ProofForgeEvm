@@ -22,8 +22,50 @@ private def isExceptOkHead (e : Expr) : Bool :=
 private def isExceptErrorHead (e : Expr) : Bool :=
   isConstNamed e ``Except.error || isConstNamed e ``ProofForge.Core.Except.err
 
+private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
+  let e := peelLets (strip e)
+  match e.getAppFn.constName? with
+  | none => none
+  | some n =>
+    match env.find? n with
+    | some (.ctorInfo c) =>
+      if (c.induct == uint256Name || c.induct == fixedBytesName) && e.getAppArgs.size ≥ 4 then
+        some (e.getAppArgs.extract (e.getAppArgs.size - 4) e.getAppArgs.size)
+      else none
+    | _ => none
+
 set_option maxRecDepth 2048 in
 mutual
+private partial def bytes32LeavesAsVal (env : Environment) (fuel : Nat) (e : Expr) :
+    Ops.Val × Ops.Val × Ops.Val × Ops.Val :=
+  let e := unfoldUserHelpers env 8 e
+  let projConst : String → Name
+    | "w0" => ``ProofForge.Core.Value.FixedBytes.w0
+    | "w1" => ``ProofForge.Core.Value.FixedBytes.w1
+    | "w2" => ``ProofForge.Core.Value.FixedBytes.w2
+    | _ => ``ProofForge.Core.Value.FixedBytes.w3
+  let proj (name : String) : Ops.Val :=
+    (asVal env fuel (mkApp (mkConst (projConst name)) e)).getD (flattenField (.arg 0) name)
+  match uint256CtorFields env e with
+  | some fields =>
+    let leaf (i : Nat) : Ops.Val := (asVal env fuel fields[i]!).getD (proj s!"w{i}")
+    (leaf 0, leaf 1, leaf 2, leaf 3)
+  | none =>
+    match asVal env fuel e with
+    | some v => (flattenField v "w0", flattenField v "w1", flattenField v "w2", flattenField v "w3")
+    | none => (proj "w0", proj "w1", proj "w2", proj "w3")
+
+private partial def ecrecoverWideOperands (env : Environment) (fuel : Nat) (args : Array Expr) :
+    Option (Array Ops.Val) :=
+  if args.size < 4 then none
+  else
+    let base := args.size - 4
+    let (h0, h1, h2, h3) := bytes32LeavesAsVal env fuel args[base]!
+    let vv := (asVal env fuel args[base + 1]!).getD (.arg 1)
+    let (r0, r1, r2, r3) := bytes32LeavesAsVal env fuel args[base + 2]!
+    let (s0, s1, s2, s3) := bytes32LeavesAsVal env fuel args[base + 3]!
+    some #[h0, h1, h2, h3, vv, r0, r1, r2, r3, s0, s1, s2, s3]
+
 private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
   match fuel with
   | 0 => none
@@ -181,6 +223,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
             endsWith baseE ".evmDiv256" then some (.checkedDivMod256 .quotient limb.toNat)
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMod256 ||
             endsWith baseE ".evmMod256" then some (.checkedDivMod256 .remainder limb.toNat)
+        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmKeccak256Pair32 ||
+            endsWith baseE ".evmKeccak256Pair32" then some (.keccak256Pair32 limb.toNat)
         else none
       let unaryQuery? : Option Evm.WideWord.Query :=
         if isConstNamed baseE ``ProofForge.Evm.Runtime.evmNot256 ||
@@ -420,6 +464,13 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
           endsWith baseE ".evmOrigin20" then
         some (.ext (.evm (.component (.environment (.origin20
           (if leaf == "w0" then 0 else if leaf == "w1" then 1 else 2))))) #[])
+      else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmEcrecover ||
+          endsWith baseE ".evmEcrecover" then
+        match ecrecoverWideOperands env fuel baseE.getAppArgs with
+        | none => none
+        | some operands =>
+            let limb := if leaf == "w0" then 0 else if leaf == "w1" then 1 else 2
+            some (.ext (.evm (.component (.wideWord (.ecrecover20 limb)))) operands)
       else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmImm20b ||
           endsWith baseE ".evmImm20b" then
         some (match leaf with
@@ -477,6 +528,38 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       | some b, some a0, some a1, some a2, some b0, some b1, some b2 =>
         some (.mapGetPair b a0 a1 a2 b0 b1 b2)
       | _, _, _, _, _, _, _ => none
+  else if endsWith e ".evmMerkleVerify256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmMerkleVerify256 then
+    let args := e.getAppArgs
+    if args.size < 14 then none
+    else do
+      let base := args.size - 14
+      let length ← asVal env fuel args[base]!
+      let mut operands := #[length]
+      for i in [0:9] do
+        let (w0, w1, w2, w3) := bytes32LeavesAsVal env fuel args[base + 1 + i]!
+        operands := operands ++ #[w0, w1, w2, w3]
+      for i in [0:4] do
+        let root ← asVal env fuel args[base + 10 + i]!
+        operands := operands.push root
+      return .ext (.evm (.component (.wideWord .merkleVerify256))) operands
+  else if endsWith e ".evmEcrecover" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmEcrecover then
+    match ecrecoverWideOperands env fuel e.getAppArgs with
+    | none => none
+    | some operands =>
+        some (.ext (.evm (.component (.wideWord (.ecrecover20 0)))) operands)
+  else if endsWith e ".evmEqBytes32" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmEqBytes32 then
+    let args := e.getAppArgs
+    if args.size < 8 then none
+    else
+      let get (i : Nat) : Option Ops.Val := asVal env fuel args[args.size - 8 + i]!
+      match get 0, get 1, get 2, get 3, get 4, get 5, get 6, get 7 with
+      | some a0, some a1, some a2, some a3, some b0, some b1, some b2, some b3 =>
+        some (.ext (.evm (.component (.wideWord .eqBytes32)))
+          #[a0, a1, a2, a3, b0, b1, b2, b3])
+      | _, _, _, _, _, _, _, _ => none
   else if endsWith e ".evmGe256" || isConstNamed e ``ProofForge.Evm.Runtime.evmGe256 ||
       endsWith e ".evmEq256" || isConstNamed e ``ProofForge.Evm.Runtime.evmEq256 ||
       endsWith e ".evmLt256" || isConstNamed e ``ProofForge.Evm.Runtime.evmLt256 ||
@@ -789,7 +872,9 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       (endsWith e ".evmTokenPermit" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmTokenPermit) ||
       (endsWith e ".evmPermit" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmPermit)) &&
+      isConstNamed e ``ProofForge.Evm.Runtime.evmPermit) ||
+      (endsWith e ".evmTransferWithAuthorization" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmTransferWithAuthorization)) &&
       e.getAppArgs.size ≥ 1 then
       if endsWith e ".evmMapGetU64" || isConstNamed e ``ProofForge.Evm.Runtime.evmMapGetU64 then
       let args := e.getAppArgs
@@ -940,6 +1025,13 @@ private def addr20Leaves (env : Environment) (e : Expr) : Ops.Val × Ops.Val × 
     (.ext (.evm (.component (.environment (.origin20 0)))) #[],
       .ext (.evm (.component (.environment (.origin20 1)))) #[],
       .ext (.evm (.component (.environment (.origin20 2)))) #[])
+  else if isConstNamed e ``ProofForge.Evm.Runtime.evmEcrecover || endsWith e ".evmEcrecover" then
+    match ecrecoverWideOperands env 32 e.getAppArgs with
+    | none => (.arg 0, .arg 1, .arg 2)
+    | some operands =>
+        (.ext (.evm (.component (.wideWord (.ecrecover20 0)))) operands,
+         .ext (.evm (.component (.wideWord (.ecrecover20 1)))) operands,
+         .ext (.evm (.component (.wideWord (.ecrecover20 2)))) operands)
   else if isConstNamed e ``ProofForge.Evm.Runtime.evmImm20b || endsWith e ".evmImm20b" then
     (.evmImmX0, .evmImmX1, .evmImmX2)
   else if isConstNamed e ``ProofForge.Evm.Runtime.evmImm20 || endsWith e ".evmImm20" then
@@ -964,18 +1056,6 @@ private def addr20CtorFields (env : Environment) (e : Expr) : Option (Array Expr
     | some (.ctorInfo c) =>
       if c.induct == addr20Name && e.getAppArgs.size ≥ 3 then
         some (e.getAppArgs.extract (e.getAppArgs.size - 3) e.getAppArgs.size)
-      else none
-    | _ => none
-
-private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
-  let e := peelLets (strip e)
-  match e.getAppFn.constName? with
-  | none => none
-  | some n =>
-    match env.find? n with
-    | some (.ctorInfo c) =>
-      if (c.induct == uint256Name || c.induct == fixedBytesName) && e.getAppArgs.size ≥ 4 then
-        some (e.getAppArgs.extract (e.getAppArgs.size - 4) e.getAppArgs.size)
       else none
     | _ => none
 
@@ -1004,7 +1084,9 @@ private def uint256Leaves (env : Environment) (e : Expr) :
         isConstNamed e ``ProofForge.Evm.Runtime.evmShl256 || endsWith e ".evmShl256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmShr256 || endsWith e ".evmShr256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmDiv256 || endsWith e ".evmDiv256" ||
-        isConstNamed e ``ProofForge.Evm.Runtime.evmMod256 || endsWith e ".evmMod256" then
+        isConstNamed e ``ProofForge.Evm.Runtime.evmMod256 || endsWith e ".evmMod256" ||
+        isConstNamed e ``ProofForge.Evm.Runtime.evmKeccak256Pair32 ||
+        endsWith e ".evmKeccak256Pair32" then
       (proj "w0", proj "w1", proj "w2", proj "w3")
     else
       match val env e with
@@ -1264,6 +1346,88 @@ private def asCmp (env : Environment) (e : Expr) : Option (Ops.Cmp × Ops.Val ×
       else none
 
 /-- Normalize pure Boolean syntax to a 0/1 value so compound guards do not duplicate branches. -/
+private def staticBoundedStringLengthLit? (env : Environment) (e : Expr) : Option Nat :=
+  let e := strip (unfoldUserHelpers env 16 e)
+  match e.getAppFn.constName? with
+  | some ctor =>
+    match env.find? ctor with
+    | some (.ctorInfo info) =>
+      if info.induct != boundedStringName then none
+      else
+        let args := e.getAppArgs
+        if args.size < 2 then none
+        else
+          let lengthE := strip args[args.size - 2]!
+          match lengthE with
+          | .lit (.natVal n) => some n
+          | _ =>
+            match val env lengthE with
+            | some (.lit n) => some n.toNat
+            | _ => none
+    | _ => none
+  | none => none
+
+private def boundedCanPublishVal (env : Environment) (nameE versionE : Expr) : Option Ops.Val := do
+  let nameLen ← staticBoundedStringLengthLit? env nameE
+  let verLen ← staticBoundedStringLengthLit? env versionE
+  if nameLen > 0 && verLen > 0 then return .lit 1 else return .lit 0
+
+private def staticUInt64Lit? (env : Environment) (e : Expr) : Option Nat :=
+  let e := strip (unfoldUserHelpers env 16 e)
+  match e with
+  | .lit (.natVal n) => some n
+  | _ =>
+    match val env e with
+    | some (.lit n) => some n.toNat
+    | _ => none
+
+private def staticAddressIsZeroLit? (env : Environment) (e : Expr) : Option Bool :=
+  let e := strip (unfoldUserHelpers env 16 e)
+  if endsWith e ".evmImm20" || isConstNamed e ``ProofForge.Evm.Runtime.evmImm20 ||
+      endsWith e ".address" then
+    none
+  else
+    match val env e with
+    | some (.lit 0) => some true
+    | some (.lit _) => some false
+    | _ =>
+      match e with
+      | .lit (.natVal 0) => some true
+      | .lit _ => some false
+      | _ => none
+
+private def immBeneficiaryNonZeroVal : Ops.Val :=
+  let eqZero : Ops.Val :=
+    .ext (.evm (.component (.wideWord .eq20)))
+      #[.ext (.evm .immW0) #[], .ext (.evm .immW1) #[], .ext (.evm .immW2) #[],
+        .lit 0, .lit 0, .lit 0]
+  .select .eq eqZero (.lit 0) (.lit 0) (.lit 1)
+
+private def immDurationWellFormedVal : Ops.Val :=
+  let limit : Ops.Val := .subU64 (.lit 0xFFFFFFFFFFFFFFFF) (.ext (.evm .immU64b) #[])
+  .select .ge limit (.ext (.evm .immU64) #[]) (.lit 1) (.lit 0)
+
+private def boundedCanScheduleVal (env : Environment)
+    (beneficiaryE startE durationE : Expr) : Option Ops.Val := do
+  let b := strip (unfoldUserHelpers env 16 beneficiaryE)
+  let s := strip (unfoldUserHelpers env 16 startE)
+  let d := strip (unfoldUserHelpers env 16 durationE)
+  match staticAddressIsZeroLit? env b with
+  | some true => return .lit 0
+  | some false =>
+    let start ← staticUInt64Lit? env s
+    let duration ← staticUInt64Lit? env d
+    if duration == 0 || start + duration ≥ start then return .lit 1 else return .lit 0
+  | none =>
+    if (endsWith b ".evmImm20" || isConstNamed b ``ProofForge.Evm.Runtime.evmImm20 ||
+          endsWith b ".address") &&
+        (endsWith s ".evmImmU64" || isConstNamed s ``ProofForge.Evm.Runtime.evmImmU64 ||
+          endsWith s ".u64") &&
+        (endsWith d ".evmImmU64b" || isConstNamed d ``ProofForge.Evm.Runtime.evmImmU64b ||
+          endsWith d ".u64b") then
+      return .bitAnd immBeneficiaryNonZeroVal immDurationWellFormedVal
+    else none
+
 private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
   match fuel with
   | 0 => none
@@ -1299,6 +1463,10 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       | _, _, _ => none
     else if isConstNamed e ``Decidable.decide && args.size ≥ 2 then
       asBoolVal env fuel' args[args.size - 2]!
+    else if endsWith e ".canPublish" && args.size ≥ 2 then
+      boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
+    else if endsWith e ".canSchedule" && args.size ≥ 3 then
+      boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
     else if isConstNamed e ``Eq && args.size ≥ 2 then
       let lhs := strip args[args.size - 2]!
       let rhs := strip args[args.size - 1]!
@@ -1488,22 +1656,6 @@ private def asVectorLits (env : Environment) (e : Expr) : Option (Array Ops.Val)
     | some vs => if vs.isEmpty then none else some vs
     | none => none
   else none
-
-/-- A constructed bounded boundary value already has the target-neutral fixed frame expected by
-the codec adapters: one length followed by every compile-time-capacity slot. Keep this recognition
-separate from ordinary user structures because these compiler-owned polymorphic carriers are not
-persistent state and their capacity parameter is erased after extraction. -/
-private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
-  let e := substLets 32 (strip e)
-  let ctor ← e.getAppFn.constName?
-  let .ctorInfo info ← env.find? ctor | none
-  unless info.induct == boundedVecName || info.induct == boundedBytesName ||
-      info.induct == boundedStringName do none
-  let args := e.getAppArgs
-  unless args.size ≥ 2 do none
-  let length ← val env args[args.size - 2]!
-  let values ← asVectorLits env args[args.size - 1]!
-  return #[length] ++ values
 
 /-- Compiler-owned fixed-width scalar constructors are boundary values, not persistent State.
 Expose their ordered limbs directly so target codecs see the same frame as projected wide values. -/
@@ -2131,6 +2283,113 @@ private def scalarResultValues (env : Environment) (fuel : Nat) (e : Expr) :
         <|> asRegisteredBoundaryCtorFields env unfolded
         <|> asRegisteredBoundaryCtorFields env e <|>
         (asBoolVal env fuel e <|> val env e).map (#[·])
+
+private def peelProofLam (value : Expr) : Expr :=
+  match strip value with
+  | .lam _ _ body _ => body.lowerLooseBVars 1 1
+  | value => value
+
+private def ownersMapBaseVal (env : Environment) (ownersE : Expr) : Ops.Val :=
+  let ownersE := unfoldUserHelpers env 16 (strip ownersE)
+  foldClosedU64 <| (asEvmMapBaseLit env 64 ownersE <|> val env ownersE).getD (.lit 0)
+
+private def boundedCanEncode721Val (env : Environment) (tokenIdE : Expr) : Option Ops.Val := do
+  let tokenIdE := unfoldUserHelpers env 8 (strip tokenIdE)
+  let w3 ← val env (mkApp (mkConst ``ProofForge.Core.Value.UInt256.w3) tokenIdE)
+  some (.select .eq w3 (.lit 0) (.lit 1) (.lit 0))
+
+/-- True when an ERC-721 token id is minted: owner map load is non-zero at `tokenKey`. -/
+private def boundedIsMinted721Val (env : Environment) (ownersE tokenIdE : Expr) : Option Ops.Val := do
+  let base := ownersMapBaseVal env ownersE
+  let tokenIdE := unfoldUserHelpers env 8 (strip tokenIdE)
+  let w0 ← val env (mkApp (mkConst ``ProofForge.Core.Value.UInt256.w0) tokenIdE)
+  let w1 ← val env (mkApp (mkConst ``ProofForge.Core.Value.UInt256.w1) tokenIdE)
+  let w2 ← val env (mkApp (mkConst ``ProofForge.Core.Value.UInt256.w2) tokenIdE)
+  let o0 : Ops.Val := .ext (.evm (.component (.hashedMap (.getAddr256 0)))) #[base, w0, w1, w2]
+  let o1 : Ops.Val := .ext (.evm (.component (.hashedMap (.getAddr256 1)))) #[base, w0, w1, w2]
+  let o2 : Ops.Val := .ext (.evm (.component (.hashedMap (.getAddr256 2)))) #[base, w0, w1, w2]
+  let eqZero : Ops.Val := .ext (.evm (.component (.wideWord .eq20))) #[o0, o1, o2, .lit 0, .lit 0, .lit 0]
+  some (.select .eq eqZero (.lit 0) (.lit 1) (.lit 0))
+
+private def boundedCanRespond721Val (env : Environment) (ownersE tokenIdE : Expr) : Option Ops.Val := do
+  let enc ← boundedCanEncode721Val env tokenIdE
+  let minted ← boundedIsMinted721Val env ownersE tokenIdE
+  some (.bitAnd enc minted)
+
+private partial def boundedMetadataGateVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
+  match fuel with
+  | 0 => none
+  | fuel' + 1 =>
+    let raw := strip e
+    let args := raw.getAppArgs
+    if endsWith raw ".canRespond1155" && args.size ≥ 1 then
+      boundedCanEncode721Val env args[args.size - 1]!
+    else if endsWith raw ".canRespond721" && args.size ≥ 2 then
+      boundedCanRespond721Val env args[args.size - 2]! args[args.size - 1]!
+    else if endsWith raw ".isMinted" && args.size ≥ 2 then
+      boundedIsMinted721Val env args[args.size - 2]! args[args.size - 1]!
+    else if endsWith raw ".canEncode" && args.size ≥ 1 then
+      boundedCanEncode721Val env args[args.size - 1]!
+    else if endsWith raw ".canPublish" && args.size ≥ 2 then
+      boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
+    else if endsWith raw ".canSchedule" && args.size ≥ 3 then
+      boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
+    else if (isConstNamed raw ``Bool.and || isConstNamed raw ``HAnd.hAnd || endsWith raw ".hAnd") &&
+        args.size ≥ 2 then
+      match boundedMetadataGateVal env fuel' args[args.size - 2]!,
+          boundedMetadataGateVal env fuel' args[args.size - 1]! with
+      | some lhs, some rhs => some (.bitAnd lhs rhs)
+      | _, _ => none
+    else if isConstNamed raw ``Decidable.decide && args.size ≥ 2 then
+      boundedMetadataGateVal env fuel' args[args.size - 2]!
+    else if isConstNamed raw ``Bool.not && args.size ≥ 1 then
+      (boundedMetadataGateVal env fuel' args[args.size - 1]!).map fun v =>
+        .select .eq v (.lit 0) (.lit 1) (.lit 0)
+    else
+      match unfoldUserHelper env raw with
+      | some (_, unfolded) => boundedMetadataGateVal env fuel' unfolded
+      | none => none
+
+/-- Decode bounded-string `length` fields, including conditional gates that consult mint state
+(`canRespond721` / `isMinted`) via hashed-map reads. The ordinary `val` path handles simple
+encodable-id comparisons; this fallback completes `ite` length policies using the same
+`asCondition` decoder as mutation guards (including `evmEq20` mint checks). -/
+private def boundedLengthVal (env : Environment) (e : Expr) : Option Ops.Val :=
+  let e := strip e
+  if (isConstNamed e ``ite || isConstNamed e ``dite) && e.getAppArgs.size ≥ 4 then
+    let args := e.getAppArgs
+    let cond := args[args.size - 4]!
+    let thn := peelProofLam args[args.size - 2]!
+    let els := peelProofLam args[args.size - 1]!
+    let condVal? :=
+      match boundedMetadataGateVal env 32 cond with
+      | some v => some v
+      | none =>
+        match asCondition env cond with
+        | some (cmp, lhs, rhs) => some (.select cmp lhs rhs (.lit 1) (.lit 0))
+        | none => asBoolVal env 128 cond
+    match condVal?, val env thn, val env els with
+    | some condVal, some thnVal, some elsVal => some (.select .ne condVal (.lit 0) thnVal elsVal)
+    | _, _, _ => none
+  else
+    match val env e with
+    | some v => some v
+    | none =>
+      match scalarResultValues env 16 e with
+      | some #[v] => some v
+      | _ => none
+
+private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
+  let e := substLets 32 (strip e)
+  let ctor ← e.getAppFn.constName?
+  let .ctorInfo info ← env.find? ctor | none
+  unless info.induct == boundedVecName || info.induct == boundedBytesName ||
+      info.induct == boundedStringName do none
+  let args := e.getAppArgs
+  unless args.size ≥ 2 do none
+  let length ← boundedLengthVal env args[args.size - 2]!
+  let values ← asVectorLits env args[args.size - 1]!
+  return #[length] ++ values
 
 /-- Keep the historical scalar `okState` shorthand, but spell multi-leaf effectful results as the
 existing sequence of scalar returns. CFG lowering already joins that sequence into `returnU64s`. -/
@@ -3569,6 +3828,29 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
         (.arg 6) (.arg 7) (.arg 8) (.arg 9) (.arg 10) (.arg 11) (.arg 12)
         (.arg 13) (.arg 14) (.arg 15) (.arg 16) (.arg 17) (.arg 18) (.arg 19)
         (.arg 20) (.arg 21) (.arg 22))
+  else if isConstNamed app ``ProofForge.Evm.Runtime.evmTransferWithAuthorization ||
+      endsWith app ".evmTransferWithAuthorization" then
+    match nthFromEnd args 8, nthFromEnd args 7, nthFromEnd args 6,
+        nthFromEnd args 5, nthFromEnd args 4, nthFromEnd args 3,
+        nthFromEnd args 2, nthFromEnd args 1, nthFromEnd args 0 with
+    | some fromAddr, some to, some value, some validAfter, some validBefore, some nonce,
+        some _v, some r, some s =>
+      let (f0, f1, f2) := addr20Leaves env fromAddr
+      let (t0, t1, t2) := addr20Leaves env to
+      let (v0, v1, v2, v3) := uint256Leaves env value
+      let (a0, a1, a2, a3) := uint256Leaves env validAfter
+      let (b0, b1, b2, b3) := uint256Leaves env validBefore
+      let (n0, n1, n2, n3) := bytes32Leaves env nonce
+      let vv := valAtEnd env args 2
+      let (r0, r1, r2, r3) := bytes32Leaves env r
+      let (z0, z1, z2, z3) := bytes32Leaves env s
+      some (.evmTransferWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3
+        n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3)
+    | _, _, _, _, _, _, _, _, _ =>
+      some (.evmTransferWithAuthorization (.arg 0) (.arg 1) (.arg 2) (.arg 3) (.arg 4) (.arg 5)
+        (.arg 6) (.arg 7) (.arg 8) (.arg 9) (.arg 10) (.arg 11) (.arg 12) (.arg 13) (.arg 14)
+        (.arg 15) (.arg 16) (.arg 17) (.arg 18) (.arg 19) (.arg 20) (.arg 21) (.arg 22) (.arg 23)
+        (.arg 24) (.arg 25) (.arg 26) (.arg 27) (.arg 28) (.arg 29) (.arg 30))
   else none
 
 /-- Collect EVM effect leaves by unfolding source facades into `ProofForge.Evm.Runtime`
@@ -3816,6 +4098,16 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
       .returnU64 (.ext (.evm (.domainSep256 2)) #[]),
       .returnU64 (.ext (.evm (.domainSep256 3)) #[])
     ]
+  else if isConstNamed app ``ProofForge.Evm.Runtime.evmEcrecover ||
+      endsWith app ".evmEcrecover" then
+    match ecrecoverWideOperands env 32 args with
+    | none => none
+    | some operands =>
+        some #[
+          .returnU64 (.ext (.evm (.component (.wideWord (.ecrecover20 0)))) operands),
+          .returnU64 (.ext (.evm (.component (.wideWord (.ecrecover20 1)))) operands),
+          .returnU64 (.ext (.evm (.component (.wideWord (.ecrecover20 2)))) operands)
+        ]
   else none
 
 private def collectEvmQueryOps (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
@@ -3869,11 +4161,24 @@ private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   | some (.evmSwapExact2 _ _ _ _ _ _ _ _ _ i0 _ _ _ _ _ _ _) => i0
   | some (.evmSwapExact3 _ _ _ _ _ _ _ _ _ _ _ _ i0 _ _ _ _ _ _ _) => i0
   | some (.evmPermit _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
+  | some (.evmTransferWithAuthorization _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
   | some (.evmTokenPermit _ _ _ _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
   | some (.evmComponent (.openCall _)) => .lit 0
   | _ => .arg 0
 
+private partial def isBoundedStringReturn (env : Environment) (fuel : Nat) (e : Expr) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel' + 1 =>
+    (asBoundedCtorFields env e).isSome ||
+      match strip e with
+      | .letE _ _ value body _ =>
+        isBoundedStringReturn env fuel' value ||
+          isBoundedStringReturn env fuel' (body.instantiate1 value)
+      | _ => false
+
 private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
+  if isBoundedStringReturn env 32 e then none else
   let writes := collectEvmEffectOps env e
   if writes.size ≥ 1 then
     some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
@@ -4785,6 +5090,8 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
   -- 必须在 peelLets 之前找效应：剥掉 `have sent := …` 后调用就没了。
   if let some reason := findTypedSourceFailure env e then
     .error s!"extract/unsupported: {reason}"
+  else if let some vs := asBoundedCtorFields env e then
+    .ok (returnStatesOf vs)
   else if let some ops := decodeEvmEffect env e then
     .ok (mergeEvmStores localDepth ops (evmEffectStores env e))
   else if let some (n, addend) := findForIn env e then
@@ -4901,6 +5208,8 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
       isConstNamed e ``ProofForge.Evm.Runtime.evmShr256 || endsWith e ".evmShr256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmDiv256 || endsWith e ".evmDiv256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmMod256 || endsWith e ".evmMod256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmKeccak256Pair32 ||
+      endsWith e ".evmKeccak256Pair32" ||
       (match unfoldUserHelper env e with
         | some (_, unfolded) => (uint256CtorFields env unfolded).isSome
         | none => false) ||

@@ -369,6 +369,25 @@ actual flattened storage schema. Empty, dynamic, unknown, or non-UInt64 fields f
 left-aligned words; the host stub is an extraction contract only. -/
 @[irreducible] def evmEqBytes4 (_a _b : Bytes4) : Bool := true
 
+/-- OpenZeppelin-style sorted pair hash: `keccak256(abi.encodePacked(min(a,b), max(a,b)))`.
+The host stub returns `a`; EVM emission performs the commutative ordering and `keccak256`. -/
+@[irreducible] def evmKeccak256Pair32 (a b : Bytes32) : Bytes32 :=
+  let _ := b; a
+
+/-- Fold up to eight sorted `bytes32` siblings and compare with the four root limbs. The target
+emits the bounded Keccak loop; this host stub only preserves the extraction signature. -/
+@[irreducible] def evmMerkleVerify256
+    (length : UInt64) (leaf s0 s1 s2 s3 s4 s5 s6 s7 : Bytes32)
+    (r0 r1 r2 r3 : UInt64) : Bool :=
+  let _ := s0; let _ := s1; let _ := s2; let _ := s3
+  let _ := s4; let _ := s5; let _ := s6; let _ := s7
+  let _ := r1; let _ := r2; let _ := r3
+  length ≤ 8 && leaf.w0 == r0
+
+/-- Exact equality of two ABI `bytes32` values. The EVM emitter compares packed words. -/
+@[irreducible] def evmEqBytes32 (a0 a1 a2 a3 b0 b1 b2 b3 : UInt64) : Bool :=
+  a0 == b0 && a1 == b1 && a2 == b2 && a3 == b3
+
 /-- 封闭 Uniswap V2 `swapExactTokensForTokens`，path 长度 2。`to` 是本合约，deadline 是 `uint256.max`。失败 revert。宿主返回 `amtIn.w0`。 -/
 @[irreducible] def evmSwapExact2
     (_router _tokenA _tokenB : Addr20) (amtIn _minOut : UInt256) : UInt64 :=
@@ -379,9 +398,21 @@ left-aligned words; the host stub is an extraction contract only. -/
     (_router _tokenA _tokenB _tokenC : Addr20) (amtIn _minOut : UInt256) : UInt64 :=
   amtIn.w0
 
+/-- Closed ecrecover precompile: fixed address `1`, 128-byte input, 32-byte output, nonzero signer.
+Invalid signatures revert on EVM; the host stub returns zero address. -/
+@[irreducible] def evmEcrecover
+    (_digest : Bytes32) (_v : UInt8) (_r _s : Bytes32) : Addr20 :=
+  ⟨0, 0, 0⟩
+
 /-- 封闭 EIP-2612 `permit`。name=`Token`，version=`1`，nonce base=2，allowance base=1。失败 revert。宿主返回 `value.w0`。 -/
 @[irreducible] def evmPermit
     (_owner _spender : Addr20) (value _deadline : UInt256) (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
+  value.w0
+
+/-- 封闭 ERC-3009 `transferWithAuthorization`。name=`Token`，version=`1`，balance base=0，authUsed base=3。失败 revert。宿主返回 `value.w0`。 -/
+@[irreducible] def evmTransferWithAuthorization
+    (_from _to : Addr20) (value _validAfter _validBefore : UInt256) (_nonce : Bytes32)
+    (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
   value.w0
 
 /-- 封闭 EIP-712 domain separator。name=`Token`，version=`1`。宿主返回 0。 -/

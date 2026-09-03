@@ -33,6 +33,14 @@ inductive Error where
 @[pf_inline] def allowances : Fungible.Allowances :=
   Storage.Layout.root.addressMap256 |>.next |>.addressPairMap256 |>.handle
 
+/-- UTF-8 bytes for `Token` padded to the example name capacity. -/
+@[pf_inline] def tokenName : BoundedString 8 :=
+  { length := 5, values := #v[0x54, 0x6f, 0x6b, 0x65, 0x6e, 0, 0, 0] }
+
+/-- UTF-8 bytes for `PF` padded to the example symbol capacity. -/
+@[pf_inline] def tokenSymbol : BoundedString 4 :=
+  { length := 2, values := #v[0x50, 0x46, 0, 0] }
+
 /-- Soft-abort state copy for `Effect.ensure` gates. -/
 @[reducible, pf_inline] private def hold (s : State) : State :=
   { dummy := s.dummy, supply := s.supply }
@@ -41,15 +49,17 @@ inductive Error where
 def init (_owner : Address) : State :=
   { dummy := 0, supply := UInt256.zero }
 
-/-- UTF-8 `string` ABI (`name()`), not packed `bytes32`. -/
+/-- UTF-8 `string` ABI (`name()`), not packed `bytes32`. Fail closed when misconfigured. -/
 @[pf_entry]
 def name (_s : State) : BoundedString 8 :=
-  { length := 5, values := #v[0x54, 0x6f, 0x6b, 0x65, 0x6e, 0, 0, 0] }
+  { length := if Erc20Meta.canPublish tokenName tokenSymbol then 5 else 0
+    values := #v[0x54, 0x6f, 0x6b, 0x65, 0x6e, 0, 0, 0] }
 
-/-- UTF-8 `string` ABI (`symbol()`). -/
+/-- UTF-8 `string` ABI (`symbol()`). Fail closed when misconfigured. -/
 @[pf_entry]
 def symbol (_s : State) : BoundedString 4 :=
-  { length := 2, values := #v[0x50, 0x46, 0, 0] }
+  { length := if Erc20Meta.canPublish tokenName tokenSymbol then 2 else 0
+    values := #v[0x50, 0x46, 0, 0] }
 
 @[pf_entry]
 def decimals (_s : State) : UInt8 :=
@@ -58,6 +68,25 @@ def decimals (_s : State) : UInt8 :=
 @[pf_entry]
 def totalSupply (s : State) : UInt256 :=
   s.supply
+
+/-- Constructor immutable owner (see `init`). -/
+@[pf_entry]
+def ownerOf (_s : State) : Address :=
+  Immutable.address
+
+/-- Owner-only mint: credits `to` and increases `supply`. Non-owner → `Unauthorized(caller)`;
+zero recipient → `ZeroAddress()`. Success emits canonical `Transfer(address(0), to, value)`. -/
+@[pf_entry]
+def mint (s : State) (to : Address) (value : UInt256) : Except Error (State × UInt64) :=
+  Effect.ensureCode (Address.eqImmutable Context.caller) (hold s)
+      (Revert.unauthorized Context.caller) fun _ =>
+  Effect.ensureCode (!Address.isZero to) (hold s) Revert.zeroAddress fun _ =>
+  if Fungible.Balances.canCredit balances to value then
+    .ok ({ dummy := Fungible.Balances.credit balances to value,
+           supply := UInt256.add s.supply value },
+      Fungible.Log.transfer Address.zero to value)
+  else
+    .error .overflow
 
 @[pf_entry]
 def balanceOf (_s : State) (who : Address) : UInt256 :=
@@ -75,7 +104,7 @@ def approve (s : State) (spender : Address) (amount : UInt256) :
   if (0 : UInt64) ≠ 1 then
     .ok ({ dummy := Fungible.Allowances.approve allowances Context.caller spender amount,
            supply := s.supply },
-      Effect.thenTrue (Event.approval Context.caller spender amount))
+      Effect.thenTrue (Fungible.Log.approval Context.caller spender amount))
   else
     .error .overflow
 
@@ -90,7 +119,7 @@ def transfer (s : State) (destination : Address) (amount : UInt256) :
     let movement :=
       Fungible.Balances.transfer balances Context.caller destination amount
     .ok ({ dummy := movement, supply := s.supply },
-      Effect.thenTrue (Event.transfer Context.caller destination amount))
+      Effect.thenTrue (Fungible.Log.transfer Context.caller destination amount))
   else
     .error .overflow
 
@@ -109,7 +138,7 @@ def transferFrom (s : State) (owner destination : Address) (amount : UInt256) :
       (Fungible.Balances.transfer balances owner destination amount) |||
       (Fungible.Allowances.spend allowances owner Context.caller amount)
     .ok ({ dummy := movement, supply := s.supply },
-      Effect.thenTrue (Event.transfer owner destination amount))
+      Effect.thenTrue (Fungible.Log.transfer owner destination amount))
   else
     .error .overflow
 

@@ -37,7 +37,7 @@ class TargetSpec:
 EVM = TargetSpec(
     key="evm",
     registry_rel=Path("ProofForge/Evm/Registry.lean"),
-    expected_count=56,
+    expected_count=70,
     suffixes=(".bin", ".yul", ".abi.json"),
     digest_suffix=".yul",
 )
