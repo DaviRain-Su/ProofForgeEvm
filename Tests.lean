@@ -22,6 +22,9 @@ import Tests.EvmErc1155Spec
 import Tests.EvmErc721Spec
 import Tests.EvmMetadataUriSpec
 import Tests.EvmEip712DomainSpec
+import Tests.EvmIerc5313Spec
+import Tests.EvmIerc6372Spec
+import Tests.EvmEcdsaSpec
 import Tests.EvmVestingSpec
 import Tests.EvmMerkleProofSpec
 import Tests.EvmOzAuditSpec

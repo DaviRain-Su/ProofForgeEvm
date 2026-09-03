@@ -398,6 +398,12 @@ emits the bounded Keccak loop; this host stub only preserves the extraction sign
     (_router _tokenA _tokenB _tokenC : Addr20) (amtIn _minOut : UInt256) : UInt64 :=
   amtIn.w0
 
+/-- Closed ecrecover precompile: fixed address `1`, 128-byte input, 32-byte output, nonzero signer.
+Invalid signatures revert on EVM; the host stub returns zero address. -/
+@[irreducible] def evmEcrecover
+    (_digest : Bytes32) (_v : UInt8) (_r _s : Bytes32) : Addr20 :=
+  ⟨0, 0, 0⟩
+
 /-- 封闭 EIP-2612 `permit`。name=`Token`，version=`1`，nonce base=2，allowance base=1。失败 revert。宿主返回 `value.w0`。 -/
 @[irreducible] def evmPermit
     (_owner _spender : Addr20) (value _deadline : UInt256) (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
