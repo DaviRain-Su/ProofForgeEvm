@@ -40,8 +40,13 @@ def historyDepth : UInt64 := 256
 @[pf_inline] def hashOf (blockNumber : UInt64) : UInt256 := Context.blockHash blockNumber
 
 /-- True when `blockNumber` is not in the future and within the 256-block history window. -/
-@[pf_inline] def isInHistoryWindow (blockNumber : UInt64) : Bool :=
-  blockNumber <= number && (number - blockNumber) < historyDepth
+def isInHistoryWindow (blockNumber : UInt64) : Bool :=
+  if blockNumber > number then
+    false
+  else if number >= blockNumber + historyDepth then
+    false
+  else
+    true
 
 /-- True when a `BLOCKHASH` observation is the EVM zero word (unavailable or future block). -/
 @[pf_inline] def isZeroHash (hash : UInt256) : Bool :=

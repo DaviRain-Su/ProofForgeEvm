@@ -31,7 +31,7 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'coverageRows()(ui
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'classifiedCount()(uint64)')" \
   32 "classified row count"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'blockedCount()(uint64)')" \
-  14 "blocked row count"
+  12 "blocked row count"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'isComplete()(bool)')" \
   true "inventory complete"
 

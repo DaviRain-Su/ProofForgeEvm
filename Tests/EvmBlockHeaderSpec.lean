@@ -43,7 +43,7 @@ private def expectHeaderLink : CommandElabM Unit := do
       abi.contains "\"name\":\"inHistoryWindow\"" &&
       abi.contains "\"name\":\"coinbase\"" do
     throwError s!"HeaderLink ABI lost header surface:\n{abi}"
-  unless IR.digestHex program == "8889343b4fdf7c4a" do
+  unless IR.digestHex program == "e0e09d52039478fc" do
     throwError s!"HeaderLink digest drifted: {IR.digestHex program}"
   logInfo m!"headerlink: digest={IR.digestHex program} abi-ok"
 
