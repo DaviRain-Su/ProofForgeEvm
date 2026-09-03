@@ -1,8 +1,8 @@
 # Fable SDK foundations design / SDK 基础设计
 
-> Status: design proposal. S0, S1a/S1b, S2 (#9), S3 OpenCall (#10), S4a–c (#11–#13), and
+> Status: design proposal. S0, S1a/S1b, S2 (#9), S3 OpenCall (#10), S4a–d (#11–#14), and
 > S5 Base RPC gates (#8) are on `main` as of 2026-09-03. Remaining S4 (ERC-165, `TransferBatch`,
-> Roles events, constructor Ownable logs) is not claimed. Anonymous LOG0 is not a product
+> `RoleAdminChanged`, constructor Ownable logs) is not claimed. Anonymous LOG0 is not a product
 > `Event.emit` shape — typed events are named ABI events (LOG1–4, signature topic always).
 
 ## Objective / 目标
