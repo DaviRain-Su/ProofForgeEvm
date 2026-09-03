@@ -26,8 +26,9 @@ The design starts from these existing facts, not from a replacement architecture
 
 - `Evm.ClosedCall` is a closed union for known ERC-20/WETH/Uniswap/permit calls. Each case owns its
   operand count, effects, and canonical spelling.
-- `Evm.CallResult` is the sole typed returndata policy layer. Its three current policies accept no
-  more than one 32-byte word, and `CallResult.Emit` is their sole interpreter.
+- `Evm.CallResult` is the sole typed returndata policy layer. Its established ClosedCall policies
+  accept at most one word, while S2 adds separately bounded typed policies of up to four ABI
+  words; `CallResult.Emit` is their sole interpreter.
 - `Evm.LogError` validates only target-local LOG/revert geometry. It deliberately is not a source
   API for arbitrary event signatures or selectors.
 - `Evm.NativeFx` owns the current closed ETH, log, and revert semantic names. Its generic
@@ -127,11 +128,11 @@ canonical digest, and effect summary are unchanged.
 
 ### S2 — richer returndata policies / 更丰富的返回数据策略
 
-Extend `CallResult.Policy`; do not bypass it in individual call emitters. The next policies should
-support a compile-time fixed, bounded list of static ABI words and typed decoding of those words.
-The implementation must set one explicit maximum and reject larger plans.
+S2 extends `CallResult.Policy` without bypassing it in individual call emitters. It supports a
+compile-time fixed, bounded list of static ABI words and typed decoding of those words. One
+explicit maximum rejects larger plans.
 
-Required behavior:
+Implemented behavior:
 
 - CALL/STATICCALL success remains mandatory;
 - exact-size policies compare `returndatasize()` with the full expected static frame;
@@ -141,9 +142,20 @@ Required behavior:
 - malformed size, non-canonical bool/address values, call failure, and code-less empty success
   fail closed.
 
-`CallResult.Emit.emit` currently returns `Option String`, which represents at most one word. S2
-must replace or wrap that result with a bounded typed result collection while preserving existing
-consumer output and fresh-name order. Arbitrary or unbounded returndata is not introduced.
+`CallResult.Emit.emit` retains its `Option String` first-word compatibility carrier. S2 adds
+`emitBound`, which returns a bounded typed result collection while preserving existing consumer
+output and fresh-name order. Arbitrary or unbounded returndata is not introduced by the default
+policies.
+
+**Implementation note (S2):** `maxResultWords = 4` (128 bytes), matching `LogError.maxLogDataWords`.
+New constructors are `exactWords n`, `strictBool`, `magicBytes4 selector`, and `words kinds`
+(`uint256` / `boolean` / `address20` / `bytes4`). `Emit.emitBound` returns the bound Yul names;
+`emit` still projects the first-word `Option String` so ClosedCall / Precompile output is
+unchanged. `Request.fail` defaults to `revert0` (`revert(0, 0)`); `bubble` is opt-in and applies
+only to the call-failure gate (policy tails stay `revert(0, 0)`). Bubble copies callee-controlled
+`returndatasize()` and is not a bounded plan. yulc already rejects `gas()` on every CallResult
+CALL/STATICCALL; bubble additionally needs dynamic `returndatacopy`. See the support-matrix yulc
+row. OpenCall (S3) is not part of this slice.
 
 ### S3 — `OpenCall` typed external CALL / 类型化开放调用
 
@@ -250,8 +262,8 @@ and S1a is the safest first implementation.
   `UInt64` fields and carries no indexed metadata. S1a mirrors its path, not its data type.
 - `LogError` currently permits at most four topics and four data words. Common ERC-721 and
   single-id ERC-1155 events fit; ERC-1155 `TransferBatch` does not.
-- `CallResult` is structurally single-word (`retBound ≤ 32`, `Option String` result). S2 therefore
-  requires a bounded result-carrier change, not just another policy constructor.
+- Before S2, `CallResult` was structurally single-word (`retBound ≤ 32`, `Option String` result).
+  S2 retains that compatibility carrier and adds bounded `emitBound` names for up to four words.
 - Event ABI is currently inferred from `NativeFx.logName` with special cases. S1 must derive ABI
   and emission from one frame before removing any special case.
 - `NativeFx.sendEth` does not currently consume `CallResult`; S3 must preserve that deliberate
