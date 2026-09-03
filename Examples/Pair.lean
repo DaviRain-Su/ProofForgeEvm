@@ -1,0 +1,50 @@
+import ProofForge
+
+namespace Examples.Pair
+
+structure State where
+  left : UInt64
+  right : UInt64
+  deriving Repr, DecidableEq, Inhabited
+
+inductive Error where
+  | overflow
+  deriving Repr, DecidableEq, Inhabited, BEq
+
+def u64Max : UInt64 := ~~~(0 : UInt64)
+
+@[pf_entry]
+def init (left : UInt64) : State :=
+  { left, right := 0 }
+
+@[pf_entry]
+def getLeft (s : State) : UInt64 :=
+  s.left
+
+@[pf_entry]
+def getRight (s : State) : UInt64 :=
+  s.right
+
+/-- 两个参数都写进账户。Lean 名避开命令关键字 `initialize`。 -/
+@[pf_entry]
+def initBoth (left right : UInt64) : State :=
+  { left, right }
+
+/-- 只改 `left`，`right` 保持。 -/
+@[pf_entry]
+def creditLeft (s : State) (delta : UInt64) : Except Error (State × UInt64) :=
+  if s.left ≤ u64Max - delta then
+    let next := s.left + delta
+    .ok ({ left := next, right := s.right }, next)
+  else
+    .error .overflow
+
+theorem creditLeft_overflow_not_ok
+    (s : State) (d : UInt64)
+    (h : creditLeft s d = .error .overflow) :
+    ¬ ∃ t r, creditLeft s d = .ok (t, r) := by
+  intro ⟨t, r, hok⟩
+  have : Except.error Error.overflow = Except.ok (t, r) := h.symm.trans hok
+  cases this
+
+end Examples.Pair

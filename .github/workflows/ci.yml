@@ -1,0 +1,253 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Cancel superseded PR runs only. Pushes to main must each finish so every main
+# commit keeps a completed CI result.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Decide which lanes must run for this PR. Pushes to main and manual dispatches
+  # always run every lane.
+  # Path sets are intentionally broad: shared compiler / toolchain / workflow changes
+  # force all lanes so a latent break still gets caught on main.
+  changes:
+    name: Changes
+    runs-on: ubuntu-24.04
+    outputs:
+      lean: ${{ steps.gate.outputs.lean }}
+      evm: ${{ steps.gate.outputs.evm }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            shared:
+              - '.github/workflows/ci.yml'
+              - '.agents/setup'
+              - 'lakefile.lean'
+              - 'lean-toolchain'
+              - 'lake-manifest.json'
+              - 'ProofForge/Cli.lean'
+              - 'ProofForge/Attr.lean'
+              - 'ProofForge/Extract.lean'
+              - 'ProofForge/Extract/**'
+              - 'ProofForge/Core/**'
+              - 'ProofForge/Crypto/**'
+              - 'ProofForge/Profile.lean'
+            lean:
+              - 'ProofForge/**'
+              - 'Tests/**'
+              - 'Tests.lean'
+              - 'Examples/**'
+              - 'Examples.lean'
+              - 'scripts/check_*.py'
+              - 'lakefile.lean'
+              - 'lean-toolchain'
+              - 'lake-manifest.json'
+              - '.github/workflows/ci.yml'
+              - '.agents/setup'
+            evm:
+              - 'ProofForge/Evm/**'
+              - 'Examples/Evm/**'
+              - 'runtime-tests/evm/**'
+              - 'scripts/check_artifact_manifest.py'
+              - 'lakefile.lean'
+              - 'lean-toolchain'
+              - 'lake-manifest.json'
+              - '.github/workflows/ci.yml'
+              - '.agents/setup'
+              - 'ProofForge/Cli.lean'
+              - 'ProofForge/Extract.lean'
+              - 'ProofForge/Extract/**'
+              - 'ProofForge/Core/**'
+
+      - name: Publish lane gates
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SHARED: ${{ steps.filter.outputs.shared }}
+          LEAN: ${{ steps.filter.outputs.lean }}
+          EVM: ${{ steps.filter.outputs.evm }}
+        run: |
+          set -euo pipefail
+          # main pushes always exercise every lane.
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "lean=true" >> "$GITHUB_OUTPUT"
+            echo "evm=true" >> "$GITHUB_OUTPUT"
+            echo "changes: push event → all lanes"
+            exit 0
+          fi
+          or_shared() {
+            local lane="$1"
+            if [ "$SHARED" = "true" ] || [ "$lane" = "true" ]; then
+              echo "true"
+            else
+              echo "false"
+            fi
+          }
+          lean="$(or_shared "$LEAN")"
+          evm="$(or_shared "$EVM")"
+          {
+            echo "lean=$lean"
+            echo "evm=$evm"
+          } >> "$GITHUB_OUTPUT"
+          echo "changes: lean=$lean evm=$evm"
+
+  lean:
+    name: Lean
+    needs: changes
+    if: needs.changes.outputs.lean == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache toolchains and Lean dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            ~/.foundry
+            .lake/packages
+          key: toolchains-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', '.agents/setup') }}
+
+      - name: Prepare pinned toolchains
+        run: |
+          ./.agents/setup
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
+
+      - name: Restore Lean build products
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake/build
+          key: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+      - name: Check Runtime / SDK ownership boundaries
+        run: python3 scripts/check_ownership.py
+
+      - name: Check SDK import-closure (no Emit/Assemble/Registry)
+        run: python3 scripts/check_sdk_import_closure.py
+
+      - name: Check artifact manifest
+        run: python3 scripts/check_artifact_manifest.py --self-test
+
+      - name: Check kernel proofs have no placeholders
+        run: python3 scripts/check_no_sorry.py
+
+      - name: Build Lean libraries
+        run: lake build
+
+      - name: Build formalization gate modules
+        run: |
+          lake build ProofForgeEvmSdk
+          lake build Tests.ProofSpec
+
+      - name: Build Lean test suite
+        run: lake build Tests
+
+      # Save only from main so PR runs do not evict the toolchain cache.
+      - name: Save Lean build products
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: .lake/build
+          key: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+
+      - name: Check EVM Yul fragment audit (E-B1)
+        run: python3 scripts/check_yul_fragment.py --self-test
+
+      - name: Build powdr-probe (EVM Feature B, fast lane)
+        run: ./scripts/build_powdr_probe.sh
+
+  evm:
+    name: EVM
+    needs: changes
+    if: needs.changes.outputs.evm == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache toolchains and Lean dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            ~/.foundry
+            .lake/packages
+          key: toolchains-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', '.agents/setup') }}
+
+      - name: Prepare pinned toolchains
+        run: |
+          ./.agents/setup
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
+
+      - name: Restore Lean build products
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake/build
+          key: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-build-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+      - name: Build program source modules
+        run: lake build Examples
+
+      - name: Build all EVM programs
+        run: lake exe pf -- build --out build/evm
+
+      - name: Check EVM artifact manifest
+        run: python3 scripts/check_artifact_manifest.py --target evm --out build/evm
+
+      - name: Run Anvil integration suite
+        run: runtime-tests/evm/anvil.sh
+
+  # Required-check identity. Intentionally-skipped lanes (path filter) count as success;
+  # failed or cancelled lanes still fail the merge gate. The evm-yulc lane lives in
+  # ci-yulc.yml (weekly / manual) and is not required.
+
+  test:
+    if: always()
+    needs: [changes, lean, evm]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require enabled Lean and EVM lanes
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          LEAN_RESULT: ${{ needs.lean.result }}
+          EVM_RESULT: ${{ needs.evm.result }}
+          LEAN_ENABLED: ${{ needs.changes.outputs.lean }}
+          EVM_ENABLED: ${{ needs.changes.outputs.evm }}
+        run: |
+          set -euo pipefail
+          test "$CHANGES_RESULT" = success
+          require_lane() {
+            local name="$1" enabled="$2" result="$3"
+            if [ "$enabled" != "true" ]; then
+              echo "$name: skipped (paths unchanged)"
+              return 0
+            fi
+            echo "$name: $result"
+            test "$result" = success
+          }
+          require_lane Lean "$LEAN_ENABLED" "$LEAN_RESULT"
+          require_lane EVM "$EVM_ENABLED" "$EVM_RESULT"

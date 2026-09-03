@@ -1,0 +1,41 @@
+# Shrink-only allowlist: Examples files still using bare `import ProofForge`.
+# Remove an entry when that file migrates to ProofForge.Evm.Sdk (+ Attr).
+# CI fails if a new file uses the umbrella import, or if an entry is stale.
+
+Examples/Counter.lean
+Examples/Evm/Capped.lean
+Examples/Evm/Const.lean
+Examples/Evm/Credits.lean
+Examples/Evm/EvmAggregateStorage.lean
+Examples/Evm/EvmAllowlist.lean
+Examples/Evm/EvmBounded.lean
+Examples/Evm/EvmCheckpointBook.lean
+Examples/Evm/EvmCheckpointTrace.lean
+Examples/Evm/EvmClaimBitmap.lean
+Examples/Evm/EvmConfigMap.lean
+Examples/Evm/EvmFeatureFlags.lean
+Examples/Evm/EvmFindIndex.lean
+Examples/Evm/EvmIdRegistry.lean
+Examples/Evm/EvmPriceBand.lean
+Examples/Evm/EvmRingHistory.lean
+Examples/Evm/EvmRingMailbox.lean
+Examples/Evm/EvmSafeCastAccumulator.lean
+Examples/Evm/EvmSafeCastConfig.lean
+Examples/Evm/EvmScoreMap.lean
+Examples/Evm/EvmSearch.lean
+Examples/Evm/EvmStaticCounter.lean
+Examples/Evm/EvmStaticRoster.lean
+Examples/Evm/EvmTypedErrors.lean
+Examples/Evm/EvmVecLog.lean
+Examples/Evm/EvmVecStack.lean
+Examples/Evm/Token.lean
+Examples/Evm/TwoStepCounter.lean
+Examples/Evm/Wide.lean
+Examples/EvmExceptErgonomics.lean
+Examples/EvmTokenErgonomics.lean
+Examples/Flag.lean
+Examples/Lang.lean
+Examples/Maybe.lean
+Examples/Pair.lean
+Examples/Phase.lean
+Examples/Window.lean
