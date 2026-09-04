@@ -174,6 +174,10 @@ edge_sig="$("$cast" wallet sign --data --private-key "$private_key" "$edge_typed
 edge_r="0x${edge_sig:2:64}"
 edge_s="0x${edge_sig:66:64}"
 edge_v="$((16#${edge_sig:130:2}))"
+# Pin the boundary deterministically: validAfter must equal the mined block's
+# timestamp regardless of wall-clock drift between `cast block` and `cast send`
+# (CI runners race past it, turning the negative case into a false pass).
+"$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$ts" >/dev/null
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
     "$sender" "$dest" 1 "$ts" "$(( ts + 1000 ))" "$edge_nonce" "$edge_v" "$edge_r" "$edge_s" \
