@@ -2,8 +2,9 @@
 # OpenCall S3: parameter- and state-supplied targets, one- to four-word, bool, and address
 # STATICCALL reads with their fail-closed frames, reads deciding a guard, compared, and passed
 # as another call's argument, one bounded bytes argument through CALL and STATICCALL, CALL
-# value, EOA rejection, malformed returndata, CALL-before-sstore effect order, and the
-# compile-time refusal of a CALL carrier anywhere but the result word.
+# value, EOA rejection, malformed returndata, CALL-before-sstore effect order, the
+# compile-time refusal of a CALL carrier anywhere but the result word, and a receiver hook
+# through CALL whose one returned word must be the hook's own selector.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -265,4 +266,54 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'ownedBy(address,address)(bool)' \
   exit 1
 fi
 
-echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + reads in guards/comparisons/arguments + bytes arg + value + EOA + malformed + effect-order + CALL-carrier refusal; engineering only)"
+# Receiver hook through CALL with the magic policy. The callee must answer with exactly one
+# word equal to onERC721Received's own selector; the mock's frame is settable so every other
+# answer is driven: a wrong selector, a dirty low byte, an empty frame, a two-word frame, an EOA.
+hook_magic="$(pf_evm_to_dec "$("$cast" sig 'onERC721Received(address,address,uint256,bytes)')")"
+hook_word="$("$python" -I -S -c "print(int('$hook_magic') << 224)")"
+hook_case() {
+  local word="$1" size="$2" label="$3"
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$target" 'setHookWord(uint256)' "$word" >/dev/null
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$target" 'setHookSize(uint256)' "$size" >/dev/null
+  if "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
+      'notifyReceiver(address,address,address,uint256,bytes)' \
+      "$target" "$addr" "$eoa" 7 0x616263 >/dev/null 2>&1; then
+    echo "FAIL: $label passed the magic gate" >&2
+    exit 1
+  fi
+}
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
+  'notifyReceiver(address,address,address,uint256,bytes)' "$target" "$addr" "$eoa" 7 0x616263 \
+  >/dev/null
+pf_evm_require_equal "$(tr 'A-F' 'a-f' <<<"$("$cast" call --rpc-url "$rpc" "$target" \
+  'hookOperator()(address)')")" "$(tr 'A-F' 'a-f' <<<"$addr")" "hook saw the operator"
+pf_evm_require_equal "$(tr 'A-F' 'a-f' <<<"$("$cast" call --rpc-url "$rpc" "$target" \
+  'hookFrom()(address)')")" "$(tr 'A-F' 'a-f' <<<"$eoa")" "hook saw from"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'hookTokenId()(uint256)')" 7 \
+  "hook saw the token id"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$target" 'hookDataHash()(bytes32)')" \
+  "$("$cast" keccak 0x616263)" "hook saw the bytes payload"
+hook_case "$("$python" -I -S -c "print(0xdeadbeef << 224)")" 32 "a wrong selector"
+hook_case "$("$python" -I -S -c "print(($hook_word) | 1)")" 32 "a dirty low byte"
+hook_case "$hook_word" 0 "an empty frame"
+hook_case "$hook_word" 64 "a two-word frame"
+hook_case "$hook_word" 4 "a four-byte frame"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
+    'notifyReceiver(address,address,address,uint256,bytes)' \
+    "$eoa" "$addr" "$eoa" 7 0x616263 >/dev/null 2>&1; then
+  echo "FAIL: an EOA receiver passed the magic gate" >&2
+  exit 1
+fi
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setHookWord(uint256)' "$hook_word" >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setHookSize(uint256)' 32 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
+  'notifyReceiver(address,address,address,uint256,bytes)' "$target" "$addr" "$eoa" 8 0x \
+  >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'hookTokenId()(uint256)')" 8 \
+  "hook accepted again once the magic frame is restored"
+
+echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + reads in guards/comparisons/arguments + bytes arg + value + EOA + malformed + effect-order + CALL-carrier refusal + magic receiver hook; engineering only)"
