@@ -266,4 +266,123 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'balanceOfBatch(address[],uint256[])(ui
   exit 1
 fi
 
-echo "evm-anvil-multitoken: ok (mint/burn/transferFrom/operator/balanceOfBatch + ERC-1155 TransferSingle LOG4 / ApprovalForAll LOG3)"
+# Bounded batchTransferFrom: capacity 4, OZ check order, one TransferSingle per active slot.
+# State here: sender holds 50 of id 7 and near_max of id 8; other holds 45 of id 7.
+second_id=9
+batch_calldata() { # source to ids amounts
+  "$cast" calldata 'batchTransferFrom(address,address,uint256[],uint256[])' "$1" "$2" "$3" "$4"
+}
+batch_send() { # key source to ids amounts
+  "$cast" send --json --rpc-url "$rpc" --private-key "$1" \
+    "$addr" 'batchTransferFrom(address,address,uint256[],uint256[])' "$2" "$3" "$4" "$5"
+}
+batch_must_fail() { # key source to ids amounts label
+  if "$cast" send --rpc-url "$rpc" --private-key "$1" \
+      "$addr" 'batchTransferFrom(address,address,uint256[],uint256[])' "$2" "$3" "$4" "$5" \
+      >/dev/null 2>&1; then
+    echo "FAIL: $6 unexpectedly succeeded" >&2
+    exit 1
+  fi
+}
+sig_len_mismatch='ERC1155InvalidArrayLength(uint256,uint256)'
+sig_short='ERC1155InsufficientBalance(address,uint256,uint256,uint256)'
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$sender" "$second_id" 30 >/dev/null
+
+batch_must_fail "$other_key" "$sender" "$other" "[$token_id]" "[1]" "unauthorized batch"
+pf_evm_require_unauthorized "$addr" "$other" \
+  "$(batch_calldata "$sender" "$other" "[$token_id]" "[1]")" "$other" "unauthorized batch"
+batch_must_fail "$private_key" "$sender" "$other" "[$alias_id]" "[1]" "unencodable alias batch"
+pf_evm_require_unauthorized "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$alias_id]" "[1,1]")" "$sender" \
+  "unencodable alias in a batch"
+batch_must_fail "$private_key" "$sender" "$zero" "[$token_id]" "[1]" "batch to zero"
+pf_evm_require_zero_address "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$zero" "[$token_id]" "[1]")" "batch to zero"
+batch_must_fail "$private_key" "$sender" "$other" "[$token_id,$second_id]" "[1]" \
+  "batch length mismatch"
+pf_evm_require_word_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$second_id]" "[1]")" "$sig_len_mismatch" \
+  "batch length mismatch (2 ids, 1 amount)" 2 1
+pf_evm_require_word_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[]" "[1]")" "$sig_len_mismatch" \
+  "batch length mismatch (0 ids, 1 amount)" 0 1
+batch_must_fail "$private_key" "$sender" "$other" "[$token_id,$token_id]" "[1,1]" \
+  "duplicate id batch"
+pf_evm_require_named_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$second_id,$token_id]" "[1,1,1]")" \
+  'DuplicateId()' "duplicate id in slot 2"
+# Slot 0 would pass; slot 1 is short. Nothing is written before every slot is checked.
+batch_must_fail "$private_key" "$sender" "$other" "[$token_id,$second_id]" "[10,31]" \
+  "short second slot"
+pf_evm_require_word_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$second_id]" "[10,31]")" "$sig_short" \
+  "short second slot reverts with its balance and need" "$sender" 30 31 "$second_id"
+pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 50 "short batch left slot 0 untouched"
+pf_evm_require_uint "$(balance_of "$other" "$token_id")" 45 "short batch left slot 0 destination"
+# A credit that would wrap the destination stops in the checked add256 of the slot's
+# pre-check, the same empty revert the single mint above takes; nothing is written.
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$other" "$big_id" 20 >/dev/null
+batch_must_fail "$private_key" "$sender" "$other" "[$big_id]" "[$near_max]" "wrapping batch credit"
+pf_evm_require_empty_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$big_id]" "[1,$near_max]")" \
+  "wrapping batch credit in slot 1 is the checked-add revert"
+pf_evm_require_uint "$(balance_of "$other" "$big_id")" 20 "wrapping batch left destination"
+pf_evm_require_uint "$(balance_of "$sender" "$big_id")" "$near_max" "wrapping batch left source"
+
+receipt="$(batch_send "$private_key" "$sender" "$other" "[$token_id,$second_id]" "[10,30]")"
+pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $token_id, \"value\": 10}" \
+  "batch slot 0 TransferSingle LOG4" 2 0
+pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $second_id, \"value\": 30}" \
+  "batch slot 1 TransferSingle LOG4" 2 1
+pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 40 "batch source slot 0"
+pf_evm_require_uint "$(balance_of "$other" "$token_id")" 55 "batch destination slot 0"
+pf_evm_require_uint "$(balance_of "$sender" "$second_id")" 0 "batch source slot 1"
+pf_evm_require_uint "$(balance_of "$other" "$second_id")" 30 "batch destination slot 1"
+pf_evm_require_equal "$(balance_of_batch "[$sender,$other,$sender,$other]" \
+  "[$token_id,$token_id,$second_id,$second_id]")" "[40, 55, 0, 30]" \
+  "balanceOfBatch reflects the batch transfer"
+
+# Empty batch: authorized no-op with no log. Zero amounts on a held id move nothing.
+receipt="$(batch_send "$private_key" "$sender" "$other" "[]" "[]")"
+pf_evm_typed_event_absent "$receipt" TransferSingle "$topic_xfer" "empty batch logs nothing"
+receipt="$(batch_send "$private_key" "$sender" "$other" "[$token_id]" "[0]")"
+pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $token_id, \"value\": 0}" \
+  "zero-amount slot still logs"
+pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 40 "zero-amount slot moves nothing"
+
+# Operator batch at full capacity, then revoked. other holds 55 of id 7 and 30 of id 9.
+third_id=10
+fourth_id=11
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$other" "$third_id" 3 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$other" "$fourth_id" 4 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'setApprovalForAll(address,bool)' "$sender" true >/dev/null
+receipt="$(batch_send "$private_key" "$other" "$sender" \
+  "[$token_id,$second_id,$third_id,$fourth_id]" "[5,30,3,4]")"
+pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
+  "{\"operator\": \"$sender\", \"from\": \"$other\", \"to\": \"$sender\", \"id\": $fourth_id, \"value\": 4}" \
+  "operator batch slot 3 TransferSingle LOG4" 4 3
+pf_evm_require_equal "$(balance_of_batch "[$sender,$sender,$sender,$sender]" \
+  "[$token_id,$second_id,$third_id,$fourth_id]")" "[45, 30, 3, 4]" \
+  "operator batch credited every slot"
+pf_evm_require_equal "$(balance_of_batch "[$other,$other,$other,$other]" \
+  "[$token_id,$second_id,$third_id,$fourth_id]")" "[50, 0, 0, 0]" \
+  "operator batch debited every slot"
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'setApprovalForAll(address,bool)' "$sender" false >/dev/null
+batch_must_fail "$private_key" "$other" "$sender" "[$token_id]" "[1]" "revoked operator batch"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'batchTransferFrom(address,address,uint256[],uint256[])' "$sender" "$other" \
+    "[$token_id,$second_id,$third_id,$fourth_id,$token_id]" "[1,1,1,1,1]" >/dev/null 2>&1; then
+  echo "FAIL: five-slot batch exceeded capacity 4 but decoded" >&2
+  exit 1
+fi
+
+echo "evm-anvil-multitoken: ok (mint/burn/transferFrom/operator/balanceOfBatch/batchTransferFrom + ERC-1155 TransferSingle LOG4 / ApprovalForAll LOG3)"

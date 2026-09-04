@@ -30,10 +30,30 @@ rejects underflow. Canonical ERC-1155 logs are reusable `Event.emit` wrappers
 (`Log.transferSingle` / `Log.approvalForAll`): LOG4 `TransferSingle` with two data words (`id`,
 `value`), and LOG3 `ApprovalForAll` with a bool data word.
 
+## Bounded batch transfer
+
+A batch is two `Batch UInt256` arguments (`ids`, `amounts`) paired by position over one
+`(source, to)`; slot `i` is active when `i < length` and inactive slots hold the decoder's zero
+id and zero amount. The batch rules are pure predicates the consumer orders as it likes:
+`isApprovedOrOwnerBatch` (operator check plus the key envelope over every id), equal lengths
+(`lengthWord` spells a length as the `uint256` an OZ `ERC1155InvalidArrayLength` carries),
+`distinctIds`, and `Balances.canTransferSlot` per slot. `distinctIds` is the honest bound that
+makes per-slot pre-write checks exact: with pairwise distinct ids no two slots read or write the
+same `(owner, id)` key, so checking every slot before the first write equals OZ's sequential
+checks. OZ accepts duplicate ids by applying slots in order; here a duplicate fails closed and the
+caller splits the batch. `Balances.batchTransfer` persists the active slots in array order and
+`Log.transferBatchSingles` emits one `TransferSingle` per active slot in the same order. EIP-1155
+allows this shape: `TransferSingle` "MAY be emitted multiple times to indicate multiple balance
+changes in the transaction, but note that `TransferBatch` is designed for this to reduce gas
+consumption". `TransferBatch` is the SHOULD shape for a batch. It is a typed event with two
+dynamic tails and stays unsupported until the emitter carries them.
+
 ## Explicitly unsupported
 
-Batch mutations (`safeBatchTransferFrom`, mint/burn batches), ERC1155Receiver callbacks
-(`onERC1155Received`), metadata URI, `TransferBatch`, and unbounded inputs.
+`safeBatchTransferFrom` with its `bytes data` and `onERC1155BatchReceived` callback (the bounded
+`batchTransferFrom` consumers ship instead has no receiver hook), mint/burn batches,
+ERC1155Receiver callbacks (`onERC1155Received`), metadata URI, `TransferBatch`, duplicate ids
+inside one batch, and unbounded inputs.
 Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
 interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,
@@ -70,6 +90,36 @@ A view has no revert channel today (`Except` on a view is refused as a mutating 
 is why this is a length rule and not an `ERC1155InvalidArrayLength` revert. -/
 @[pf_inline] def batchLength (owners : Batch Address) (ids : Batch UInt256) : UInt32 :=
   if owners.length == ids.length then owners.length else 0
+
+/-- Slot `i` carries a submitted element when `i < length`. Inactive slots hold the decoder's
+zero id and zero amount. -/
+@[pf_inline] def slotActive {α : Type} (batch : Batch α) (i : UInt64) : Bool :=
+  i < batch.length.toUInt64
+
+/-- A batch length as the `uint256` word an OZ `ERC1155InvalidArrayLength` revert carries. -/
+@[pf_inline] def lengthWord {α : Type} (batch : Batch α) : UInt256 :=
+  ⟨batch.length.toUInt64, 0, 0, 0⟩
+
+/-- Limb-wise id equality. Kernel-checkable on the host, unlike `UInt256.eq`, whose Runtime leaf
+is an extraction contract, so the spec pins `distinctIds` with real ids. -/
+@[pf_inline] def idEq (left right : UInt256) : Bool :=
+  left.w0 == right.w0 && left.w1 == right.w1 && left.w2 == right.w2 && left.w3 == right.w3
+
+/-- No two active slots name the same id. An active slot `j` implies every earlier slot is
+active, so each pair is gated by its later slot. See the module doc for why this bound keeps
+`Balances.canTransferSlot` exact. -/
+@[pf_inline] def distinctIds (ids : Batch UInt256) : Bool :=
+  (!slotActive ids 1 || !idEq ids.values[0] ids.values[1]) &&
+    (!slotActive ids 2 ||
+      (!idEq ids.values[0] ids.values[2] && !idEq ids.values[1] ids.values[2])) &&
+    (!slotActive ids 3 ||
+      (!idEq ids.values[0] ids.values[3] && !idEq ids.values[1] ids.values[3] &&
+        !idEq ids.values[2] ids.values[3]))
+
+/-- Every id of the batch fits the key envelope. Inactive zero slots encode trivially. -/
+@[pf_inline] def allEncodable (ids : Batch UInt256) : Bool :=
+  canEncode ids.values[0] && canEncode ids.values[1] && canEncode ids.values[2] &&
+    canEncode ids.values[3]
 
 namespace Balances
 
@@ -147,6 +197,34 @@ Precondition: `canEncode tokenId`. -/
     (tokenId amount : UInt256) : UInt64 :=
   balances.revertInsufficient owner (tokenKey tokenId) amount
 
+/-- One batch slot is movable when it is inactive or a checked single transfer. The `active`
+gate skips the map reads of inactive slots. Exact only under `distinctIds`. -/
+@[pf_inline] def canTransferSlot (balances : Balances) (source to : Address) (active : Bool)
+    (tokenId amount : UInt256) : Bool :=
+  !active || canTransfer balances source to tokenId amount
+
+/-- Every slot of the batch is movable. Precondition for exactness: `distinctIds ids`. -/
+@[pf_inline] def canBatchTransfer (balances : Balances) (source to : Address)
+    (ids amounts : Batch UInt256) : Bool :=
+  canTransferSlot balances source to (slotActive ids 0) ids.values[0] amounts.values[0] &&
+    canTransferSlot balances source to (slotActive ids 1) ids.values[1] amounts.values[1] &&
+    canTransferSlot balances source to (slotActive ids 2) ids.values[2] amounts.values[2] &&
+    canTransferSlot balances source to (slotActive ids 3) ids.values[3] amounts.values[3]
+
+/-- Persist one slot: inactive slots write nothing. Precondition: `canTransferSlot`. -/
+@[pf_inline] def transferSlot (balances : Balances) (source to : Address) (active : Bool)
+    (tokenId amount : UInt256) : UInt64 :=
+  if active then transfer balances source to tokenId amount else 0
+
+/-- Persist every active slot in array order (EIP-1155 orders balance changes by the arrays).
+Precondition: `canBatchTransfer balances source to ids amounts` and `distinctIds ids`. -/
+@[pf_inline] def batchTransfer (balances : Balances) (source to : Address)
+    (ids amounts : Batch UInt256) : UInt64 :=
+  transferSlot balances source to (slotActive ids 0) ids.values[0] amounts.values[0] |||
+    transferSlot balances source to (slotActive ids 1) ids.values[1] amounts.values[1] |||
+    transferSlot balances source to (slotActive ids 2) ids.values[2] amounts.values[2] |||
+    transferSlot balances source to (slotActive ids 3) ids.values[3] amounts.values[3]
+
 end Balances
 
 namespace Operators
@@ -161,12 +239,21 @@ namespace Operators
 
 end Operators
 
+/-- True when `spender` is `source` or an approved operator of `source`. -/
+@[pf_inline] def isOwnerOrOperator (operators : Operators) (spender source : Address) : Bool :=
+  Address.eq spender source || operators.isApprovedForAll source spender
+
 /-- True when `spender` is `source` or an approved operator of `source`. Unencodable token ids
 are never authorized (pre-authorization gate, same envelope as the mutation predicates). -/
 @[pf_inline] def isApprovedOrOwner (operators : Operators)
     (spender source : Address) (tokenId : UInt256) : Bool :=
-  canEncode tokenId &&
-    (Address.eq spender source || operators.isApprovedForAll source spender)
+  canEncode tokenId && isOwnerOrOperator operators spender source
+
+/-- `isApprovedOrOwner` over every id of a batch: the key envelope covers all four slots, then
+the same operator check. -/
+@[pf_inline] def isApprovedOrOwnerBatch (operators : Operators)
+    (spender source : Address) (ids : Batch UInt256) : Bool :=
+  allEncodable ids && isOwnerOrOperator operators spender source
 
 /-- Mint is valid when the recipient is nonzero and the credit is checked-valid (which embeds
 the id-encoding gate). -/
@@ -211,6 +298,24 @@ namespace Log
 /-- LOG3 `ApprovalForAll(address indexed account, address indexed operator, bool approved)`. -/
 @[pf_inline] def approvalForAll (account operator : Address) (approved : Bool) : UInt64 :=
   Event.emit (Notice.ApprovalForAll (Event.indexed account) (Event.indexed operator) approved)
+
+/-- `TransferSingle` for one active batch slot; inactive slots log nothing. -/
+@[pf_inline] def transferSlot (operator source destination : Address) (active : Bool)
+    (tokenId amount : UInt256) : UInt64 :=
+  if active then transferSingle operator source destination tokenId amount else 0
+
+/-- One `TransferSingle` per active slot, in array order. EIP-1155 lets `TransferSingle` be
+"emitted multiple times to indicate multiple balance changes in the transaction"; `TransferBatch`
+is the recommended shape and needs a typed event with two dynamic tails the emitter does not
+carry yet. -/
+@[pf_inline] def transferBatchSingles (operator source destination : Address)
+    (ids amounts : Batch UInt256) : UInt64 :=
+  transferSlot operator source destination (slotActive ids 0) ids.values[0] amounts.values[0] |||
+    transferSlot operator source destination (slotActive ids 1) ids.values[1]
+      amounts.values[1] |||
+    transferSlot operator source destination (slotActive ids 2) ids.values[2]
+      amounts.values[2] |||
+    transferSlot operator source destination (slotActive ids 3) ids.values[3] amounts.values[3]
 
 end Log
 

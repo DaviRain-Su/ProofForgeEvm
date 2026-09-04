@@ -430,6 +430,42 @@ if blob != expected:
 PY
 }
 
+# eth_call must revert with empty returndata: the `revert(0, 0)` of checked arithmetic and
+# decoder guards, as opposed to a typed error.
+pf_evm_require_empty_revert() {
+  local addr="$1" from="$2" data="$3" message="$4"
+  "$python" -I -S - "$rpc" "$addr" "$from" "$data" "$message" <<'PY'
+import json, sys, urllib.error, urllib.request
+
+rpc, addr, sender, data, message = sys.argv[1:]
+payload = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_call",
+    "params": [{"to": addr, "from": sender, "data": data}, "latest"],
+}
+request = urllib.request.Request(
+    rpc,
+    data=json.dumps(payload).encode(),
+    headers={"Content-Type": "application/json"},
+)
+try:
+    raw = urllib.request.urlopen(request).read().decode()
+except urllib.error.HTTPError as error:
+    raw = error.read().decode()
+response = json.loads(raw)
+failure = response.get("error")
+if failure is None:
+    raise SystemExit(f"FAIL: {message}: call succeeded with {response.get('result')!r}")
+blob = failure.get("data") or ""
+if isinstance(blob, dict):
+    blob = blob.get("data") or blob.get("raw") or ""
+blob = str(blob).lower().removeprefix("0x")
+if blob != "":
+    raise SystemExit(f"FAIL: {message}: expected empty returndata, got {blob!r}")
+PY
+}
+
 # eth_call must revert with ABI error CapExceeded().
 pf_evm_require_cap_exceeded() {
   local addr="$1" from="$2" data="$3" message="$4"
@@ -559,13 +595,15 @@ print(ev['name']+'('+','.join(i['type'] for i in ev['inputs'])+')')
 "
 }
 
-# Decode the one receipt log with topic0 == keccak(sig) using the ABI declaration of NAME:
+# Decode the receipt log with topic0 == keccak(sig) using the ABI declaration of NAME:
 # indexed inputs come from topics in declaration order, non-indexed inputs from consecutive
 # 32-byte data words. Every decoded word must be canonical for its type, and the decoded
 # arguments must equal EXPECTED (JSON object keyed by input name; ints, bools, or hex
-# addresses).
+# addresses). The receipt must carry exactly COUNT such logs (default 1) and INDEX (default 0)
+# selects which one is decoded, in log order.
 pf_evm_typed_event_check() {
   local abi_json="$1" receipt="$2" name="$3" topic0="$4" expected="$5" label="$6"
+  local count="${7:-1}" index="${8:-0}"
   printf '%s' "$receipt" | "$python" -I -S -c "
 import json,sys
 abi=json.load(open('$abi_json'))
@@ -575,9 +613,9 @@ want='$topic0'.lower()
 expected=json.loads('''$expected''')
 r=json.load(sys.stdin)
 hits=[lg for lg in (r.get('logs') or []) if (lg.get('topics') or []) and lg['topics'][0].lower()==want]
-if len(hits)!=1:
-    raise SystemExit(f'FAIL: $label: expected exactly one $name log, got {len(hits)}')
-lg=hits[0]
+if len(hits)!=$count:
+    raise SystemExit(f'FAIL: $label: expected $name log count $count, got {len(hits)}')
+lg=hits[$index]
 topics=lg['topics']
 indexed=[i for i in inputs if i.get('indexed')]
 plain=[i for i in inputs if not i.get('indexed')]
