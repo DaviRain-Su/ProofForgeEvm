@@ -42,7 +42,7 @@ def entries : Array Entry := #[
   { name := "MetaGateLink", digest := "b7a3eb3bad62bb7" },
   { name := "Auth3009Link", digest := "c0188e81405c51f5" },
   { name := "AuditLink", digest := "d5cb688dcc4d25ae" },
-  { name := "Vault4626Link", digest := "b67fcd513855d1d" },
+  { name := "Vault4626Link", digest := "bfdf7768e0161aad" },
   { name := "NineLink", digest := "2aed9bb07eb36ab9" },
   { name := "Collectible", digest := "df29360114f22d5f" },
   { name := "Badge", digest := "ef61792f697edbd3" },
