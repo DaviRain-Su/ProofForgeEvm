@@ -5,7 +5,7 @@ import ProofForge.Evm.IR
 /-!
 Emit golden EVM Yul for `scripts/check_yul_fragment.py --golden`.
 
-Usage: `lake env lean --run scripts/emit_evm_golden_yul.lean`
+Usage: `lake build pfEmitGoldenYul && .lake/build/bin/pfEmitGoldenYul`
 Each program is delimited by `--- name ---` on its own line.
 -/
 

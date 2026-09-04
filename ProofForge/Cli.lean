@@ -276,14 +276,42 @@ private unsafe def extractEvmPrograms (units : Array BuildUnit) :
       -- Lean's import lookup (`SearchPath.findWithExt`) short-circuits on the
       -- first entry whose module-root *directory* exists, so a package dir
       -- that owns sibling modules shadows a later entry owning the exact
-      -- module (e.g. `ProofForge/Attr.olean` only in proofforge-common).
-      -- Materialize a merged view of the resolved closure in a private temp
-      -- dir of hard copies and put it first; every needed module then resolves
-      -- from that single dir.
+      -- module (e.g. `ProofForge/Evm/Emit.olean` only in this repo while
+      -- `ProofForge/` exists in proofforge-common's build dir).
+      -- Materialize a merged view in a private temp dir, but ONLY for the
+      -- shadowed gaps: a module needs a copy iff the first search dir owning
+      -- its root segment (`ProofForge/`, `Examples/`, …) lacks its olean.
+      -- Copying the full closure (incl. the toolchain's Init/Std tree) filled
+      -- CI runners' tmpfs with GBs of duplicates (error 28).
       let mergeDir : System.FilePath :=
         ((← IO.getEnv "XDG_RUNTIME_DIR") |>.getD ((← IO.getEnv "TMPDIR") |>.getD "/tmp"))
           / "pf-lean-path"
-      for (mod, olean, ilean) in artifacts do
+      -- A root segment (e.g. `ProofForge`) is "split" when the closure contains
+      -- modules of that root that the FIRST search dir owning the root does not
+      -- supply. For every split root, copy ALL closure modules of the root into
+      -- the merged view (mergeDir/R itself shadows the owner dirs, so a partial
+      -- copy would fail the remaining lookups). Unsplit roots (Init/Std, and
+      -- `Examples` whose modules all live in this repo) resolve unaided.
+      let mut splitRoots : Std.HashSet String := {}
+      for (mod, _, _) in artifacts do
+        let rootDirName := mod.getRoot.toString
+        let mut naiveDir? : Option System.FilePath := none
+        for dir in allDirs do
+          if ← (dir / rootDirName).pathExists then
+            naiveDir? := some dir
+            break
+        match naiveDir? with
+        | none => pure ()
+        | some naiveDir =>
+            let naiveOlean := Lean.modToFilePath naiveDir mod "olean"
+            if !(← naiveOlean.pathExists) then
+              splitRoots := splitRoots.insert rootDirName
+      let gaps := artifacts.filter fun (mod, _, _) =>
+        splitRoots.contains mod.getRoot.toString
+      -- Stale artifacts from earlier runs (possibly built against a different
+      -- dependency revision) must not mix with the current closure.
+      try IO.FS.removeDirAll mergeDir catch _ => pure ()
+      for (mod, olean, ilean) in gaps do
         let dst := Lean.modToFilePath mergeDir mod "olean"
         if !(← dst.parent.get!.pathExists) then
           IO.FS.createDirAll dst.parent.get!
@@ -356,15 +384,13 @@ private def runInit (opts : Options) : IO UInt32 := do
     let requireFrom :=
       if parentAbs == repoRoot then ".."
       else repoRoot.toString
-    let commonFrom :=
-      if parentAbs == repoRoot then (("." : System.FilePath) / ".." / "..").toString
-      else repoRoot.toString ++ "/../ProofForgeCommon"
     let old ← IO.FS.readFile lakefile
+    -- Line-scoped: rewrite only the target repo's path require. The
+    -- `proofforge-common` git require resolves from GitHub for any location.
     let rewritten :=
-      old.replace "require «proofforge-common» from \"..\" / \"..\" / \"..\""
-        s!"require «proofforge-common» from \"{commonFrom}\""
-        |>.replace "from \"..\" / \"..\"" s!"from \"{requireFrom}\""
-        |>.replace "from \"../..\"" s!"from \"{requireFrom}\""
+      old.replace "require «proofforge» from \"..\" / \"..\""
+        s!"require «proofforge» from \"{requireFrom}\""
+        |>.replace "require «proofforge» from \"../..\"" s!"require «proofforge» from \"{requireFrom}\""
     IO.FS.writeFile lakefile rewritten
   IO.println s!"initialized {dst} (target=evm)"
   IO.println s!"next: cd {dst} && lake build && lake env pf build"

@@ -86,3 +86,9 @@ lean_exe pfEvmAssemble where
 lean_exe pf where
   root := `ProofForge.Cli
   supportInterpreter := true
+
+/-- Golden Yul emitter for `scripts/check_yul_fragment.py`. A compiled exe (not
+`lake env lean --run`) so module resolution uses Lake's package ownership instead
+of directory-prefix shadowing across proofforge-common. -/
+lean_exe pfEmitGoldenYul where
+  root := `scripts.emit_evm_golden_yul

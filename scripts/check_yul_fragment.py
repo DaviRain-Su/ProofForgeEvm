@@ -161,9 +161,24 @@ def parse_golden_blob(blob: str) -> list[tuple[str, str]]:
 
 
 def emit_golden_yul() -> str:
-    script = ROOT / "scripts" / "emit_evm_golden_yul.lean"
+    # Compiled exe (not `lake env lean --run`): the multi-package workspace makes
+    # LEAN_PATH directory-prefix resolution shadow root modules behind
+    # proofforge-common's ProofForge/ dir. Lake's build maps module ownership
+    # correctly, and the exe needs no runtime module lookup.
+    build = subprocess.run(
+        ["lake", "build", "pfEmitGoldenYul"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if build.returncode != 0:
+        raise RuntimeError(
+            "lake build pfEmitGoldenYul failed:\n"
+            + (build.stderr or build.stdout or "(no output)")
+        )
     proc = subprocess.run(
-        ["lake", "env", "lean", "--run", str(script)],
+        [str(ROOT / ".lake" / "build" / "bin" / "pfEmitGoldenYul")],
         cwd=ROOT,
         check=False,
         capture_output=True,
@@ -171,8 +186,7 @@ def emit_golden_yul() -> str:
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            "emit_evm_golden_yul.lean failed:\n"
-            + (proc.stderr or proc.stdout or "(no output)")
+            "pfEmitGoldenYul failed:\n" + (proc.stderr or proc.stdout or "(no output)")
         )
     return proc.stdout
 
