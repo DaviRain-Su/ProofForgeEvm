@@ -2,7 +2,8 @@
 # OpenCall S3: parameter- and state-supplied targets, one- to four-word, bool, and address
 # STATICCALL reads with their fail-closed frames, reads deciding a guard, compared, and passed
 # as another call's argument, one bounded bytes argument through CALL and STATICCALL, CALL
-# value, EOA rejection, malformed returndata, and CALL-before-sstore effect order.
+# value, EOA rejection, malformed returndata, CALL-before-sstore effect order, and the
+# compile-time refusal of a CALL carrier anywhere but the result word.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,6 +13,28 @@ source "$here/lib.sh"
 pf_evm_evm_init evm-anvil-opencall
 bin="$root/build/evm/EvmOpenCall.bin"
 pf_evm_ensure_bin "$bin"
+
+# A CALL's UInt64 anywhere but the entry's result word must not compile. Before the refusal a
+# compared carrier lowered to the CALL followed by the constant 0, so `callSuccess t ping == 0`
+# answered false on chain where the Lean function answers true, and a carrier dropped by `let`
+# above an `if` lost the `if` and its stores. The pin sits on the `pf build` surface users hit,
+# and it must refuse for the carrier reason. The output dir stays outside build/evm so a
+# regression cannot also trip the artifact manifest.
+misuse_out="$root/build/opencall-misuse"
+rm -rf "$misuse_out"
+lake build Tests.EvmOpenCallMisuse >/dev/null 2>&1 \
+  || { echo "FAIL: Tests.EvmOpenCallMisuse must elaborate; the refusal is the extractor's" >&2; exit 1; }
+if misuse_log="$(lake exe pf -- build --module Tests.EvmOpenCallMisuse --out "$misuse_out" 2>&1)"; then
+  echo "FAIL: pf build compiled Tests.EvmOpenCallMisuse; a CALL carrier out of place must be refused" >&2
+  exit 1
+fi
+grep -q "CALL carrier" <<<"$misuse_log" \
+  || { echo "FAIL: pf build refused Tests.EvmOpenCallMisuse for another reason: $misuse_log" >&2; exit 1; }
+if [[ -n "$(ls -A "$misuse_out" 2>/dev/null)" ]]; then
+  echo "FAIL: pf build wrote artifacts for the refused module" >&2
+  exit 1
+fi
+
 pf_evm_start_anvil "${PF_EVM_PORT:-18691}" "$root/build/evm/anvil-opencall.log"
 
 solc_bin=""
@@ -242,4 +265,4 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'ownedBy(address,address)(bool)' \
   exit 1
 fi
 
-echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + reads in guards/comparisons/arguments + bytes arg + value + EOA + malformed + effect-order; engineering only)"
+echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + reads in guards/comparisons/arguments + bytes arg + value + EOA + malformed + effect-order + CALL-carrier refusal; engineering only)"
