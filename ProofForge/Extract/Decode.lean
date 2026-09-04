@@ -1070,6 +1070,17 @@ private def uint256Leaves (env : Environment) (e : Expr) :
     | _ => ``ProofForge.Core.Value.UInt256.w3
   let proj (name : String) : Ops.Val :=
     (val env (mkApp (mkConst (projConst name)) e)).getD (flattenField (.arg 0) name)
+  -- A wide `if c then a else b` selects each limb: `wN (ite c a b)` is `ite c (wN a) (wN b)`,
+  -- which `asVal` already lowers to one `.select`.
+  if isConstNamed e ``ite && e.getAppArgs.size ≥ 5 then
+    let args := e.getAppArgs
+    let n := args.size
+    let limb (name : String) : Ops.Val :=
+      let ite := mkAppN (mkConst ``ite [Level.one]) #[mkConst ``UInt64, args[n - 4]!, args[n - 3]!,
+        mkApp (mkConst (projConst name)) args[n - 2]!, mkApp (mkConst (projConst name)) args[n - 1]!]
+      (val env ite).getD (flattenField (.arg 0) name)
+    (limb "w0", limb "w1", limb "w2", limb "w3")
+  else
   match uint256CtorFields env e with
   | some fields =>
     let leaf (i : Nat) : Ops.Val := (val env fields[i]!).getD (proj s!"w{i}")
@@ -1714,67 +1725,6 @@ private def asConstructedOptionResult (env : Environment) : Nat → Expr →
         asConstructedOptionResult env fuel' e.getAppArgs[e.getAppArgs.size - 1]!
       else
         asOptionStorage env e
-
-/-- Flatten one `#v[…]` / `List.cons` element into ABI leaves. Static `Prod.mk` trees become
-ordered scalar limbs so a constructed `BoundedVec (α × β) n` publishes the same
-`length ‖ leaf₀ ‖ …` frame codecs already pack for `(α,β)[]`. -/
-private partial def flattenListElementVals (env : Environment) (fuel : Nat) (e : Expr) :
-    Array Ops.Val :=
-  match fuel with
-  | 0 => #[]
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``Prod.mk && e.getAppArgs.size ≥ 2 then
-      let args := e.getAppArgs
-      flattenListElementVals env fuel' args[args.size - 2]! ++
-        flattenListElementVals env fuel' args[args.size - 1]!
-    else
-      match val env e with
-      | some v => #[v]
-      | none => #[]
-
-/-- `#v[a, b, …]` = `Vector.mk (List.toArray (a :: b :: []))`。 -/
-private def collectListVals (env : Environment) (fuel : Nat) (e : Expr) : Array Ops.Val :=
-  match fuel with
-  | 0 => #[]
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``List.nil || endsWith e ".nil" then
-      #[]
-    else if isConstNamed e ``List.cons || endsWith e ".cons" then
-      let args := e.getAppArgs
-      if args.size ≥ 2 then
-        let head := args[args.size - 2]!
-        let tail := args[args.size - 1]!
-        let headVals := flattenListElementVals env 8 head
-        if headVals.isEmpty then collectListVals env fuel' tail
-        else headVals ++ collectListVals env fuel' tail
-      else #[]
-    else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
-      let args := e.getAppArgs
-      if args.size ≥ 1 then collectListVals env fuel' args[args.size - 1]! else #[]
-    else
-      flattenListElementVals env 8 e
-
-private def findListVals (env : Environment) (fuel : Nat) (e : Expr) : Option (Array Ops.Val) :=
-  match fuel with
-  | 0 => none
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``List.cons || endsWith e ".cons" then
-      -- Recognition may traverse the largest internal raw-storage key literal. Acceptance remains
-      -- owned by each consumer's capacity predicate after this syntax-only flattening step.
-      some (collectListVals env 80 e)
-    else
-      e.getAppArgs.findSome? (findListVals env fuel')
-
-private def asVectorLits (env : Environment) (e : Expr) : Option (Array Ops.Val) :=
-  let e := strip e
-  if isConstNamed e ``Vector.mk || endsWith e "Vector.mk" then
-    match findListVals env 16 e with
-    | some vs => if vs.isEmpty then none else some vs
-    | none => none
-  else none
 
 /-- Compiler-owned fixed-width scalar constructors are boundary values, not persistent State.
 Expose their ordered limbs directly so target codecs see the same frame as projected wide values. -/
@@ -2508,6 +2458,84 @@ private def boundedLengthVal (env : Environment) (e : Expr) : Option Ops.Val :=
       | some #[v] => some v
       | _ => none
 
+/-- Limbs of one constructed element whose type is `elem`. A wide element (`UInt256`, `Addr20`)
+publishes every limb, as the echo path does for an argument; any other element is one scalar. -/
+private def constructedElementVals (env : Environment) (elem : Option Expr) (e : Expr) :
+    Array Ops.Val :=
+  match elem with
+  | some t =>
+    if isUInt256Type t then
+      let (w0, w1, w2, w3) := uint256Leaves env e
+      #[w0, w1, w2, w3]
+    else if isAddr20Type t || endsWith t ".Address" then
+      let (a0, a1, a2) := addr20Leaves env e
+      #[a0, a1, a2]
+    else
+      ((val env e).map (#[·])).getD #[]
+  | none => ((val env e).map (#[·])).getD #[]
+
+/-- Flatten one `#v[…]` / `List.cons` element into ABI leaves. Static `Prod.mk` trees become
+ordered scalar limbs so a constructed `BoundedVec (α × β) n` publishes the same
+`length ‖ leaf₀ ‖ …` frame codecs already pack for `(α,β)[]`. -/
+private partial def flattenListElementVals (env : Environment) (elem : Option Expr) (fuel : Nat)
+    (e : Expr) : Array Ops.Val :=
+  match fuel with
+  | 0 => #[]
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``Prod.mk && e.getAppArgs.size ≥ 2 then
+      let args := e.getAppArgs
+      flattenListElementVals env none fuel' args[args.size - 2]! ++
+        flattenListElementVals env none fuel' args[args.size - 1]!
+    else
+      constructedElementVals env elem e
+
+/-- `#v[a, b, …]` = `Vector.mk (List.toArray (a :: b :: []))`。 -/
+private def collectListVals (env : Environment) (elem : Option Expr) (fuel : Nat) (e : Expr) :
+    Array Ops.Val :=
+  match fuel with
+  | 0 => #[]
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``List.nil || endsWith e ".nil" then
+      #[]
+    else if isConstNamed e ``List.cons || endsWith e ".cons" then
+      let args := e.getAppArgs
+      if args.size ≥ 2 then
+        let head := args[args.size - 2]!
+        let tail := args[args.size - 1]!
+        let headVals := flattenListElementVals env elem 8 head
+        if headVals.isEmpty then collectListVals env elem fuel' tail
+        else headVals ++ collectListVals env elem fuel' tail
+      else #[]
+    else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
+      let args := e.getAppArgs
+      if args.size ≥ 1 then collectListVals env elem fuel' args[args.size - 1]! else #[]
+    else
+      flattenListElementVals env elem 8 e
+
+private def findListVals (env : Environment) (elem : Option Expr) (fuel : Nat) (e : Expr) :
+    Option (Array Ops.Val) :=
+  match fuel with
+  | 0 => none
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``List.cons || endsWith e ".cons" then
+      -- Recognition may traverse the largest internal raw-storage key literal. Acceptance remains
+      -- owned by each consumer's capacity predicate after this syntax-only flattening step.
+      some (collectListVals env elem 80 e)
+    else
+      e.getAppArgs.findSome? (findListVals env elem fuel')
+
+private def asVectorLits (env : Environment) (elem : Option Expr) (e : Expr) :
+    Option (Array Ops.Val) :=
+  let e := strip e
+  if isConstNamed e ``Vector.mk || endsWith e "Vector.mk" then
+    match findListVals env elem 16 e with
+    | some vs => if vs.isEmpty then none else some vs
+    | none => none
+  else none
+
 private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
   let e := substLets 32 (strip e)
   let ctor ← e.getAppFn.constName?
@@ -2516,8 +2544,10 @@ private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array O
       info.induct == boundedStringName do none
   let args := e.getAppArgs
   unless args.size ≥ 2 do none
+  -- `BoundedVec.mk α capacity length values` names its element type; bytes and strings do not.
+  let elem := if info.induct == boundedVecName && args.size ≥ 4 then some (strip args[0]!) else none
   let length ← boundedLengthVal env args[args.size - 2]!
-  let values ← asVectorLits env args[args.size - 1]!
+  let values ← asVectorLits env elem args[args.size - 1]!
   return #[length] ++ values
 
 /-- Keep the historical scalar `okState` shorthand, but spell multi-leaf effectful results as the
