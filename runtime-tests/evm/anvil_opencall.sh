@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # OpenCall S3: parameter- and state-supplied targets, one- to four-word, bool, and address
-# STATICCALL reads with their fail-closed frames, CALL value, EOA rejection, malformed
-# returndata, and CALL-before-sstore effect order.
+# STATICCALL reads with their fail-closed frames, one bounded bytes argument through CALL and
+# STATICCALL, CALL value, EOA rejection, malformed returndata, and CALL-before-sstore effect
+# order.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -132,4 +133,37 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'flagOf()(uint64)')
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'seenFlag()(uint256)')" 0 \
   "CALL observed pre-store flag (effect before sstore)"
 
-echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + value + EOA + malformed + effect-order; engineering only)"
+# Bounded bytes argument. The callee must decode the runtime length and content, and the whole
+# calldata of both the CALL and the STATICCALL must hash to the canonical encoding `cast`
+# produces, for lengths 0, 3, and 8.
+sink_case() {
+  local data="$1" want_len="$2"
+  local want_hash want_calldata want_static
+  want_hash="$("$cast" keccak "$data")"
+  want_calldata="$("$cast" keccak "$("$cast" calldata 'sink(uint256,bytes)' 7 "$data")")"
+  want_static="$("$cast" keccak "$("$cast" calldata 'calldataHash(bytes)' "$data")")"
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'sinkBytes(address,uint256,bytes)' "$target" 7 "$data" >/dev/null
+  pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'sunkTag()(uint256)')" 7 \
+    "sink tag (len $want_len)"
+  pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'sunkLength()(uint256)')" \
+    "$want_len" "sink length"
+  pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$target" 'sunkHash()(bytes32)')" \
+    "$want_hash" "sink payload keccak (len $want_len)"
+  pf_evm_require_equal \
+    "$("$cast" call --rpc-url "$rpc" "$target" 'sunkCalldataHash()(bytes32)')" \
+    "$want_calldata" "sink calldata is the canonical encoding (len $want_len)"
+  pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+    'hashBytes(address,bytes)(bytes32)' "$target" "$data")" "$want_static" \
+    "STATICCALL calldata is the canonical encoding (len $want_len)"
+}
+sink_case 0x 0
+sink_case 0x616263 3
+sink_case 0x0001020304050607 8
+if "$cast" call --rpc-url "$rpc" "$addr" 'hashBytes(address,bytes)(bytes32)' \
+    "$target" 0x000102030405060708 >/dev/null 2>&1; then
+  echo "FAIL: nine bytes passed the BoundedBytes 8 entry" >&2
+  exit 1
+fi
+
+echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + bytes arg + value + EOA + malformed + effect-order; engineering only)"

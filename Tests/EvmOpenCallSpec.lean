@@ -401,7 +401,7 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "5223289d34513e5e"
+#guard Registry.digestOf "EvmOpenCall" == some "9fe4427d5b5d3114"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -449,6 +449,7 @@ private def expectUnsupported (env : Environment) (name : Name) (fragment : Stri
         throwError s!"{name}: wrong fail-closed reason: {reason}"
 
 namespace Unsupported
+open ProofForge.Core.Value (BoundedBytes BoundedString)
 
 structure Payload where
   to : Address
@@ -475,6 +476,24 @@ inductive TooMany where
 def nineArgs (target : Address) (v : UInt64) : UInt64 :=
   OpenCall.call target (TooMany.many v v v v v v v v v)
 
+inductive TwoTails where
+  | pair (a : BoundedBytes 4) (b : BoundedBytes 4)
+
+def twoBytesArgs (target : Address) (a b : BoundedBytes 4) : UInt64 :=
+  OpenCall.call target (TwoTails.pair a b)
+
+inductive WideTail where
+  | wide (data : BoundedBytes 64)
+
+def wideBytesArg (target : Address) (data : BoundedBytes 64) : UInt64 :=
+  OpenCall.call target (WideTail.wide data)
+
+inductive StringTail where
+  | text (data : BoundedString 4)
+
+def stringArg (target : Address) (data : BoundedString 4) : UInt64 :=
+  OpenCall.call target (StringTail.text data)
+
 end Unsupported
 
 elab "#pf_guard_evm_open_call_source" : command => do
@@ -497,11 +516,14 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost payTarget"
   let some mark := source.methods.find? (·.ixName == "markThenPing")
     | throwError "open-call example lost markThenPing"
+  let some sink := source.methods.find? (·.ixName == "sinkBytes")
+    | throwError "open-call example lost sinkBytes"
   let pingPlans := sourceOpenCalls ping.ops
   let storedPlans := sourceOpenCalls stored.ops
   let xferPlans := sourceOpenCalls xfer.ops
   let payPlans := sourceOpenCalls pay.ops
   let markPlans := sourceOpenCalls mark.ops
+  let sinkPlans := sourceOpenCalls sink.ops
   unless pingPlans.size == 1 && pingPlans[0]!.name == "ping" &&
       pingPlans[0]!.kind == .call &&
       pingPlans[0]!.policy == .contractSuccess &&
@@ -518,6 +540,16 @@ elab "#pf_guard_evm_open_call_source" : command => do
     throwError s!"payTarget plan diverged: {repr payPlans}"
   unless markPlans.size == 1 && markPlans[0]!.name == "ping" do
     throwError s!"markThenPing plan diverged: {repr markPlans}"
+  -- The bytes field decodes as the one tail: an offset head word, then length plus eight
+  -- byte limbs, with the static calldata size counting the length word.
+  unless sinkPlans.size == 1 && sinkPlans[0]!.name == "sink" &&
+      sinkPlans[0]!.kind == .call && sinkPlans[0]!.policy == .contractSuccess &&
+      sinkPlans[0]!.args.size == 2 &&
+      sinkPlans[0]!.args[0]!.type == .scalar .uint256 &&
+      sinkPlans[0]!.args[1]!.name == "data" && sinkPlans[0]!.args[1]!.type == .bytes 8 &&
+      sinkPlans[0]!.args[1]!.parts.size == 9 &&
+      sinkPlans[0]!.inSize == 100 && sinkPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
+    throwError s!"sinkBytes plan diverged: {repr sinkPlans}"
 
   let evm ←
     match ProofForge.Evm.IR.fromExtracted source with
@@ -567,6 +599,14 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectLimbs "readOwner" .address
   expectLimbs "readBalance" .word
   expectLimbs "readSupports" .bool
+  expectLimbs "hashBytes" .word
+  -- Both bytes paths send the canonical size: the static head plus the padded runtime length.
+  unless yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "sink" #["uint256", "bytes"]})" &&
+      yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "calldataHash" #["bytes"]})" &&
+      yul.contains "mstore(36, 64)" && yul.contains ", 0, 0, add(100, " &&
+      yul.contains "mstore(4, 32)" && yul.contains "staticcall(gas(), v0, 0, add(68, " &&
+      yul.contains ":= and(add(" && yul.contains ", 31), not(31))" do
+    throwError "open-call Yul omitted the bytes tail offset, size, or selector"
   unless yul.contains "if iszero(eq(returndatasize(), 96))" &&
       yul.contains "if iszero(eq(returndatasize(), 128))" &&
       yul.contains ", 1) { revert(0, 0) }" &&
@@ -584,6 +624,9 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectUnsupported env ``Unsupported.optionField "closed EVM scalar"
   expectUnsupported env ``Unsupported.anonymous "explicitly named"
   expectUnsupported env ``Unsupported.nineArgs "at most eight"
+  expectUnsupported env ``Unsupported.twoBytesArgs "at most one bytes argument"
+  expectUnsupported env ``Unsupported.wideBytesArg "exceeds the bounded bytes capacity"
+  expectUnsupported env ``Unsupported.stringArg "closed EVM scalar"
 
   logInfo s!"EvmOpenCall digest: {ProofForge.Evm.IR.digestHex evm}"
 
