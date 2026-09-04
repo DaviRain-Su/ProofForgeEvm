@@ -157,6 +157,9 @@ jobs:
       - name: Check kernel proofs have no placeholders
         run: python3 scripts/check_no_sorry.py
 
+      - name: Check isValidSignatureNow honesty
+        run: python3 scripts/check_signature_now_honesty.py
+
       - name: Check DuplicateId product honesty
         run: python3 scripts/check_product_honesty.py
 

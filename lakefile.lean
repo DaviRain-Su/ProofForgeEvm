@@ -34,6 +34,7 @@ lean_lib ProofForgeEvmSdk where
     `ProofForge.Evm.Sdk.Ierc5313,
     `ProofForge.Evm.Sdk.Ierc6372,
     `ProofForge.Evm.Sdk.Ecdsa,
+    `ProofForge.Evm.Sdk.Ierc1271,
     `ProofForge.Evm.Sdk.Vesting,
     `ProofForge.Evm.Sdk.MerkleProof,
     `ProofForge.Evm.Sdk.BlockHeader,
