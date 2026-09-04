@@ -1255,19 +1255,127 @@ private partial def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar
 
 /-- The limbs of a `BoundedBytes` open-call argument: the runtime length leaf, then
 `field.values[slot]` for every slot, read through the same `GetElem` path a source
-`bytes.values[0].toUInt64` takes. -/
+`bytes.values[0].toUInt64` takes. A source-built constructor (empty `data` on the
+3-arg ERC-721 overload) is not an argument, so GetElem cannot find a `methodArgRef`. -/
 private partial def decodeBytesArgParts (env : Environment) (capacity : Nat) (field : Expr) :
-    Option (Array Ops.Val) := do
-  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.length)
-    #[mkNatLit capacity, field])
-  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.values)
-    #[mkNatLit capacity, field]
-  let mut parts : Array Ops.Val := #[length]
-  for slot in [0:capacity] do
-    let byte ← val env
-      (mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro])
-    parts := parts.push byte
-  return parts
+    Option (Array Ops.Val) :=
+  let rec listNats (fuel : Nat) (e : Expr) : Option (Array Nat) :=
+    match fuel with
+    | 0 => none
+    | fuel' + 1 =>
+      let e := strip (unfoldUserHelpers env 8 e)
+      if isConstNamed e ``List.nil || endsWith e ".nil" then
+        some #[]
+      else if isConstNamed e ``List.cons || endsWith e ".cons" then
+        let args := e.getAppArgs
+        if args.size ≥ 2 then
+          let headLit :=
+            match natLiteral? args[args.size - 2]! with
+            | some n => some n
+            | none =>
+              match val env args[args.size - 2]! with
+              | some (.lit n) => some n.toNat
+              | _ => none
+          match headLit with
+          | some n =>
+            match listNats fuel' args[args.size - 1]! with
+            | some tail => some (#[n] ++ tail)
+            | none => none
+          | none => none
+        else none
+      else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
+        let args := e.getAppArgs
+        if args.size ≥ 1 then listNats fuel' args[args.size - 1]! else none
+      else
+        e.getAppArgs.findSome? (listNats fuel')
+  let arrayNats (e : Expr) : Option (Array Nat) :=
+    let e := strip (unfoldUserHelpers env 16 e)
+    if isConstNamed e ``Array.mk && e.getAppArgs.size ≥ 1 then
+      listNats 80 e.getAppArgs[e.getAppArgs.size - 1]!
+    else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
+      let largs := e.getAppArgs
+      if largs.size ≥ 1 then listNats 80 largs[largs.size - 1]! else none
+    else if isConstNamed e ``Array.replicate || endsWith e ".replicate" then
+      let args := e.getAppArgs
+      if args.size ≥ 2 then
+        let n? := natLiteral? args[args.size - 2]!
+        let a? :=
+          match natLiteral? args[args.size - 1]! with
+          | some n => some n
+          | none =>
+            match val env args[args.size - 1]! with
+            | some (.lit n) => some n.toNat
+            | _ => none
+        match n?, a? with
+        | some n, some a => some (Array.replicate n a)
+        | _, _ => none
+      else none
+    else
+      listNats 80 e
+  let vectorNats (vectorE : Expr) : Option (Array Nat) :=
+    let vectorE := strip (unfoldUserHelpers env 32 vectorE)
+    if isConstNamed vectorE ``Vector.replicate || endsWith vectorE ".replicate" then
+      let args := vectorE.getAppArgs
+      if args.size ≥ 2 then
+        let n? := natLiteral? args[args.size - 2]!
+        let a? :=
+          match natLiteral? args[args.size - 1]! with
+          | some n => some n
+          | none =>
+            match val env args[args.size - 1]! with
+            | some (.lit n) => some n.toNat
+            | _ => none
+        match n?, a? with
+        | some n, some a => some (Array.replicate n a)
+        | _, _ => none
+      else none
+    else if isConstNamed vectorE ``Vector.mk || endsWith vectorE "Vector.mk" then
+      let vArgs := vectorE.getAppArgs
+      if vArgs.size ≥ 3 then
+        match arrayNats vArgs[2]! with
+        | some bytes => some bytes
+        | none => arrayNats vArgs[1]!
+      else if vArgs.size ≥ 2 then
+        arrayNats vArgs[1]!
+      else none
+    else none
+  let ctorParts? : Option (Array Ops.Val) := do
+    let field := strip (unfoldUserHelpers env 32 field)
+    let some ctor := field.getAppFn.constName? | none
+    let some info := env.find? ctor | none
+    let .ctorInfo c := info | none
+    unless c.induct == boundedBytesName do none
+    let args := field.getAppArgs
+    unless args.size ≥ 2 do none
+    let lengthE := args[args.size - 2]!
+    let valuesE := args[args.size - 1]!
+    let len ←
+      match natLiteral? (strip lengthE) with
+      | some n => pure n
+      | none =>
+        match val env lengthE with
+        | some (.lit n) => pure n.toNat
+        | _ => none
+    unless len ≤ capacity do none
+    let bytes ← vectorNats valuesE
+    unless bytes.size == capacity do none
+    let mut parts : Array Ops.Val := #[.lit (UInt64.ofNat len)]
+    for b in bytes do
+      parts := parts.push (.lit (UInt64.ofNat b))
+    return parts
+  match ctorParts? with
+  | some parts => some parts
+  | none => do
+    let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.length)
+      #[mkNatLit capacity, field])
+    let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.values)
+      #[mkNatLit capacity, field]
+    let mut parts : Array Ops.Val := #[length]
+    for slot in [0:capacity] do
+      let byte ← val env
+        (mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro])
+      parts := parts.push byte
+    return parts
 
 /-- Length limb plus every slot's scalar limbs, the same frame a log tail already carries. -/
 private partial def decodeArrayArgParts (env : Environment) (elementType : Expr)

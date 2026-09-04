@@ -492,6 +492,19 @@ private def markMethodArgs (kind : Core.IR.MethodKind) (count : Nat) (body : Exp
     | e => e
   go 0 body
 
+/-- Lean `foo` and `foo__bar` share the ABI name `foo`. The suffix after the first `__` is only a
+Lean discriminator: one declaration is still one name, and Solidity overloads need two
+declarations with the same on-chain name and different argument types. -/
+def abiNameOfLean (lean : String) : Except String String :=
+  let mapped := Core.IR.ixNameOfLean lean
+  match mapped.splitOn "__" with
+  | head :: _ =>
+    if head.isEmpty then
+      throw s!"extract/unsupported: empty ABI name in {lean}"
+    else
+      pure head
+  | [] => throw s!"extract/unsupported: empty ABI name in {lean}"
+
 def extractMethod (env : Environment) (kind : Core.IR.MethodKind) (n : Name) :
     Except String IR.Method := do
   let some info := env.find? n
@@ -870,8 +883,9 @@ def extractMethod (env : Environment) (kind : Core.IR.MethodKind) (n : Name) :
     | .scalar type => #[type]
     | _ => #[]
   let annotations : Array String := #[]
+  let ixName ← abiNameOfLean lean
   return {
-    kind, name := n.toString, ixName := Core.IR.ixNameOfLean lean
+    kind, name := n.toString, ixName
     paramCount, paramWidths, paramTypes, paramSchemas, retWidths, retTypes, retSchema, retCount,
     annotations, sketch, ops
   }
@@ -1638,6 +1652,24 @@ def inferKind (env : Environment) (n : Name) : Except String Core.IR.MethodKind 
 private def sortNames (ns : Array Name) : Array Name :=
   ns.qsort (·.toString < ·.toString)
 
+/-- Solidity identity `name(type,…)`. Two Lean roots may share `ixName` when this string differs. -/
+private def abiIdentity (m : IR.Method) : Except String String := do
+  let types ←
+    if !m.paramSchemas.isEmpty then
+      m.paramSchemas.mapM fun schema => do
+        let plan ← ProofForge.Evm.Codec.inputPlan schema
+        pure plan.typeName
+    else
+      m.paramTypes.mapM ProofForge.Evm.Codec.abiType
+  return m.ixName ++ "(" ++ String.intercalate "," types.toList ++ ")"
+
+private def recordAbi (seen : Array String) (m : IR.Method) :
+    Except String (Array String) := do
+  let id ← abiIdentity m
+  if seen.contains id then
+    throw s!"extract/unsupported: duplicate ABI {id}"
+  return seen.push id
+
 /-- 收同一名字空间下 `@[pf_entry]` 的根，直接生成 extensible IR。 -/
 def extractModuleIR (env : Environment) (ns : Name)
     (fields? : Option (Array String) := none) :
@@ -1681,27 +1713,30 @@ def extractModuleIR (env : Environment) (ns : Name)
       match extractMethod env .init n with
       | .ok method => pure method
       | .error reason => throw s!"{n}: {reason}"
-    if seen.contains m.ixName then
-      throw s!"extract/unsupported: duplicate ixName {m.ixName}"
-    seen := seen.push m.ixName
+    seen ←
+      match recordAbi seen m with
+      | .ok next => pure next
+      | .error reason => throw s!"{n}: {reason}"
     methods := methods.push m
   for n in muts do
     let m ←
       match extractMethod env .increment n with
       | .ok method => pure method
       | .error reason => throw s!"{n}: {reason}"
-    if seen.contains m.ixName then
-      throw s!"extract/unsupported: duplicate ixName {m.ixName}"
-    seen := seen.push m.ixName
+    seen ←
+      match recordAbi seen m with
+      | .ok next => pure next
+      | .error reason => throw s!"{n}: {reason}"
     methods := methods.push m
   for n in views do
     let m ←
       match extractMethod env .get n with
       | .ok method => pure method
       | .error reason => throw s!"{n}: {reason}"
-    if seen.contains m.ixName then
-      throw s!"extract/unsupported: duplicate ixName {m.ixName}"
-    seen := seen.push m.ixName
+    seen ←
+      match recordAbi seen m with
+      | .ok next => pure next
+      | .error reason => throw s!"{n}: {reason}"
     methods := methods.push m
   let program : IR.Program := {
     name := programNameOfInit initName
