@@ -45,6 +45,10 @@ def blockedCount (_s : State) : UInt64 :=
   OzAudit.blockedCount
 
 @[pf_entry]
+def temporaryGapCount (_s : State) : UInt64 :=
+  OzAudit.temporaryGapCount
+
+@[pf_entry]
 def isComplete (_s : State) : Bool :=
   OzAudit.isComplete
 
@@ -125,7 +129,6 @@ def isBlocked (_s : State) (row : UInt64) : Bool :=
   if row == 3 then true
   else if row == 4 then true
   else if row == 6 then true
-  else if row == 12 then true
   else if row == 14 then true
   else if row == 17 then true
   else if row == 18 then true
@@ -134,12 +137,16 @@ def isBlocked (_s : State) (row : UInt64) : Bool :=
   else if row == 31 then true
   else false
 
+/-- ABSENT without a permanent non-goal: row 12, `interfaces/IERC1271.sol`. -/
+@[pf_entry]
+def isTemporaryGap (_s : State) (row : UInt64) : Bool :=
+  row == 12
+
 @[pf_entry]
 def nonGoalTagOf (_s : State) (row : UInt64) : UInt8 :=
   if row == 3 then 3
   else if row == 4 then 5
   else if row == 6 then 4
-  else if row == 12 then 2
   else if row == 14 then 5
   else if row == 17 then 2
   else if row == 18 then 1

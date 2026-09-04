@@ -6,6 +6,10 @@ import Examples.Evm.AuditLink
 /-!
 W5 slice 3: OZ completion-audit permanent non-goal evidence — per-row nonGoalTagOf aligned with
 `oz-sdk-backlog.md` § Permanent non-goals, fail-closed allBlockedRowsTagged gate.
+
+Phase 3 hooks: row 12 (`interfaces/IERC1271.sol`) is the one temporary gap. `OpenCall.callMagic`
+is the call/result protocol its blocker text used to deny, so the row is ABSENT without a
+permanent non-goal, and the witness exposes `isTemporaryGap` / `temporaryGapCount`.
 -/
 
 namespace Tests.EvmOzAuditSpec
@@ -18,8 +22,8 @@ open Lean Elab Command
 #guard OzAudit.doneCount == 2
 #guard OzAudit.partialCount == 20
 #guard OzAudit.absentCount == 10
-#guard OzAudit.blockedCount == 10
-#guard OzAudit.temporaryGapCount == 0
+#guard OzAudit.blockedCount == 9
+#guard OzAudit.temporaryGapCount == 1
 #guard OzAudit.classifiedCount == 32
 #guard OzAudit.isComplete
 #guard OzAudit.allRowsClassified
@@ -65,6 +69,16 @@ open Lean Elab Command
 #guard !OzAudit.isBlocked 16
 #guard !OzAudit.isAbsent 16
 #guard OzAudit.blockedRowTagged 16
+#guard OzAudit.pathTagOf 12 == OzAudit.tagIface1271
+#guard OzAudit.statusOf 12 == OzAudit.statusAbsent
+#guard OzAudit.isAbsent 12
+#guard !OzAudit.isBlocked 12
+#guard OzAudit.isTemporaryGap 12
+#guard OzAudit.nonGoalTagOf 12 == OzAudit.nonGoalNone
+#guard OzAudit.blockedRowTagged 12
+#guard OzAudit.blockedImpliesAbsent 12
+#guard !OzAudit.isTemporaryGap 25
+#guard !OzAudit.isTemporaryGap 9
 #guard OzAudit.pathTagOf 31 == OzAudit.tagVendor
 #guard OzAudit.statusOf 31 == OzAudit.statusAbsent
 #guard OzAudit.isBlocked 31
@@ -90,7 +104,7 @@ private def countBlocked : Nat := Id.run do
       n := n + 1
   return n
 
-#guard countBlocked == 10
+#guard countBlocked == 9
 
 private def countTemporaryGap : Nat := Id.run do
   let mut n : Nat := 0
@@ -99,7 +113,7 @@ private def countTemporaryGap : Nat := Id.run do
       n := n + 1
   return n
 
-#guard countTemporaryGap == 0
+#guard countTemporaryGap == 1
 
 private def auditLinkState : Examples.Evm.AuditLink.State :=
   { dummy := 0 }
@@ -113,12 +127,14 @@ private def auditLinkMirrorsCompileTable : Bool := Id.run do
       Examples.Evm.AuditLink.statusOf auditLinkState ix == OzAudit.statusOf ix &&
       Examples.Evm.AuditLink.isBlocked auditLinkState ix == OzAudit.isBlocked ix &&
       Examples.Evm.AuditLink.nonGoalTagOf auditLinkState ix == OzAudit.nonGoalTagOf ix &&
+      Examples.Evm.AuditLink.isTemporaryGap auditLinkState ix == OzAudit.isTemporaryGap ix &&
       Examples.Evm.AuditLink.isClassified auditLinkState ix == OzAudit.isClassified ix
   return aligned
 
 #guard Examples.Evm.AuditLink.coverageRows auditLinkState == OzAudit.coverageRows
 #guard Examples.Evm.AuditLink.classifiedCount auditLinkState == OzAudit.classifiedCount
 #guard Examples.Evm.AuditLink.blockedCount auditLinkState == OzAudit.blockedCount
+#guard Examples.Evm.AuditLink.temporaryGapCount auditLinkState == OzAudit.temporaryGapCount
 #guard auditLinkMirrorsCompileTable
 #guard !Examples.Evm.AuditLink.isClassified auditLinkState 32
 #guard Examples.Evm.AuditLink.statusOf auditLinkState 32 == OzAudit.statusUnknown
@@ -130,8 +146,9 @@ private def expectAuditLink : CommandElabM Unit := do
     | .ok source => pure source
     | .error reason => throwError reason
   for ixName in #[
-      "coverageRows", "classifiedCount", "blockedCount", "isComplete", "isClassified",
-      "pathTagOf", "statusOf", "isBlocked", "nonGoalTagOf", "auditOk", "touch"
+      "coverageRows", "classifiedCount", "blockedCount", "temporaryGapCount", "isComplete",
+      "isClassified", "pathTagOf", "statusOf", "isBlocked", "isTemporaryGap", "nonGoalTagOf",
+      "auditOk", "touch"
     ] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"AuditLink is missing {ixName}"
@@ -148,10 +165,12 @@ private def expectAuditLink : CommandElabM Unit := do
       abi.contains "\"name\":\"statusOf\"" &&
       abi.contains "\"name\":\"isBlocked\"" &&
       abi.contains "\"name\":\"nonGoalTagOf\"" &&
+      abi.contains "\"name\":\"isTemporaryGap\"" &&
+      abi.contains "\"name\":\"temporaryGapCount\"" &&
       abi.contains "\"name\":\"isClassified\"" &&
       abi.contains "\"name\":\"auditOk\"" do
     throwError s!"AuditLink ABI lost audit surface:\n{abi}"
-  unless IR.digestHex program == "d5cb688dcc4d25ae" do
+  unless IR.digestHex program == "62c5b84cc38d9613" do
     throwError s!"AuditLink digest drifted: {IR.digestHex program}"
   logInfo m!"auditlink: digest={IR.digestHex program} abi-ok"
 

@@ -13,7 +13,9 @@ This is an audit witness, not runtime interface discovery: unknown rows fail clo
 Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - tree SHA `641ba990cad2f7f70878e0d66be1bfbef95710e8`
 - 452 `contracts/` tree paths, 367 Solidity sources
-- 32 backlog coverage rows: 2 DONE, 20 PARTIAL, 10 ABSENT (10 blocked by non-goals)
+- 32 backlog coverage rows: 2 DONE, 20 PARTIAL, 10 ABSENT (9 blocked by non-goals, 1 implementable
+  gap: row 12, `interfaces/IERC1271.sol`, whose call/result protocol `OpenCall.callMagic` now is; the
+  65-byte signature entry bound is what remains)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal
@@ -37,10 +39,10 @@ def partialCount : UInt64 := 20
 def absentCount : UInt64 := 10
 
 /-- Rows whose remaining gap is blocked by a documented permanent non-goal. -/
-def blockedCount : UInt64 := 10
+def blockedCount : UInt64 := 9
 
 /-- Rows marked ABSENT without a permanent non-goal blocker (implementable gap). -/
-def temporaryGapCount : UInt64 := 0
+def temporaryGapCount : UInt64 := 1
 
 /-- Authority snapshot: `contracts/` tree paths. -/
 def authorityTreePaths : UInt64 := 452
@@ -66,7 +68,8 @@ def nonGoalNone : UInt8 := 0
 /-- Proxies, delegatecall, CREATE/CREATE2/CREATE3, storage-slot escape hatches. -/
 def nonGoalProxyCreateSlot : UInt8 := 1
 
-/-- Raw/arbitrary calldata, low-level calls, multicall, ERC-2771, callback/receiver hooks. -/
+/-- Raw/arbitrary calldata, low-level calls, multicall, ERC-2771, and the receiving side of
+callback/receiver hooks. Calling a known hook with a fixed ABI through `OpenCall.callMagic` is in. -/
 def nonGoalArbitraryCall : UInt8 := 2
 
 /-- Account abstraction, ERC-4337/7579 execution, paymasters. -/
@@ -270,7 +273,6 @@ def isBlocked (row : UInt64) : Bool :=
   if row == 3 then true
   else if row == 4 then true
   else if row == 6 then true
-  else if row == 12 then true
   else if row == 14 then true
   else if row == 17 then true
   else if row == 18 then true
@@ -292,7 +294,6 @@ def nonGoalTagOf (row : UInt64) : UInt8 :=
   if row == 3 then nonGoalAccountAbstraction
   else if row == 4 then nonGoalCrossChainRegistry
   else if row == 6 then nonGoalUnboundedGovernance
-  else if row == 12 then nonGoalArbitraryCall
   else if row == 14 then nonGoalCrossChainRegistry
   else if row == 17 then nonGoalArbitraryCall
   else if row == 18 then nonGoalProxyCreateSlot
