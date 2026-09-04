@@ -349,6 +349,32 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
         txt.contains "call(gas(), v0, 0, 0, add(68, v2), 0, 0)"
   | .error _ => false
 
+-- Every operand is materialized before the first calldata store. An operand whose prelude runs
+-- its own call through scratch memory (a read passed as an argument) lands ahead of the target
+-- check, the selector, and every head word, so it cannot overwrite them. Here `.lit 9` stands
+-- for such an operand: echoPlan's first limb and depositPlan's first value limb.
+private def preludeCtx : OpenCall.Emit.Context Nat :=
+  { mockOpenCtx with
+    materialize := fun value st =>
+      match value with
+      | .lit 9 => .ok (s!"  let p{st} := mload(0)\n", s!"p{st}", st + 1)
+      | _ => .ok ("", "0", st) }
+#guard
+  match OpenCall.Emit.emitCall preludeCtx (.invoke echoPlan) 0 with
+  | .ok (txt, _, _) =>
+      txt.startsWith "  let p0 := mload(0)\n  if shr(32, 0) { revert(0, 0) }\n" &&
+        txt.contains "  mstore(4, or(or(p0, shl(64, 0)), or(shl(128, 0), shl(192, 0))))\n" &&
+        txt.contains "staticcall(gas(), v1, 0, 36, 0, 32)"
+  | .error _ => false
+#guard
+  match OpenCall.Emit.emitCall preludeCtx
+      (.invoke { depositPlan with valueParts := #[.lit 9, lit, lit, lit] }) 0 with
+  | .ok (txt, _, _) =>
+      txt.startsWith "  let p0 := mload(0)\n  if shr(32, 0) { revert(0, 0) }\n" &&
+        txt.contains "  let v2 := or(or(p0, shl(64, 0)), or(shl(128, 0), shl(192, 0)))\n" &&
+        txt.contains "call(gas(), v1, v2, 0, 4, 0, 0)"
+  | .error _ => false
+
 -- A STATICCALL read with a `bytes` argument rebuilds the same tail from flattened operands and
 -- still binds the exact-one-word result.
 #guard
