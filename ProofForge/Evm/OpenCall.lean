@@ -11,58 +11,86 @@ typed source value; the call contract stays static and compiler-checked:
 
 - CALL or STATICCALL;
 - compile-time function name and fixed ABI schema: one head word per argument, plus at most
-  one bounded `bytes` tail;
+  two bounded dynamic-array tails and one bounded `bytes` tail;
 - typed argument limbs and optional typed CALL value;
 - one `CallResult.Policy`;
 - `externalCall` (and `sendsValue` when msg.value is present).
 
 Calldata is assembled by the emitter. The source API never accepts an arbitrary bytes payload,
 selector string, return buffer length, or opcode. A `bytes` argument is a `BoundedBytes`
-source value whose capacity is fixed at compile time; its runtime length decides the calldata
-size. `delegatecall`, CREATE/CREATE2, and proxy dispatch are not variants. `NativeFx.sendEth`
-stays a separate zero-calldata primitive.
+source value whose capacity is fixed at compile time; an array argument is a `BoundedVec`
+over a closed scalar. Runtime lengths decide tail sizes. A plan with only scalars, or with
+one `bytes` tail and no array, keeps compile-time tail offsets. A plan that carries an array
+walks a byte cursor so later tails can follow a runtime-length prefix. `delegatecall`,
+CREATE/CREATE2, and proxy dispatch are not variants. `NativeFx.sendEth` stays a separate
+zero-calldata primitive.
 -/
 
 /-- Fail-closed calldata bound: selector plus at most eight ABI head words. -/
 def maxArgWords : Nat := 8
 
-/-- At most one `bytes` argument per plan, so the tail offset is a compile-time constant. -/
+/-- At most one `bytes` argument per plan. Alone, its tail offset stays a compile-time constant. -/
 def maxBytesArgs : Nat := 1
+
+/-- At most two bounded-array arguments per plan: `onERC1155BatchReceived` carries `ids` and
+`values`. -/
+def maxArrayArgs : Nat := 2
+
+/-- At most three dynamic arguments per plan: two arrays plus one `bytes` tail. -/
+def maxDynamicArgs : Nat := 3
 
 /-- Closed EVM argument vocabulary: the same one-word carriers typed events already admit. -/
 def argScalarSupported (type : Core.Codec.Scalar) : Bool :=
   Codec.isNarrowIntegerCarrier type || Codec.isWideIntegerCarrier type ||
     Codec.isAddressCarrier type || Codec.isFixedBytesCarrier type
 
-/-- One ABI parameter type: a closed one-word scalar, or a `bytes` tail bounded by `capacity`. -/
+/-- One ABI parameter type: a closed one-word scalar, a `bytes` tail bounded by `capacity`, or a
+dynamic array of a closed scalar with compile-time slot count `capacity`. -/
 inductive ArgType where
   | scalar (type : Core.Codec.Scalar)
   | bytes (capacity : Nat)
+  | array (capacity : Nat) (element : Core.Codec.Scalar)
   deriving BEq, Repr, Inhabited
 
 def ArgType.isDynamic : ArgType → Bool
   | .scalar _ => false
-  | .bytes _ => true
+  | .bytes _ | .array .. => true
 
-/-- Source limbs the argument carries: the scalar's limbs, or the runtime length followed by one
-byte limb per slot of capacity, the frame `BoundedBytes` already has on the entry side. -/
+def ArgType.isBytes : ArgType → Bool
+  | .bytes _ => true
+  | _ => false
+
+def ArgType.isArray : ArgType → Bool
+  | .array .. => true
+  | _ => false
+
+/-- Source limbs the argument carries: the scalar's limbs; the runtime length followed by one
+byte limb per slot of capacity, the frame `BoundedBytes` already has on the entry side; or the
+runtime length followed by every slot's scalar limbs, the frame `BoundedVec` already has. -/
 def ArgType.limbCount : ArgType → Nat
   | .scalar type => Codec.limbCount type
   | .bytes capacity => 1 + capacity
+  | .array capacity element => 1 + capacity * Codec.limbCount element
 
 def ArgType.abiType : ArgType → Except String String
   | .scalar type => Codec.abiType type
   | .bytes _ => pure "bytes"
+  | .array _ element => return (← Codec.abiType element) ++ "[]"
 
 /-- A `bytes` capacity is bounded by the same packed-bytes ceiling the entry decoder admits, so
-every `BoundedBytes` an entry can receive can be forwarded. -/
+every `BoundedBytes` an entry can receive can be forwarded. An array's source frame is bounded
+by the same local-word ceiling a `BoundedVec` entry already admits. -/
 def ArgType.supported : ArgType → Bool
   | .scalar type => argScalarSupported type
   | .bytes capacity => capacity ≤ Codec.maxPackedBytesCapacity
+  | .array capacity element =>
+      argScalarSupported element && 0 < capacity &&
+        1 + capacity * Codec.limbCount element ≤ Codec.maxBoundedArrayLocalWords
 
 def ArgType.canonical : ArgType → String
   | .scalar type => toString (repr type)
   | .bytes capacity => s!"bytes{capacity}"
+  | .array capacity element => s!"{repr element}[{capacity}]"
 
 /-- Transitive effects for one typed open CALL. -/
 structure EffectSummary where
@@ -71,7 +99,8 @@ structure EffectSummary where
   deriving BEq, Repr, Inhabited
 
 /-- One ABI argument: declaration-order name, parameter type, and source limbs (little-endian
-scalar limbs, or `length` followed by `capacity` byte limbs for `bytes`). -/
+scalar limbs; `length` followed by `capacity` byte limbs for `bytes`; `length` followed by
+every slot's scalar limbs for an array). -/
 structure Arg (V : Type) where
   name : String
   type : ArgType
@@ -119,17 +148,33 @@ def Plan.sendsValue (plan : Plan V) : Bool :=
 
 /-- The `bytes` arguments in declaration order; at most `maxBytesArgs` when well-formed. -/
 def Plan.bytesArgs (plan : Plan V) : Array (Arg V) :=
+  plan.args.filter (·.type.isBytes)
+
+/-- The bounded-array arguments in declaration order; at most `maxArrayArgs` when well-formed. -/
+def Plan.arrayArgs (plan : Plan V) : Array (Arg V) :=
+  plan.args.filter (·.type.isArray)
+
+/-- Dynamic arguments in declaration order; at most `maxDynamicArgs` when well-formed. -/
+def Plan.dynamicArgs (plan : Plan V) : Array (Arg V) :=
   plan.args.filter (·.type.isDynamic)
 
+/-- True when a tail offset depends on a previous tail's runtime length, so emission walks a
+cursor instead of storing a compile-time offset. -/
+def Plan.usesCursor (plan : Plan V) : Bool :=
+  !plan.arrayArgs.isEmpty
+
 /-- Byte length of the head: selector plus one word per argument (a value or a tail offset). The
-single tail starts here. -/
+first tail starts here. -/
 def Plan.headBytes (plan : Plan V) : Nat :=
   CallResult.selectorBytes + CallResult.abiWordBytes * plan.args.size
 
-/-- Compile-time calldata bytes: the head plus one length word per `bytes` tail. The padded
-payload of a tail is added at emission from its runtime length. -/
+/-- Compile-time calldata bytes: the head plus one length word per `bytes` tail when there is
+no array. An array plan's tails are sized at emission from runtime lengths, so this is only
+the head; `CallResult.Emit.emitBound` takes the cursor as the full `inSize`. The padded
+payload of a lone `bytes` tail is added at emission from its runtime length. -/
 def Plan.inSize (plan : Plan V) : Nat :=
-  plan.headBytes + CallResult.abiWordBytes * plan.bytesArgs.size
+  if plan.usesCursor then plan.headBytes
+  else plan.headBytes + CallResult.abiWordBytes * plan.bytesArgs.size
 
 def Plan.request (plan : Plan V) : CallResult.Request :=
   { kind := plan.kind
@@ -149,6 +194,8 @@ def Plan.wellFormed (valueWellFormed : V → Bool) (plan : Plan V) : Bool :=
   let names := plan.args.toList.map (·.name)
   isIdent plan.name && plan.args.size ≤ maxArgWords &&
     plan.bytesArgs.size ≤ maxBytesArgs &&
+    plan.arrayArgs.size ≤ maxArrayArgs &&
+    plan.dynamicArgs.size ≤ maxDynamicArgs &&
     names.length == names.eraseDups.length &&
     plan.args.all (Arg.wellFormed valueWellFormed) &&
     plan.target.size == 3 && plan.target.all valueWellFormed &&
@@ -277,7 +324,9 @@ def Query.limbCount (query : Query) : Nat :=
 def Query.wellFormed (query : Query) : Bool :=
   isIdent query.name && query.argTypes.size ≤ maxArgWords &&
     query.argTypes.all ArgType.supported &&
-    (query.argTypes.filter ArgType.isDynamic).size ≤ maxBytesArgs &&
+    (query.argTypes.filter ArgType.isBytes).size ≤ maxBytesArgs &&
+    (query.argTypes.filter ArgType.isArray).size ≤ maxArrayArgs &&
+    (query.argTypes.filter ArgType.isDynamic).size ≤ maxDynamicArgs &&
     query.policy.wellFormed &&
     query.copiedWordCount ≥ 1 &&
     query.word < query.copiedWordCount &&

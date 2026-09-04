@@ -6,12 +6,12 @@ Owner-minted bounded ERC-1155 consumer. The SDK owns the token-id key envelope, 
 movement. This contract owns the immutable minter gate, zero-address policy, error ordering
 (`Unauthorized`/`ZeroAddress`/`Insufficient`) and canonical ERC-1155 `TransferSingle` /
 `TransferBatch` / `ApprovalForAll` logs (`Erc1155.Log`). `balanceOfBatch` and
-`batchTransferFrom` are bounded to four pairs; the batch transfer reverts with the OZ-shaped
+`safeBatchTransferFrom` are bounded to four pairs; the batch transfer reverts with the OZ-shaped
 `ERC1155InvalidArrayLength` and `ERC1155InsufficientBalance` errors and logs one `TransferBatch`
 whose arrays carry exactly the submitted slots. The single transfer is `safeTransferFrom` with
-the SDK's outbound `onERC1155Received` check (`data` at most 32 bytes). There is no
-`safeBatchTransferFrom` (an open-call argument is a scalar or one `bytes` tail, never an array)
-or receiving-side callback; `supportsInterface` exposes IERC165 only, not the incomplete IERC1155
+the SDK's outbound `onERC1155Received` check (`data` at most 32 bytes). The batch transfer is
+`safeBatchTransferFrom` with the outbound `onERC1155BatchReceived` check. There is no
+receiving-side callback; `supportsInterface` exposes IERC165 only, not the incomplete IERC1155
 interface.
 -/
 
@@ -103,22 +103,25 @@ def safeTransferFrom (s : State) (source to : Address) (tokenId : UInt256) (amou
   else
     Effect.abort s (Erc1155.Balances.insufficient balances source tokenId amount)
 
-/-- Bounded `batchTransferFrom(address,address,uint256[],uint256[])` over at most four slots, in
-OZ check order: operator authorization (with the key envelope over every id), nonzero receiver,
-equal lengths, then one checked movement per slot. Duplicate ids fail closed with `DuplicateId()`
-so the per-slot checks stay exact. A slot whose source balance is short reverts
+/-- Bounded `safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)` over at most four
+slots, in OZ check order: operator authorization (with the key envelope over every id), nonzero
+receiver, equal lengths, then one checked movement per slot. Duplicate ids fail closed with
+`DuplicateId()` so the per-slot checks stay exact. A slot whose source balance is short reverts
 `ERC1155InsufficientBalance(sender, balance, needed, tokenId)` for the first such slot; a credit
 that would wrap the destination stops in the checked `add256` of that slot's pre-check with an
-empty revert, as `mint` does. Success persists every active slot and logs one
-`TransferBatch` whose `ids` and `values` are the submitted arrays.
-The batch has no receiver hook, so the name drops the `safe` prefix. -/
+empty revert, as `mint` does. Success persists every active slot, logs one `TransferBatch`
+whose `ids` and `values` are the submitted arrays (or `TransferSingle` for a one-slot batch),
+then OZ's batch receiver check. A recipient without code is not called; a recipient with code
+must answer `onERC1155BatchReceived` with its own selector or the whole transaction reverts.
+`data` is at most 32 bytes. -/
 @[pf_entry]
-def batchTransferFrom (s : State) (source to : Address) (ids : BoundedVec UInt256 4)
-    (amounts : BoundedVec UInt256 4) : Except Error (State × UInt64) :=
+def safeBatchTransferFrom (s : State) (source to : Address) (ids : BoundedVec UInt256 4)
+    (amounts : BoundedVec UInt256 4) (data : BoundedBytes 32) :
+    Except Error (State × Bool) :=
   if !Erc1155.isApprovedOrOwnerBatch operators Context.caller source ids then
-    .ok (s, Revert.unauthorized Context.caller)
+    Effect.abort s (Revert.unauthorized Context.caller)
   else if Address.isZero to then
-    .ok (s, Revert.zeroAddress)
+    Effect.abort s Revert.zeroAddress
   else if ids.length != amounts.length then
     .error (.ERC1155InvalidArrayLength (Erc1155.lengthWord ids) (Erc1155.lengthWord amounts))
   else if !Erc1155.distinctIds ids then
@@ -140,8 +143,10 @@ def batchTransferFrom (s : State) (source to : Address) (ids : BoundedVec UInt25
     .error (.ERC1155InsufficientBalance source
       (Erc1155.Balances.balanceOf balances source ids.values[3]) amounts.values[3] ids.values[3])
   else
-    .ok ({ dummy := Erc1155.Balances.batchTransfer balances source to ids amounts },
-      Erc1155.Log.transferBatchOrSingle Context.caller source to ids amounts)
+    .ok ({ dummy := Erc1155.Balances.batchTransfer balances source to ids amounts |||
+        Erc1155.Log.transferBatchOrSingle Context.caller source to ids amounts },
+      Effect.thenTrue
+        (Erc1155.checkOnBatchReceived to Context.caller source ids amounts data))
 
 /-- Single-id balance view through the SDK-owned checked key-envelope gate. -/
 @[pf_entry]

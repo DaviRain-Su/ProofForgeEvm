@@ -10,8 +10,9 @@ and projects the historical first-word `Option String` carrier so ClosedCall / P
 consumers keep their existing output and fresh-name order.
 
 1. the `call`/`staticcall` instruction itself, with calldata at `memory[0, inSize)`, extended by
-   the caller's bound padded tail length when the plan carries a `bytes` argument, and
-   returndata copied to `memory[0, retBound)` (`retBound ≤ maxRetBytes`);
+   the caller's bound padded tail length when the plan carries a lone `bytes` argument, or sized
+   by a cursor expression when the plan carries an array tail, and returndata copied to
+   `memory[0, retBound)` (`retBound ≤ maxRetBytes`);
 2. the fail-closed success gate. Default `FailMode.revert0` is `if iszero(ok) { revert(0, 0) }`,
    byte-identical with pre-S2 ClosedCall Yul. Opt-in `FailMode.bubble` forwards callee revert
    data instead;
@@ -85,10 +86,12 @@ private def emitExactWords (context : Context σ) (indent : String) (st : σ)
 /-- Emit one closed external call and its typed fail-closed result gates, binding every
 decoded word. `target` is the already-materialized callee word; `value` is the msg.value
 expression and must be present exactly when `request.value` holds. `inSizeTail` is the
-already-bound padded byte count of a dynamic calldata tail, added to the static
-`request.inSize` when present. -/
+already-bound padded byte count of a lone `bytes` tail, added to the static `request.inSize`
+when present. `inSizeExpr` is the full calldata size when tails were written along a cursor;
+it is mutually exclusive with `inSizeTail`. -/
 def emitBound (context : Context σ) (request : CallResult.Request) (target : String)
-    (value : Option String) (st : σ) (inSizeTail : Option String := none) :
+    (value : Option String) (st : σ) (inSizeTail : Option String := none)
+    (inSizeExpr : Option String := none) :
     Except String (String × Bound × σ) := do
   if !(request.wellFormed) then
     throw "extract/unsupported: evm call-result request shape"
@@ -96,9 +99,12 @@ def emitBound (context : Context σ) (request : CallResult.Request) (target : St
     throw "extract/unsupported: evm call-result value shape"
   let indent := context.indent
   let (ok, st1) := context.fresh st
-  let inSize := match inSizeTail with
-    | none => toString request.inSize
-    | some tail => "add(" ++ toString request.inSize ++ ", " ++ tail ++ ")"
+  let inSize ← match inSizeExpr, inSizeTail with
+    | some expr, none => pure expr
+    | none, none => pure (toString request.inSize)
+    | none, some tail => pure ("add(" ++ toString request.inSize ++ ", " ++ tail ++ ")")
+    | some _, some _ =>
+        throw "extract/unsupported: evm call-result inSize shape"
   let invoke := match request.kind, value with
     | .call, some val =>
         "call(gas(), " ++ target ++ ", " ++ val ++ ", 0, " ++ inSize ++

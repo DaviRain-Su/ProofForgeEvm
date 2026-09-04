@@ -68,6 +68,20 @@ RULES: tuple[Rule, ...] = (
         "Emit.lean renderFixedBytesHelper",
     ),
     Rule(
+        "pf.pf_load_pair256",
+        "warn",
+        re.compile(r"pf_load_pair256\s*\("),
+        "ProofForge helper `pf_load_pair256` (not in yul-compiler opTable; inline or lower before yulc)",
+        "Emit.lean renderPairMapLoadHelpers",
+    ),
+    Rule(
+        "pf.pf_load_pair_u64",
+        "warn",
+        re.compile(r"pf_load_pair_u64\s*\("),
+        "ProofForge helper `pf_load_pair_u64` (not in yul-compiler opTable; inline or lower before yulc)",
+        "Emit.lean renderPairMapLoadHelpers",
+    ),
+    Rule(
         "pf.pf_addr_w",
         "warn",
         re.compile(r"pf_addr_w[0-2]\s*\("),

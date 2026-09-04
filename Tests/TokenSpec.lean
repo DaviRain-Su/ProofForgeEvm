@@ -92,6 +92,8 @@ def zero256 : UInt256 := ⟨0, 0, 0, 0⟩
   | .ok yul, abi =>
       yul.contains "function pf_store_addr20(off, w0, w1, w2)" &&
         yul.contains "function pf_store_fixed_bytes(off, w0, w1, w2, w3, size)" &&
+        yul.contains "function pf_load_pair256(a0, a1, a2, b0, b1, b2, tag)" &&
+        yul.contains "function pf_load_pair_u64(a0, a1, a2, b0, b1, b2, tag)" &&
         yul.contains "pf_store_addr20(0," &&
         !yul.contains "mstore8(12," &&
         yul.contains "keccak256(0, 128)" &&

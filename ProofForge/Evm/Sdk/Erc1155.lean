@@ -59,16 +59,16 @@ word under `Effect.thenTrue`, with the balance movement and `Log.transferSingle`
 word; the extractor orders the stores, then the log, then the hook, so a receiver that reads
 `balanceOf` inside the hook sees the credited balance, as under OZ `_updateWithAcceptanceCheck`.
 `data` carries at most 32 bytes (`Hook` spells the literal because the open-call decoder wants
-one). The batch hook `onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)` has no
-home yet: an open-call argument is a one-word scalar or one `bytes` tail, never an array, so
-`safeBatchTransferFrom` stays the hook-less `batchTransferFrom`.
+one). `checkOnBatchReceived` is OZ's `checkOnERC1155BatchReceived` over the same carrier: a
+recipient with code must answer
+`onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)` with that selector.
+The two arrays are `Batch UInt256` (four slots), matching the ledger's batch capacity. A
+recipient without code is not called.
 
 ## Explicitly unsupported
 
-`safeBatchTransferFrom` with its `onERC1155BatchReceived` callback (the bounded
-`batchTransferFrom` consumers ship instead has no receiver hook), mint/burn batches, implementing
-the receiving side of the hooks, metadata URI, duplicate ids inside one batch, and unbounded
-inputs.
+Implementing the receiving side of the hooks, metadata URI, duplicate ids inside one batch, and
+unbounded inputs.
 Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
 interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,
@@ -298,6 +298,9 @@ magic `0xf23a6e61`. `data` is bounded to 32 bytes. -/
 inductive Hook where
   | onERC1155Received (operator «from» : Address) (id value : UInt256)
       (data : ProofForge.Core.Value.BoundedBytes 32)
+  | onERC1155BatchReceived (operator «from» : Address)
+      (ids values : ProofForge.Core.Value.BoundedVec UInt256 4)
+      (data : ProofForge.Core.Value.BoundedBytes 32)
 
 /-- OZ `checkOnERC1155Received`: call the hook on a recipient with code and require its own
 selector back; skip a recipient without code. A CALL carrier for the entry's result word under
@@ -306,6 +309,13 @@ selector back; skip a recipient without code. A CALL carrier for the entry's res
     (data : ProofForge.Core.Value.BoundedBytes 32) : UInt64 :=
   if Address.hasCode to then
     OpenCall.callMagic to (Hook.onERC1155Received operator source tokenId amount data)
+  else 0
+
+/-- OZ `checkOnERC1155BatchReceived`: the batch sibling of `checkOnReceived`. -/
+@[pf_inline] def checkOnBatchReceived (to operator source : Address)
+    (ids amounts : Batch UInt256) (data : ProofForge.Core.Value.BoundedBytes 32) : UInt64 :=
+  if Address.hasCode to then
+    OpenCall.callMagic to (Hook.onERC1155BatchReceived operator source ids amounts data)
   else 0
 
 -- `Notice` derives `Repr`/`DecidableEq` like every SDK event, and Common's `BoundedVec` ships

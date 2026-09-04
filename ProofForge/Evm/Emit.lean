@@ -116,6 +116,43 @@ private def renderFixedBytesHelper : String :=
   "        }" ++ nl ++
   "      }" ++ nl
 
+/-- Load one address-pair map payload. The seven-word key hash and tagged sload ran at every
+keyed read, and solc does not share that sequence across CFG cases; the helper body is the
+one copy. `pf_load_pair256` returns the full storage word. `pf_load_pair_u64` also rejects a
+payload above `2^64-1`, matching the UInt64 map. -/
+private def renderPairMapLoadHelpers : String :=
+  "      function pf_load_pair256(a0, a1, a2, b0, b1, b2, tag) -> pay {" ++ nl ++
+  "        mstore(0, a0)" ++ nl ++
+  "        mstore(32, a1)" ++ nl ++
+  "        mstore(64, a2)" ++ nl ++
+  "        mstore(96, b0)" ++ nl ++
+  "        mstore(128, b1)" ++ nl ++
+  "        mstore(160, b2)" ++ nl ++
+  "        mstore(192, tag)" ++ nl ++
+  "        let slot := keccak256(0, 224)" ++ nl ++
+  "        let t := sload(slot)" ++ nl ++
+  "        if gt(t, 0xffffffffffffffff) { revert(0, 0) }" ++ nl ++
+  "        pay := 0" ++ nl ++
+  "        if t { pay := sload(add(slot, 1)) }" ++ nl ++
+  "      }" ++ nl ++
+  "      function pf_load_pair_u64(a0, a1, a2, b0, b1, b2, tag) -> pay {" ++ nl ++
+  "        mstore(0, a0)" ++ nl ++
+  "        mstore(32, a1)" ++ nl ++
+  "        mstore(64, a2)" ++ nl ++
+  "        mstore(96, b0)" ++ nl ++
+  "        mstore(128, b1)" ++ nl ++
+  "        mstore(160, b2)" ++ nl ++
+  "        mstore(192, tag)" ++ nl ++
+  "        let slot := keccak256(0, 224)" ++ nl ++
+  "        let t := sload(slot)" ++ nl ++
+  "        if gt(t, 0xffffffffffffffff) { revert(0, 0) }" ++ nl ++
+  "        pay := 0" ++ nl ++
+  "        if t {" ++ nl ++
+  "          pay := sload(add(slot, 1))" ++ nl ++
+  "          if gt(pay, 0xffffffffffffffff) { revert(0, 0) }" ++ nl ++
+  "        }" ++ nl ++
+  "      }" ++ nl
+
 private def widthMask (width : Nat) : String :=
   if width == 8 then u64MaxYul else Codec.byteMask width
 
@@ -1513,6 +1550,7 @@ def emitYul (p : IR.Program) : Except String String := do
     Codec.Emit.renderAddrLimbHelpers "      " ++
     renderAddr20Helper ++
     renderFixedBytesHelper ++
+    renderPairMapLoadHelpers ++
     globalGuard ++
     receiveTxt ++
     selectorHead ++
