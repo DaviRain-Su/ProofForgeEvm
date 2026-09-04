@@ -32,7 +32,8 @@ open Lean Elab Command
 #guard Erc721.Log.approval ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
 #guard Erc721.Log.approvalForAll ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ true == 0
 -- The host stub has no code behind any address, so the receiver check is the skipped branch.
-#guard Erc721.checkOnReceived ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 8, 9⟩ ⟨7, 0, 0, 0⟩ default == 0
+#guard Erc721.checkOnReceived ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 8, 9⟩ ⟨7, 0, 0, 0⟩
+  { length := 0, values := Vector.replicate 32 0 } == 0
 
 #guard Examples.Evm.Collectible.owners.base == 0
 #guard Examples.Evm.Collectible.approvals.base == 1
@@ -262,7 +263,7 @@ private def expectBadgeEvents : CommandElabM Unit := do
 private def expectErc721 : CommandElabM Unit := do
   expectCollectibleEvents
   expectBadgeEvents
-  expectDigest `Examples.Evm.Collectible "29e3259845d5a035"
+  expectDigest `Examples.Evm.Collectible "f20c52e156029cfc"
   expectDigest `Examples.Evm.Badge "bdb4d1d1a4e9baa7"
 
 elab "#pf_guard_evm_erc721" : command => expectErc721

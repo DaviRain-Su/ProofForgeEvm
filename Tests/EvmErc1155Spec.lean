@@ -50,7 +50,7 @@ end UnsupportedConditionFixture
 #guard Erc1155.Log.approvalForAll ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ true == 0
 -- The host stub has no code behind any address, so the receiver check is the skipped branch.
 #guard Erc1155.checkOnReceived ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 8, 9⟩ ⟨10, 0, 0, 0⟩ ⟨11, 0, 0, 0⟩
-  default == 0
+  { length := 0, values := Vector.replicate 32 0 } == 0
 
 -- Closed ERC-20-shaped programs keep their digests; this slice only refreshes MultiToken/CraftToken.
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
@@ -622,7 +622,7 @@ private def expectErc1155 : CommandElabM Unit := do
   expectMultiTokenEvents
   expectCraftTokenEvents
   expectDigest `Examples.Evm.MultiToken "63344e4c7925bcc5"
-  expectDigest `Examples.Evm.CraftToken "a179c983f6a4084f"
+  expectDigest `Examples.Evm.CraftToken "2ba8b59633a3bd11"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!
   let balanceOps := (multi.methods.find? (·.ixName == "balanceOf")).get!.ops
