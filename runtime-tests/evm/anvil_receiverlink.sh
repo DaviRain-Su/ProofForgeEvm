@@ -30,21 +30,22 @@ expect_bytes4() {
 }
 
 pf_evm_evm_init evm-anvil-receiverlink
-for name in ReceiverLink Collectible CraftToken MultiToken; do
-  bin="$root/build/evm/$name.bin"
-  if [[ ! -f "$bin" ]]; then
-    echo "building $name.bin" >&2
-    lake exe pf -- build --target evm --out "$root/build/evm" "$name" \
-      || { echo "FAIL: pf build $name failed" >&2; exit 1; }
-  fi
-  [[ -f "$bin" ]] || { echo "FAIL: missing $bin" >&2; exit 1; }
-done
+echo "building ReceiverLink Collectible CraftToken MultiToken" >&2
+lake exe pf -- build --target evm --out "$root/build/evm" \
+  ReceiverLink Collectible CraftToken MultiToken \
+  || { echo "FAIL: pf build ReceiverLink/Collectible/CraftToken/MultiToken failed" >&2; exit 1; }
 recv_bin="$root/build/evm/ReceiverLink.bin"
 nft_bin="$root/build/evm/Collectible.bin"
 ft_bin="$root/build/evm/CraftToken.bin"
 batch_bin="$root/build/evm/MultiToken.bin"
 nft_abi="$root/build/evm/Collectible.abi.json"
-[[ -f "$nft_abi" ]] || { echo "FAIL: missing $nft_abi" >&2; exit 1; }
+for path in "$recv_bin" "$nft_bin" "$ft_bin" "$batch_bin" "$nft_abi"; do
+  [[ -f "$path" ]] || { echo "FAIL: missing $path" >&2; exit 1; }
+done
+if ! grep -q '"name":"safeTransferFrom"' "$nft_abi"; then
+  echo "FAIL: Collectible ABI has no safeTransferFrom" >&2
+  exit 1
+fi
 
 size="$("$python" -I -S -c "
 text=open('$recv_bin').read().strip()
