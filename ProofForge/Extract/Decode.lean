@@ -113,6 +113,10 @@ private def isEvmOpenCallValueApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
     endsWith e ".evmOpenCallValue"
 
+/-- Any CALL-kind open-call stub: the effect carriers, as opposed to the STATICCALL reads. -/
+private def isOpenCallPlanApp (e : Expr) : Bool :=
+  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e
+
 /-- Runtime stub behind each typed STATICCALL read shape. -/
 private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
   (``ProofForge.Evm.Runtime.evmOpenStaticWord, .word),
@@ -128,8 +132,7 @@ private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
     isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
 
 private def isAnyOpenCallApp (e : Expr) : Bool :=
-  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
-    (openStaticShapeOf e).isSome
+  isOpenCallPlanApp e || (openStaticShapeOf e).isSome
 
 set_option maxRecDepth 2048 in
 mutual
@@ -932,12 +935,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogApproval256) ||
       (endsWith e ".evmLogTyped" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped) ||
-      (endsWith e ".evmOpenCall" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall) ||
-      (endsWith e ".evmOpenCallSuccess" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess) ||
-      (endsWith e ".evmOpenCallValue" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue) ||
+      isOpenCallPlanApp e ||
       (endsWith e ".evmSendEth" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmSendEth) ||
       (endsWith e ".evmSendEth256" ||
@@ -1000,12 +998,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       else if endsWith e ".evmLogTyped" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped then
       some (.lit 0)
-      else if endsWith e ".evmOpenCall" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall ||
-          endsWith e ".evmOpenCallSuccess" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
-          endsWith e ".evmOpenCallValue" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue then
+      else if isOpenCallPlanApp e then
       some (.lit 0)
       else if endsWith e ".evmLogTransfer256" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTransfer256 ||
@@ -3959,12 +3952,7 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
     match decodeEventCtor env app with
     | .typed frame tails => some (.evmLogTyped frame tails)
     | .unsupported _ | .notEvent => none
-  else if isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCall ||
-      endsWith app ".evmOpenCall" ||
-      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
-      endsWith app ".evmOpenCallSuccess" ||
-      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCallValue ||
-      endsWith app ".evmOpenCallValue" then
+  else if isOpenCallPlanApp app then
     match decodeOpenCallCtor env app with
     | .plan plan => some (.evmComponent (.openCall (.invoke plan)))
     | .unsupported _ | .notOpenCall | .query _ _ => none
