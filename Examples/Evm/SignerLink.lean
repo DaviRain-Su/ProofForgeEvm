@@ -2,11 +2,12 @@ import ProofForge.Evm.Sdk
 import ProofForge.Core.Value
 
 /-!
-Minimal ERC-1271 consumer. `requireSigner` asks a contract signer whether it stands behind
-`hash` through `Sdk.Ierc1271.checkSignature`, and counts the signatures it accepted. A signer
-that answers anything but its own `isValidSignature` selector, or has no code, reverts the
-transaction, so `accepted` only ever counts checks the signer passed. Driven against a
-Solidity ERC-1271 wallet in `runtime-tests/evm/anvil_signerlink.sh`.
+Minimal ERC-1271 / combined-signer consumer. `requireSigner` asks a contract signer whether it
+stands behind `hash` through `Sdk.Ierc1271.checkSignature`. `requireNow` is OZ
+`isValidSignatureNow`: a signer with code takes that same CALL, a signer without code recovers
+the 65-byte `r ‖ s ‖ v` through `Ecdsa.recover`. A refused check reverts and leaves `accepted`
+where it was. Driven in `runtime-tests/evm/anvil_signerlink.sh` against a Solidity ERC-1271
+wallet and against an EOA.
 -/
 
 namespace Examples.Evm.SignerLink
@@ -36,6 +37,16 @@ def requireSigner (s : State) (signer : Address) (hash : Bytes32) (signature : B
   if s.accepted < u64Max then
     .ok ({ accepted := s.accepted + 1 },
       Effect.thenTrue (Ierc1271.checkSignature signer hash signature))
+  else
+    Effect.abort s Revert.capExceeded
+
+/-- Combined EOA-or-contract check. Same counter rule as `requireSigner`. -/
+@[pf_entry]
+def requireNow (s : State) (signer : Address) (hash : Bytes32) (signature : BoundedBytes 65) :
+    Except Error (State × Bool) :=
+  if s.accepted < u64Max then
+    .ok ({ accepted := s.accepted + 1 },
+      Effect.thenTrue (Ierc1271.checkNow signer hash signature))
   else
     Effect.abort s Revert.capExceeded
 
