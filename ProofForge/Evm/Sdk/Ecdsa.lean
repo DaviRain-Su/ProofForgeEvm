@@ -15,7 +15,8 @@ input sizes, or unchecked recovery paths.
 -/
 
 /-- Recover the signer of `digest` from `(v, r, s)` via the closed ecrecover precompile. Invalid
-signatures revert at runtime. -/
+signatures revert at runtime. A 65-byte `r ‖ s ‖ v` frame is split by `Sdk.Ierc1271.vByte` /
+`rWord` / `sWord` and fed through this helper from `Ierc1271.checkNow`. -/
 @[pf_inline] def recover (digest : Bytes32) (v : UInt8) (r s : Bytes32) : Address :=
   Runtime.evmEcrecover digest v r s
 
