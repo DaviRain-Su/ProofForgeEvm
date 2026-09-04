@@ -2961,17 +2961,23 @@ private def isEvmOpenCallValueApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
     endsWith e ".evmOpenCallValue"
 
-private def isEvmOpenStaticWordApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenStaticWord ||
-    endsWith e ".evmOpenStaticWord"
+/-- Runtime stub behind each typed STATICCALL read shape. -/
+private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
+  (``ProofForge.Evm.Runtime.evmOpenStaticWord, .word),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords2, .words2),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords3, .words3),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords4, .words4),
+  (``ProofForge.Evm.Runtime.evmOpenStaticBool, .bool),
+  (``ProofForge.Evm.Runtime.evmOpenStaticAddress, .address)
+]
 
-private def isEvmOpenStaticWords2App (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenStaticWords2 ||
-    endsWith e ".evmOpenStaticWords2"
+private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
+  (openStaticStubs.find? fun (stub, _) =>
+    isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
 
 private def isAnyOpenCallApp (e : Expr) : Bool :=
   isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
-    isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e
+    (openStaticShapeOf e).isSome
 
 /-- Preserve a typed open-call constructor as one ABI plan. Names and closed scalar types stay
 structured; unsupported shapes must not degrade to raw calldata. -/
@@ -3050,35 +3056,22 @@ private def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedOpenCall 
             let (v0, v1, v2, v3) := uint256Leaves env valueE
             #[v0, v1, v2, v3]
           | none => #[]
-        let kind : Evm.CallResult.Kind :=
-          if isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e then .staticcall
-          else .call
-        let policy : Evm.CallResult.Policy :=
-          if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
-          else if isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e then .contractSuccess
-          else if isEvmOpenStaticWords2App e then .exactWords 2
-          else .exactWord
-        if isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e then
-          let query : Evm.OpenCall.Query := {
-            name
-            argTypes := callArgs.map (·.type)
-            kind
-            policy
-            hasValue := false
-            word := 0
-            limb := 0
-          }
+        match openStaticShapeOf e with
+        | some shape =>
+          let query := shape.query name (callArgs.map (·.type))
           let operands := target ++ callArgs.flatMap (·.parts)
           if query.wellFormed && operands.size == query.arity then
             .query query operands
           else .unsupported "malformed open-call query"
-        else
+        | none =>
           let plan : Evm.OpenCall.Plan Ops.Val := {
             name
             args := callArgs
             target
-            kind
-            policy
+            kind := .call
+            policy :=
+              if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
+              else .contractSuccess
             valueParts
           }
           if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
@@ -4094,18 +4087,11 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
       .returnU64 (.ext (.evm (.component (.closedCall (.allowance256 3))))
         #[t0, t1, t2, o0, o1, o2, s0, s1, s2])
     ]
-  else if isConstNamed app ``ProofForge.Evm.Runtime.evmOpenStaticWord ||
-      endsWith app ".evmOpenStaticWord" ||
-      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenStaticWords2 ||
-      endsWith app ".evmOpenStaticWords2" then
+  else if let some shape := openStaticShapeOf app then
     match decodeOpenCallCtor env app with
     | .query query operands =>
-      some #[
-        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 0 }))) operands),
-        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 1 }))) operands),
-        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 2 }))) operands),
-        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 3 }))) operands)
-      ]
+      some ((Array.range shape.limbCount).map fun limb =>
+        .returnU64 (.ext (.evm (.component (.openCall { query with limb }))) operands))
     | _ => none
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmCallValue256 ||
       endsWith app ".evmCallValue256" then

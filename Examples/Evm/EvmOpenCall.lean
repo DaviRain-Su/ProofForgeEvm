@@ -26,6 +26,12 @@ inductive Remote where
   | echo (n : UInt256)
   | getPair
   | deposit
+  | isOn
+  | ownerOf
+  | getTriple
+  | getQuad
+  | balanceOf (who : Address)
+  | supportsInterface (interfaceId : Bytes4)
   deriving Repr, DecidableEq, Inhabited
 
 @[pf_entry]
@@ -84,6 +90,39 @@ def readEcho (_s : State) (target : Address) (n : UInt256) : UInt256 :=
 @[pf_entry]
 def readPair (_s : State) (target : Address) : UInt256 :=
   OpenCall.staticWords2 target Remote.getPair
+
+/-- Exact-three-word STATICCALL. The Anvil mock can shrink or grow its frame to prove the
+size gate. -/
+@[pf_entry]
+def readTriple (_s : State) (target : Address) : UInt256 :=
+  OpenCall.staticWords3 target Remote.getTriple
+
+/-- Exact-four-word STATICCALL, the `CallResult.maxResultWords` ceiling. -/
+@[pf_entry]
+def readQuad (_s : State) (target : Address) : UInt256 :=
+  OpenCall.staticWords4 target Remote.getQuad
+
+/-- Strict-bool STATICCALL. A callee word other than `0` or `1` fails closed. -/
+@[pf_entry]
+def readOn (_s : State) (target : Address) : Bool :=
+  OpenCall.staticBool target Remote.isOn
+
+/-- Canonical-address STATICCALL. A word with nonzero high 12 bytes fails closed. -/
+@[pf_entry]
+def readOwner (_s : State) (target : Address) : Address :=
+  OpenCall.staticAddress target Remote.ownerOf
+
+/-- ERC-20 `balanceOf(address)` read; `anvil_compose.sh` points it at a `pf`-compiled
+`Erc20Meta`. -/
+@[pf_entry]
+def readBalance (_s : State) (token who : Address) : UInt256 :=
+  OpenCall.staticWord token (Remote.balanceOf who)
+
+/-- ERC-165 `supportsInterface(bytes4)` read; `anvil_compose.sh` points it at a `pf`-compiled
+`Badge`. -/
+@[pf_entry]
+def readSupports (_s : State) (target : Address) (interfaceId : Bytes4) : Bool :=
+  OpenCall.staticBool target (Remote.supportsInterface interfaceId)
 
 /-- Payable CALL value. `Ether.accept` makes the entry payable; OpenCall forwards the value. -/
 @[pf_entry]
