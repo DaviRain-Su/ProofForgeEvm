@@ -530,7 +530,7 @@ end Unsupported
 
 /-! The carrier's homes stay compiled, each with its CALL plan kept: the entry's result word,
 the `effect` of `Effect.thenTrue` (and so of `Effect.abort` and `Effect.ensure`), and a `let`
-whose body never reads the binder and has no branch after it. -/
+whose binder reaches the result word. -/
 namespace CarrierWord
 
 def asBool (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
@@ -545,10 +545,13 @@ def ensured (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
   Effect.ensure (s.flag == 0) s (OpenCall.callSuccess target Remote.ping)
     (fun _ => .ok ({ s with flag := 1 }, true))
 
-def bound (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
-    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × UInt64) :=
-  let _sent := OpenCall.callSuccess target Remote.ping
-  .ok ({ s with flag := 1 }, 1)
+def named (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  let sent := Effect.thenTrue (OpenCall.callSuccess target Remote.ping)
+  if s.flag == 0 then
+    .ok ({ s with flag := 1 }, sent)
+  else
+    .error .overflow
 
 end CarrierWord
 
@@ -731,8 +734,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
       balanceOfLimb 0 ++ "," ++ balanceOfLimb 1 ++ "," ++ balanceOfLimb 2 ++ "," ++
       balanceOfLimb 3 ++ ")))",
      s!"retu(ocallq.0.3.ocall.static.word1.echo({target};"]
-  -- A CALL carrier computed with is refused, whatever computes with it; the carrier in its
-  -- homes keeps its plan.
+  -- A CALL carrier anywhere but the result word is refused; the carrier in its homes keeps
+  -- its plan.
   expectUnsupported env ``Tests.EvmOpenCallMisuse.compared "CALL carrier"
   expectUnsupported env ``Tests.EvmOpenCallMisuse.isZero "CALL carrier"
   expectUnsupported env ``Tests.EvmOpenCallMisuse.plusOne "CALL carrier"
@@ -741,9 +744,13 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectUnsupported env ``Tests.EvmOpenCallMisuse.readArg "CALL carrier"
   expectUnsupported env ``Tests.EvmOpenCallMisuse.callArg "CALL carrier"
   expectUnsupported env ``Tests.EvmOpenCallMisuse.valueCompared "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.thenTrueGated "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.thenTrueCompared "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.letDropped "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.letGuarded "CALL carrier"
   expectCallKept env ``CarrierWord.asBool
   expectCallKept env ``CarrierWord.ensured
-  expectCallKept env ``CarrierWord.bound
+  expectCallKept env ``CarrierWord.named
 
   logInfo s!"EvmOpenCall digest: {ProofForge.Evm.IR.digestHex evm}"
 

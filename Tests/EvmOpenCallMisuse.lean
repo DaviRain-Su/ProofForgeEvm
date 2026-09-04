@@ -1,16 +1,19 @@
 import ProofForge.Evm.Sdk
 
 /-!
-A contract that computes with a CALL's `UInt64`. Extraction refuses every such entry with the
-`CALL carrier` reason: the word of `OpenCall.call`, `callSuccess`, or `callValue` is a sequencing
-carrier the call policy already decided, not the callee's answer. `Tests.EvmOpenCallSpec` pins
-each entry through `extractMethod`; `runtime-tests/evm/anvil_opencall.sh` pins the `pf build`
-surface, which must refuse this module.
+A contract that puts a CALL's `UInt64` anywhere but the result word. Extraction refuses every
+entry with the `CALL carrier` reason: the word of `OpenCall.call`, `callSuccess`, or `callValue`
+is a sequencing carrier the call policy already decided, not the callee's answer, and it may
+stand only as the entry's result word, alone or under `Effect.thenTrue`. `Tests.EvmOpenCallSpec`
+pins each entry through `extractMethod`; `runtime-tests/evm/anvil_opencall.sh` pins the
+`pf build` surface, which must refuse this module.
 
-Before the refusal each entry compiled to the CALL followed by the constant `0`. On Anvil
-`isZero` answered `false` where the Lean function answers `true`, `plusOne` answered `0` for `1`,
-`gated` never ran the CALL, `stored` wrote `0` into `flag`, and `callArg` and `readArg` dropped
-the inner CALL and the STATICCALL.
+Before the refusal each entry compiled. The computed-with shapes lowered to the CALL followed by
+the constant `0`: on Anvil `isZero` answered `false` where the Lean function answers `true`,
+`plusOne` answered `0` for `1`, `gated` never ran the CALL, `stored` wrote `0` into `flag`, and
+`callArg` and `readArg` dropped the inner CALL and the STATICCALL. `letGuarded` lowered to the
+CALL and `return 1` with no guard and no store, and `thenTrueGated` stored `1` without running
+the CALL.
 -/
 
 namespace Tests.EvmOpenCallMisuse
@@ -84,6 +87,30 @@ def valueCompared (_s : State) (target : Address) (amt : UInt256) :
   if (0 : UInt64) ≠ 1 then
     .ok ({ dummy := Ether.accept amt, flag := _s.flag },
       OpenCall.callValue target amt Remote.deposit == amt.w0)
+  else
+    .error .overflow
+
+@[pf_entry]
+def thenTrueGated (s : State) (target : Address) : Except Error (State × UInt64) :=
+  if Effect.thenTrue (OpenCall.callSuccess target Remote.ping) then
+    .ok ({ s with flag := 1 }, 1)
+  else
+    .ok ({ s with flag := 2 }, 0)
+
+@[pf_entry]
+def thenTrueCompared (_s : State) (target : Address) : Bool :=
+  Effect.thenTrue (OpenCall.callSuccess target Remote.ping) == false
+
+@[pf_entry]
+def letDropped (s : State) (target : Address) : Except Error (State × UInt64) :=
+  let _sent := OpenCall.callSuccess target Remote.ping
+  .ok ({ s with flag := 1 }, 1)
+
+@[pf_entry]
+def letGuarded (s : State) (target : Address) : Except Error (State × UInt64) :=
+  let _sent := OpenCall.callSuccess target Remote.ping
+  if s.flag == 0 then
+    .ok ({ s with flag := 1 }, 1)
   else
     .error .overflow
 

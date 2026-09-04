@@ -14,8 +14,10 @@ namespace ProofForge.Extract
 
 def decodeBody (env : Environment) (e : Expr) (preserveLocals : Bool := false)
     (stateType? : Option Name := none) :
-    Except String (Array Ops.Op) :=
+    Except String (Array Ops.Op) := do
   let (_, body) := peelLams e
+  if let some reason := findOpenCallCarrierMisuse env body then
+    throw s!"extract/unsupported: {reason}"
   -- Canonicalize syntax-only aliases around control flow before shape decoding.
   -- A method with structured-State sequencing also retains adjacent scalar lets so `decodeExpr`
   -- can materialize bounded lookups instead of duplicating them through every later projection.
