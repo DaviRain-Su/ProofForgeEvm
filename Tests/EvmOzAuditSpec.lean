@@ -172,7 +172,7 @@ private def expectAuditLink : CommandElabM Unit := do
       abi.contains "\"name\":\"isClassified\"" &&
       abi.contains "\"name\":\"auditOk\"" do
     throwError s!"AuditLink ABI lost audit surface:\n{abi}"
-  unless IR.digestHex program == "62c5b84cc38d9613" do
+  unless IR.digestHex program == "ad40c48e855ad5ef" do
     throwError s!"AuditLink digest drifted: {IR.digestHex program}"
   logInfo m!"auditlink: digest={IR.digestHex program} abi-ok"
 

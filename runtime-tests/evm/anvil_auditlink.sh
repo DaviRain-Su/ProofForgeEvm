@@ -111,4 +111,4 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'auditOk(uint64,uint64)(bool)' 451 367)" \
   false "stale tree path count fails closed"
 
-echo "evm-anvil-auditlink: ok (OZ audit table witness + per-row classification + non-goal evidence + one temporary gap + fail-closed auditOk gate)"
+echo "evm-anvil-auditlink: ok (OZ audit table witness + per-row classification + non-goal evidence + no temporary gap + fail-closed auditOk gate)"
