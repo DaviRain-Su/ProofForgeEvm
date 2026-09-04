@@ -5978,41 +5978,27 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
             (stateful := stateful) (preserveLocals := preserveLocals)
             (localDepth := localDepth) (stateType? := stateType?)
             (deepScalars := deepScalars)
-      else
+      else if !body.hasLooseBVar 0 then
         match decodeExpr env fuel' value (preserveLocals := preserveLocals)
             (localDepth := localDepth) (stateType? := stateType?)
             (deepScalars := deepScalars) with
         | .error reason =>
             return .error s!"extract/unsupported: effectful let: {reason}"
         | .ok producerOps =>
-          if body.hasLooseBVar 0 then
-            match lowerBindProducer localDepth producerOps with
-            | some (joinedProducer, true, true) =>
-              let marker := mkApp (mkConst ``localRef) (mkNatLit localDepth)
-              match decodeExpr env fuel' (body.instantiate1 marker) (stateful := stateful)
-                  (preserveLocals := preserveLocals) (localDepth := localDepth + 1)
-                  (stateType? := stateType?) (deepScalars := deepScalars) with
-              | .ok continuationOps =>
-                  return .ok (#[.joinLocal localDepth] ++ joinedProducer ++ continuationOps)
-              | .error reason =>
-                  return .error s!"extract/unsupported: effectful let continuation: {reason}"
-            | _ =>
-                return .error "extract/unsupported: effectful let producer has no value"
-          else
-            let effectOps :=
-              if producerOps.back?.any (fun | .returnU64 _ => true | _ => false) then
-                producerOps.pop
-              else producerOps
-            -- Method arguments are already `methodArgRef` markers, so dropping the unused
-            -- binder must not `lowerLooseBVars`. Instantiating `Unit.unit` matches
-            -- `collectEvmEffectOps` and leaves those markers in place.
-            match decodeExpr env fuel' (body.instantiate1 (mkConst ``Unit.unit))
-                (stateful := stateful) (preserveLocals := preserveLocals)
-                (localDepth := localDepth) (stateType? := stateType?)
-                (deepScalars := deepScalars) with
-            | .ok continuationOps => return .ok (effectOps ++ continuationOps)
-            | .error reason =>
-                return .error s!"extract/unsupported: effectful let continuation: {reason}"
+          let effectOps :=
+            if producerOps.back?.any (fun | .returnU64 _ => true | _ => false) then
+              producerOps.pop
+            else producerOps
+          -- Method arguments are already `methodArgRef` markers, so dropping the unused
+          -- binder must not `lowerLooseBVars`. Instantiating `Unit.unit` matches
+          -- `collectEvmEffectOps` and leaves those markers in place.
+          match decodeExpr env fuel' (body.instantiate1 (mkConst ``Unit.unit))
+              (stateful := stateful) (preserveLocals := preserveLocals)
+              (localDepth := localDepth) (stateType? := stateType?)
+              (deepScalars := deepScalars) with
+          | .ok continuationOps => return .ok (effectOps ++ continuationOps)
+          | .error reason =>
+              return .error s!"extract/unsupported: effectful let continuation: {reason}"
     | _ => pure ()
     if let some producer := nestedSequencedScalarHelper? env e then
       match decodeExpr env fuel' producer (preserveLocals := preserveLocals)
