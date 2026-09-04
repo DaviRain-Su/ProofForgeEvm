@@ -151,6 +151,9 @@ jobs:
       - name: Check artifact manifest
         run: python3 scripts/check_artifact_manifest.py --self-test
 
+      - name: Check every Anvil gate is run by its suite
+        run: python3 scripts/check_anvil_suite.py --self-test && python3 scripts/check_anvil_suite.py
+
       - name: Check kernel proofs have no placeholders
         run: python3 scripts/check_no_sorry.py
 
