@@ -103,8 +103,10 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 #guard (OpenCall.ArgType.bytes 8).limbCount == 9
 #guard (OpenCall.ArgType.bytes 8).abiType matches .ok "bytes"
 #guard (OpenCall.ArgType.bytes 8).canonical == "bytes8"
-#guard (OpenCall.ArgType.bytes 63).supported
-#guard !(OpenCall.ArgType.bytes 64).supported
+-- The `bytes` ceiling is one ECDSA signature: 65 bytes enter, 66 do not.
+#guard (OpenCall.ArgType.bytes 65).supported
+#guard !(OpenCall.ArgType.bytes 66).supported
+#guard OpenCall.ArgType.supported (.bytes Codec.maxPackedBytesCapacity)
 #guard sinkPlan.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard sinkPlan.headBytes == 68
 #guard sinkPlan.inSize == 100
@@ -178,7 +180,7 @@ private def hashOperands : Array Ops.Val := #[lit, lit, lit] ++ Array.replicate 
 #guard hashQuery.wellFormed
 #guard hashQuery.arity == 12
 #guard !(OpenCall.StaticShape.word.query "two" #[.bytes 4, .bytes 4]).wellFormed
-#guard !(OpenCall.StaticShape.word.query "wide" #[.bytes 64]).wellFormed
+#guard !(OpenCall.StaticShape.word.query "wide" #[.bytes 66]).wellFormed
 #guard
   match hashQuery.toPlan hashOperands with
   | some plan =>
@@ -515,9 +517,9 @@ def twoBytesArgs (target : Address) (a b : BoundedBytes 4) : UInt64 :=
   OpenCall.call target (TwoTails.pair a b)
 
 inductive WideTail where
-  | wide (data : BoundedBytes 64)
+  | wide (data : BoundedBytes 66)
 
-def wideBytesArg (target : Address) (data : BoundedBytes 64) : UInt64 :=
+def wideBytesArg (target : Address) (data : BoundedBytes 66) : UInt64 :=
   OpenCall.call target (WideTail.wide data)
 
 inductive StringTail where
