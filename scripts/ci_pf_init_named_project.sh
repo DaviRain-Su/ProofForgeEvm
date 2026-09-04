@@ -46,6 +46,11 @@ if grep -E 'from "\.\." / "\.\."|from "\.\./\.\."' demo/lakefile.lean; then
   echo "pf init left the template path-require unrewritten" >&2
   exit 1
 fi
+if grep -F 'github.com/DaviRain-Su/ProofForgeEvm.git' demo/lakefile.lean ||
+   grep -F '@ "v0.1.0"' demo/lakefile.lean; then
+  echo "pf init left the published git-tag require unrewritten" >&2
+  exit 1
+fi
 grep -q 'require «proofforge» from' demo/lakefile.lean
 
 cd demo
