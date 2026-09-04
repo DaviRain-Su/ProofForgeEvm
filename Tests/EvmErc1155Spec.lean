@@ -105,7 +105,9 @@ private def specIds : Erc1155.Batch UInt256 :=
 
 -- Bounded batch transfer: slot activity, the OZ length word, limb-wise id equality, the
 -- distinct-id bound, and the key envelope over every slot are Bool arithmetic, so the host pins
--- them. An inactive slot is movable whatever its balance; an active alias id fails the envelope.
+-- them. OZ applies duplicate ids in array order with per-slot writes. This ledger reverts
+-- `DuplicateId()` first so every pre-write check stays exact. An inactive slot is movable
+-- whatever its balance; an active alias id fails the envelope.
 private def specSecondId : UInt256 := ⟨8, 0, 0, 0⟩
 private def specGoodIds : Erc1155.Batch UInt256 :=
   ⟨2, #v[specId, specSecondId, UInt256.zero, UInt256.zero]⟩

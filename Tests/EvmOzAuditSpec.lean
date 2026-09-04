@@ -10,7 +10,8 @@ W5 slice 3: OZ completion-audit permanent non-goal evidence — per-row nonGoalT
 Phase 3 hooks: row 12 (`interfaces/IERC1271.sol`) was the one temporary gap while the 65-byte
 signature could not enter a frame. `Sdk.Ierc1271.checkSignature` over `OpenCall.callMagic` closes
 it, so the row is PARTIAL, no row is a temporary gap, and the witness still exposes
-`isTemporaryGap` / `temporaryGapCount` so the next reopened row has a home.
+`isTemporaryGap` / `temporaryGapCount` so the next reopened row has a home. IERC1155
+`DuplicateId()` is a named PARTIAL bound, not a temporary gap: `temporaryGapCount` stays 0.
 -/
 
 namespace Tests.EvmOzAuditSpec

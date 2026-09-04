@@ -124,6 +124,7 @@ run_guards() {
   python3 scripts/check_anvil_suite.py --self-test
   python3 scripts/check_anvil_suite.py
   python3 scripts/check_no_sorry.py
+  python3 scripts/check_product_honesty.py
 }
 
 run_lean() {
