@@ -69,6 +69,13 @@ private def expectReceiverLink : CommandElabM Unit := do
       abi.contains "\"type\":\"uint256[]\"" &&
       abi.contains "\"type\":\"bytes\"" do
     throwError s!"ReceiverLink ABI lost a hook:\n{abi}"
+  let yul ←
+    match Emit.emitYul evm with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless yul.contains "pf_store_fixed_bytes(0, " && yul.contains "return(0, 32)" &&
+      !yul.contains "return(0, 128)" do
+    throwError "ReceiverLink Yul lost the left-aligned bytes4 return"
   unless IR.digestHex evm == "9457ca840a166ba3" do
     throwError s!"ReceiverLink digest drifted: {IR.digestHex evm}"
   logInfo m!"receiverlink: digest={IR.digestHex evm} abi-ok"
