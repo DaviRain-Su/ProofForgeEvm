@@ -25,7 +25,7 @@ for case in counter pair flag maybe ctx bounded search find_index static_counter
     math_price_band \
     collectible badge tipjar lang vault \
     ownable token erc20meta safepay royaltyart artlink packlink domainlink vestlink prooflink auditlink headerlink admindelaylink auth3009link vault4626link ninelink ownerlink clocklink recoverlink window phase wide const capped multitoken crafttoken twostep_counter credits \
-    opencall; do
+    opencall compose; do
   script="$here/anvil_$case.sh"
   echo "evm-anvil: $case" >&2
   if out="$("$script" 2>&1)"; then
