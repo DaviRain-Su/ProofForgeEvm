@@ -527,12 +527,16 @@ if k != 1:
     sys.exit(1)
 Path('$mut_dir/MultiToken.yul').write_text(out)
 "
-"$solc_bin" --strict-assembly --optimize --evm-version cancun --overwrite \
-  -o "$mut_dir" "$mut_dir/MultiToken.yul" >/dev/null
-mut_bin="$mut_dir/MultiToken.bin"
-[[ -f "$mut_bin" ]] || { echo "FAIL: solc wrote no $mut_bin" >&2; exit 1; }
-mut_code="$(tr -d '\n\r ' < "$mut_bin")"
-[[ -n "$mut_code" ]] || { echo "FAIL: empty mutated MultiToken.bin" >&2; exit 1; }
+mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$mut_dir/MultiToken.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc --strict-assembly wrote no bytecode')
+print(hexes[-1])
+")"
+[[ -n "$mut_code" ]] || { echo "FAIL: empty mutated MultiToken bytecode" >&2; exit 1; }
 mut_addr="$(pf_evm_deploy_ctor_address "$mut_code" "$sender")"
 receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   --create "0x$(tr -d '\n\r ' < "$mock_bin")")"
