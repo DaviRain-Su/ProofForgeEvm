@@ -4375,6 +4375,11 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
         ]
   else none
 
+/-- The query a body *is*, reached through `let` bodies, lambdas, and inline facades. A query
+under an operator (`UInt256.ge (staticWord ..) amt`) or bound by a `let` the body computes with
+is not the body's result, so the walk answers `none` there and the value decoders own the
+expression; descending into argument positions returned the read's limbs and dropped the
+comparison around them. -/
 private def collectEvmQueryOps (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
   let rec walk (fuel : Nat) (e : Expr) : Option (Array Ops.Op) :=
     match fuel with
@@ -4388,12 +4393,31 @@ private def collectEvmQueryOps (env : Environment) (e : Expr) : Option (Array Op
           walk fuel' unfolded
         else
           match e with
-          | .letE _ _ value body _ =>
-            walk fuel' value <|> walk fuel' (body.instantiate1 value)
+          | .letE _ _ value body _ => walk fuel' (body.instantiate1 value)
           | .lam _ _ body _ => walk fuel' body
-          | .app f a => walk fuel' f <|> walk fuel' a
           | _ => none
   walk 24 e
+
+/-- Whether `e` contains a runtime query anywhere, including under operators and inside `let`
+values. The effectful-`let` tests ask this, so a let-bound read stays one local instead of being
+substituted into every use and read again there. -/
+private def containsEvmQuery (env : Environment) (e : Expr) : Bool :=
+  let rec walk (fuel : Nat) (e : Expr) : Bool :=
+    match fuel with
+    | 0 => false
+    | fuel' + 1 =>
+      let e := e.consumeMData
+      (queryOfRuntimeApp env e).isSome ||
+        match unfoldUserHelper env e with
+        | some (_, unfolded) => walk fuel' unfolded
+        | none =>
+          match e with
+          | .letE _ _ value body _ => walk fuel' value || walk fuel' (body.instantiate1 value)
+          | .lam _ _ body _ => walk fuel' body
+          | .app f a => walk fuel' f || walk fuel' a
+          | _ => false
+  walk 24 e
+
 
 private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   match ops.back? with
@@ -4442,6 +4466,7 @@ private partial def isBoundedStringReturn (env : Environment) (fuel : Nat) (e : 
           isBoundedStringReturn env fuel' (body.instantiate1 value)
       | _ => false
 
+/-- `e` as an EVM statement: its effect writes followed by the result, or the query it is. -/
 private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
   if isBoundedStringReturn env 32 e then none else
   -- An `Except.error` head is a terminal the error decoder owns. Without this gate the query
@@ -4455,6 +4480,11 @@ private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.O
       some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
     else
       collectEvmQueryOps env e
+
+/-- Whether `e` performs an effect or reads through a query anywhere. A `let` bound to such a
+value must stay a local: substituting it would repeat the call or read at every use. -/
+private def containsEvmEffect (env : Environment) (e : Expr) : Bool :=
+  (decodeEvmEffect env e).isSome || containsEvmQuery env e
 
 /-- Flatten one logical bounded byte value into `length, byte₀ … byteₙ₋₁`. Constructors already
 carry literal leaves; a parameter or local root is projected so the target input binder can later
@@ -4623,7 +4653,7 @@ def zetaPureHeadLets (env : Environment) (fuel : Nat) (e : Expr) : Expr :=
     match strip e with
     | .letE _ _ value body _ =>
         let effectful :=
-          (decodeEvmEffect env value).isSome || (findTypedSourceFailure env value).isSome ||
+          containsEvmEffect env value || (findTypedSourceFailure env value).isSome ||
             (findForIn env value).isSome || (findForBodyExpr env value).isSome
         -- A scalar captured before an effect must remain a local: substituting its state-field read
         -- through the call can move that read after a later state write.
@@ -5725,7 +5755,7 @@ private def nestedSequencedScalarHelper? (env : Environment) (e : Expr) : Option
             match env.find? name with
             | some (.defnInfo info) =>
                 if (resultType 16 info.type).consumeMData.getAppFn.constName? == some ``UInt64 &&
-                    (decodeEvmEffect env unfolded).isNone &&
+                    !containsEvmEffect env unfolded &&
                     (findTypedSourceFailure env unfolded).isNone &&
                     ((findForIn env unfolded).isSome || (findForBodyExpr env unfolded).isSome) then
                   some candidate
@@ -5757,7 +5787,7 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
     match strip e with
     | .letE _ ty value body _ =>
       let effectful :=
-        (decodeEvmEffect env value).isSome || (findTypedSourceFailure env value).isSome ||
+        containsEvmEffect env value || (findTypedSourceFailure env value).isSome ||
           (findForIn env value).isSome || (findForBodyExpr env value).isSome
       let scalarControlProducer := isSequencedScalarProducer env ty value
       if scalarControlProducer then
