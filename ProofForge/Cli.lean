@@ -349,6 +349,8 @@ private unsafe def extractEvmPrograms (units : Array BuildUnit) :
   catch e =>
     return .error s!"source import failed: {e}"
 
+private def pfVersion : String := "0.1.0"
+
 private def runInit (opts : Options) : IO UInt32 := do
   if opts.initName.isEmpty then
     IO.eprintln "pf: init wants a project name"
@@ -365,9 +367,10 @@ private def runInit (opts : Options) : IO UInt32 := do
   if proc.exitCode != 0 then
     IO.eprintln s!"pf: cp failed\n{proc.stderr}"
     return 1
-  -- Rewrite template `require … from ".." / ".."` (templates/* → repo root).
-  -- Sibling of the checkout → `from ".."`; otherwise absolute path to this checkout
-  -- so `pf init /tmp/demo` still resolves the SDK.
+  -- Sibling of the checkout → `from ".."`. Otherwise the absolute path to this
+  -- checkout so `pf init /tmp/demo` still resolves the SDK. The published
+  -- template require is a git tag. Rewrite it to a path so CI can init before
+  -- the tag exists.
   let lakefile := dst / "lakefile.lean"
   if ← lakefile.pathExists then
     let repoRoot ← IO.currentDir
@@ -385,12 +388,13 @@ private def runInit (opts : Options) : IO UInt32 := do
       if parentAbs == repoRoot then ".."
       else repoRoot.toString
     let old ← IO.FS.readFile lakefile
-    -- Line-scoped: rewrite only the target repo's path require. The
-    -- `proofforge-common` git require resolves from GitHub for any location.
+    let pathRequire := s!"require «proofforge» from \"{requireFrom}\""
     let rewritten :=
-      old.replace "require «proofforge» from \"..\" / \"..\""
-        s!"require «proofforge» from \"{requireFrom}\""
-        |>.replace "require «proofforge» from \"../..\"" s!"require «proofforge» from \"{requireFrom}\""
+      old.replace
+        "require «proofforge» from git\n  \"https://github.com/DaviRain-Su/ProofForgeEvm.git\" @ \"v0.1.0\""
+        pathRequire
+        |>.replace "require «proofforge» from \"..\" / \"..\"" pathRequire
+        |>.replace "require «proofforge» from \"../..\"" pathRequire
     IO.FS.writeFile lakefile rewritten
   IO.println s!"initialized {dst} (target=evm)"
   IO.println s!"next: cd {dst} && lake build && lake env pf build"
@@ -409,7 +413,7 @@ private def toolLine (cmd : String) (args : Array String) (fallback : String) : 
     return fallback
 
 private def printVersion : IO Unit := do
-  IO.println "pf 0.0.1 (ProofForge EVM)"
+  IO.println s!"pf {pfVersion} (ProofForge EVM)"
   IO.println s!"lean {Lean.versionString}"
   IO.println s!"solc {(← toolLine "solc" #["--version"] "0.8.34+commit.80d5c536 (pin; binary not on PATH)")}"
   IO.println "pins: lean v4.31.0; solc 0.8.34; foundry 1.7.1"

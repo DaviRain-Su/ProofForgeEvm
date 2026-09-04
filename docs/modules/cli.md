@@ -20,7 +20,7 @@ pf --version
 - 用户工程应使用 `--module` 或 `pf.toml` 的 `[[program]]` 条目；不写名字 = 全部登记源模块
 - 每次运行重新抽取 IR；`Examples` fixture 的 digest 必须与 `Evm.Registry` 钉值一致，
   否则 fail-closed（`ir/mismatch`）
-- `pf init <name>` 复制 `templates/evm-counter`，并把 path-`require` 改写为指向本仓
+- `pf init <name>` 复制 `templates/evm-counter`；从 checkout 运行时，把模板里的 git-tag `require`（`@ "v0.1.0"`）改写成指向本仓的 path-`require`
 - CI job `pf-init-user-project` 用字面命令 `pf init demo` 建工程再编制品（不是匿名 smoke）
 
 ## Tests

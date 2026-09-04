@@ -2,7 +2,7 @@ import Lake
 open Lake DSL
 
 package «proofforge» where
-  version := v!"0.0.1"
+  version := v!"0.1.0"
 
 /-- Shared Attr + Core/Crypto surface, maintained in ProofForgeCommon.
     Tracks ProofForgeCommon main; Common CI gates every push, so a
