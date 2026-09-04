@@ -270,7 +270,8 @@ def renderDynamicReturn [Inhabited Value] (context : ReturnContext Value State)
     throw s!"evm/codec: dynamic result has {values.size} source parts, expected {plan.sourceWords.size}"
   let (lengthPre, length, state0) ← context.materialize indent values[0]! state
   let mut state := state0
-  let mut out := lengthPre ++
+  let mut out := lengthPre
+  let header :=
     indent ++ "mstore(0, 32)" ++ nl ++
     indent ++ "mstore(32, " ++ length ++ ")" ++ nl
   match plan with
@@ -281,34 +282,49 @@ def renderDynamicReturn [Inhabited Value] (context : ReturnContext Value State)
       let sourceLimbsPerElement := elementSourceLimbCount array.elementWords
       out := out ++ indent ++ "if gt(" ++ length ++ ", " ++ toString array.capacity ++
         ") { " ++ revert0 ++ " }" ++ nl
+      -- Every element is computed into a local before the first frame word is stored. Element
+      -- code may use low memory as scratch (a hashed-map key hash), which the frame would share.
+      let mut stores : Array String := #[]
       for i in [0:array.capacity] do
-        out := out ++ indent ++ "if gt(" ++ length ++ ", " ++ toString i ++ ") {" ++ nl
+        let mut block := ""
         let base := 1 + i * sourceLimbsPerElement
         let mut limbOffset := 0
         for wordIndex in [0:abiWordsPerElement] do
           let type := array.elementWords[wordIndex]!
           let nLimbs := limbCount type
+          let slot := s!"abi_ret_{i}_{wordIndex}"
+          let memOffset := 64 + (i * abiWordsPerElement + wordIndex) * 32
+          let guard := indent ++ "if gt(" ++ length ++ ", " ++ toString i ++ ") { "
           let mut limbExprs : Array String := #[]
           for _ in [0:nLimbs] do
             let (pre, value, next) ←
               context.materialize (indent ++ "  ") values[base + limbOffset]! state
             state := next
             limbOffset := limbOffset + 1
-            out := out ++ pre
+            block := block ++ pre
             limbExprs := limbExprs.push value
-          let packed ← packElementWord type limbExprs
-          let memOffset := 64 + (i * abiWordsPerElement + wordIndex) * 32
           if isAddressCarrier type && nLimbs == 3 then
-            out := out ++ indent ++ "  pf_store_addr20(" ++ toString memOffset ++ ", " ++
-              limbExprs[0]! ++ ", " ++ limbExprs[1]! ++ ", " ++ limbExprs[2]! ++ ")" ++ nl
+            for limb in [0:3] do
+              out := out ++ indent ++ "let " ++ slot ++ "_" ++ toString limb ++ " := 0" ++ nl
+              block := block ++ indent ++ "  " ++ slot ++ "_" ++ toString limb ++ " := " ++
+                limbExprs[limb]! ++ nl
+            stores := stores.push (guard ++ "pf_store_addr20(" ++ toString memOffset ++ ", " ++
+              slot ++ "_0, " ++ slot ++ "_1, " ++ slot ++ "_2) }" ++ nl)
           else
-            out := out ++ indent ++ "  mstore(" ++ toString memOffset ++ ", " ++ packed ++
-              ")" ++ nl
-        out := out ++ indent ++ "}" ++ nl
+            let packed ← packElementWord type limbExprs
+            out := out ++ indent ++ "let " ++ slot ++ " := 0" ++ nl
+            block := block ++ indent ++ "  " ++ slot ++ " := " ++ packed ++ nl
+            stores := stores.push (guard ++ "mstore(" ++ toString memOffset ++ ", " ++ slot ++
+              ") }" ++ nl)
+        out := out ++ indent ++ "if gt(" ++ length ++ ", " ++ toString i ++ ") {" ++ nl ++
+          block ++ indent ++ "}" ++ nl
+      out := out ++ header
+      for store in stores do
+        out := out ++ store
       out := out ++ indent ++ "return(0, add(64, mul(" ++ length ++ ", " ++
         toString (abiWordsPerElement * 32) ++ ")))" ++ nl
   | .packedBytes bytes =>
-      out := out ++ indent ++ "if gt(" ++ length ++ ", " ++ toString bytes.capacity ++
+      out := out ++ header ++ indent ++ "if gt(" ++ length ++ ", " ++ toString bytes.capacity ++
         ") { " ++ revert0 ++ " }" ++ nl
       for word in [0:(bytes.capacity + 31) / 32] do
         out := out ++ indent ++ "mstore(" ++ toString (64 + word * 32) ++ ", 0)" ++ nl
