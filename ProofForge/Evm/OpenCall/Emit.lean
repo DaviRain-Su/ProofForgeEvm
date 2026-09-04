@@ -2,6 +2,7 @@ import ProofForge.Evm.OpenCall
 import ProofForge.Evm.CallResult.Emit
 import ProofForge.Evm.Ops
 import ProofForge.Evm.Codec
+import ProofForge.Evm.Codec.Emit
 import ProofForge.Evm.Keccak
 
 namespace ProofForge.Evm.OpenCall.Emit
@@ -16,7 +17,7 @@ private def nl : String := "\n"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 structure Context (σ : Type) where
   materialize : Ops.Val → σ → Except String (String × String × σ)

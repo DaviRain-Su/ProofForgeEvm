@@ -50,8 +50,8 @@ end UnsupportedConditionFixture
 #guard Erc1155.Log.approvalForAll ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ true == 0
 
 -- Closed ERC-20-shaped programs keep their digests; this slice only refreshes MultiToken/CraftToken.
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
-#guard Registry.digestOf "Erc20Meta" == some "b86fa0708b74fc2c"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
+#guard Registry.digestOf "Erc20Meta" == some "9e1221ef24a9c091"
 
 def specBalances : Erc1155.Balances := Storage.Layout.root.addressPairMap256.handle
 def specOperators : Erc1155.Operators :=
@@ -93,6 +93,42 @@ private def specIds : Erc1155.Batch UInt256 :=
 #guard (Examples.Evm.MultiToken.balanceOfBatch ⟨0⟩ specOwners specIds).values.toList ==
   [UInt256.zero, UInt256.zero, UInt256.zero, UInt256.zero]
 #guard (Examples.Evm.MultiToken.balanceOfBatch ⟨0⟩ specOwners ⟨1, specIds.values⟩).length == 0
+
+-- Bounded batch transfer: slot activity, the OZ length word, limb-wise id equality, the
+-- distinct-id bound, and the key envelope over every slot are Bool arithmetic, so the host pins
+-- them. An inactive slot is movable whatever its balance; an active alias id fails the envelope.
+private def specSecondId : UInt256 := ⟨8, 0, 0, 0⟩
+private def specGoodIds : Erc1155.Batch UInt256 :=
+  ⟨2, #v[specId, specSecondId, UInt256.zero, UInt256.zero]⟩
+private def specDupIds : Erc1155.Batch UInt256 :=
+  ⟨2, #v[specId, specId, UInt256.zero, UInt256.zero]⟩
+private def specAmounts : Erc1155.Batch UInt256 :=
+  ⟨2, #v[specAmount, specAmount, UInt256.zero, UInt256.zero]⟩
+#guard Erc1155.slotActive specIds 0
+#guard Erc1155.slotActive specIds 1
+#guard !Erc1155.slotActive specIds 2
+#guard !Erc1155.slotActive (⟨0, specIds.values⟩ : Erc1155.Batch UInt256) 0
+#guard Erc1155.lengthWord specIds == (⟨2, 0, 0, 0⟩ : UInt256)
+#guard Erc1155.lengthWord (⟨0, specIds.values⟩ : Erc1155.Batch UInt256) == UInt256.zero
+#guard Erc1155.idEq specId specId
+#guard !Erc1155.idEq specId specAliasId
+#guard !Erc1155.idEq specId specSecondId
+#guard Erc1155.distinctIds specGoodIds
+#guard !Erc1155.distinctIds specDupIds
+#guard Erc1155.distinctIds (⟨1, specDupIds.values⟩ : Erc1155.Batch UInt256)
+#guard !Erc1155.distinctIds ⟨4, #v[specId, specSecondId, specAliasId, specId]⟩
+#guard !Erc1155.distinctIds ⟨4, #v[specId, specSecondId, specAliasId, specSecondId]⟩
+#guard !Erc1155.distinctIds ⟨4, #v[specId, specSecondId, specAliasId, specAliasId]⟩
+#guard Erc1155.distinctIds ⟨3, #v[specId, specSecondId, specAliasId, specId]⟩
+#guard Erc1155.allEncodable specGoodIds
+#guard !Erc1155.allEncodable specIds
+#guard !Erc1155.isApprovedOrOwnerBatch specOperators specOwner specOwner specIds
+#guard Erc1155.Balances.canTransferSlot specBalances specOwner specOther false specAliasId specAmount
+#guard !Erc1155.Balances.canTransferSlot specBalances specOwner specOther true specAliasId specAmount
+#guard !Erc1155.Balances.canBatchTransfer specBalances specOwner specOther specIds specAmounts
+#guard Erc1155.Balances.transferSlot specBalances specOwner specOther false specId specAmount == 0
+#guard Erc1155.Log.transferSlot specOwner specOwner specOther false specId specAmount == 0
+#guard Erc1155.Log.transferBatchSingles specOwner specOwner specOther specGoodIds specAmounts == 0
 
 -- Pre-write/pre-auth envelope gates: unencodable ids fail every mutation and authorization
 -- predicate. These guards are honest on host because `canEncode` is the first `&&` conjunct and
@@ -236,6 +272,33 @@ private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     | .forBody _ body => frames ++ sourceTypedFrames body
     | _ => frames
 
+private partial def sourceErrorFrames (ops : Array ProofForge.Extract.IR.Op) :
+    Array (ProofForge.Core.Ops.ErrorFrame ProofForge.Extract.IR.Val) :=
+  ops.foldl (init := #[]) fun frames op =>
+    let frames := match op with
+      | .errorTyped frame => frames.push frame
+      | _ => frames
+    match op with
+    | .ite _ _ _ yes no => frames ++ sourceErrorFrames yes ++ sourceErrorFrames no
+    | .forBody _ body => frames ++ sourceErrorFrames body
+    | _ => frames
+
+/-- Constructors of the selector-only (fieldless) errors under `ops`. -/
+private partial def sourceNamedErrors (ops : Array ProofForge.Extract.IR.Op) : Array String :=
+  ops.foldl (init := #[]) fun names op =>
+    let names := match op with
+      | .errorNamed name => names.push name
+      | _ => names
+    match op with
+    | .ite _ _ _ yes no => names ++ sourceNamedErrors yes ++ sourceNamedErrors no
+    | .forBody _ body => names ++ sourceNamedErrors body
+    | _ => names
+
+/-- Field name, scalar, and limb count per argument of a typed error frame. -/
+private def frameLimbs (frame : ProofForge.Core.Ops.ErrorFrame V) :
+    Array (String × ProofForge.Core.Codec.Scalar × Nat) :=
+  frame.args.map fun arg => (arg.name, arg.type, arg.parts.size)
+
 private def eventMatches (frame : ProofForge.Core.Ops.EventFrame V)
     (constructor : String) (fields : Array (String × Bool)) : Bool :=
   frame.constructor == constructor &&
@@ -312,6 +375,60 @@ private def expectMultiTokenBatch (source : ProofForge.Extract.IR.Program) (evm 
       parts[1]!.contains "mstore(160, abi_ret_3_0)" do
     throwError "MultiToken.balanceOfBatch Yul stored a frame word before computing every element"
 
+/-- The bounded `batchTransferFrom` carries one OZ-shaped `ERC1155InvalidArrayLength` frame, one
+`ERC1155InsufficientBalance` frame per slot with the OZ field order, one selector-only
+`DuplicateId`, and one `TransferSingle` per slot. Its ABI is `(address,address,uint256[],uint256[])`
+nonpayable, and its Yul reverts with the `cast sig` selectors and the 4 + 4 * 32 byte geometry. -/
+private def expectMultiTokenBatchTransfer (source : ProofForge.Extract.IR.Program)
+    (evm : IR.Program) : CommandElabM Unit := do
+  let ops ← methodOps source "batchTransferFrom"
+  let frames := sourceErrorFrames ops
+  let named (constructor : String) := frames.filter (·.constructor == constructor)
+  let lengths := named "ERC1155InvalidArrayLength"
+  let shortfalls := named "ERC1155InsufficientBalance"
+  unless frames.size == 5 && lengths.size == 1 && shortfalls.size == 4 do
+    throwError s!"MultiToken.batchTransferFrom carries {frames.size} typed error frames: \
+      {frames.map (·.constructor)}"
+  unless sourceNamedErrors ops == #["DuplicateId"] do
+    throwError s!"MultiToken.batchTransferFrom selector-only errors diverged: \
+      {sourceNamedErrors ops}"
+  unless lengths.all (frameLimbs · == #[("idsLength", .uint256, 4), ("valuesLength", .uint256, 4)]) do
+    throwError s!"ERC1155InvalidArrayLength frame diverged: {repr (lengths.map frameLimbs)}"
+  unless shortfalls.all (frameLimbs · ==
+      #[("sender", .address20, 3), ("balance", .uint256, 4), ("needed", .uint256, 4),
+        ("tokenId", .uint256, 4)]) do
+    throwError s!"ERC1155InsufficientBalance frame diverged: {repr (shortfalls.map frameLimbs)}"
+  let logs := sourceTypedFrames ops
+  unless logs.size == 4 && logs.all (eventMatches · "TransferSingle"
+      #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)]) do
+    throwError s!"MultiToken.batchTransferFrom logs {logs.size} typed events, expected four \
+      TransferSingle: {logs.map (·.constructor)}"
+  let abi ←
+    match Emit.emitAbiChecked evm with
+    | .ok abi => pure abi
+    | .error reason => throwError reason
+  unless abi.contains "\"name\":\"batchTransferFrom\",\"stateMutability\":\"nonpayable\"" &&
+      abi.contains ("\"inputs\":[{\"name\":\"arg0\",\"type\":\"address\"},{\"name\":\"arg1\",\"type\":\"address\"}," ++
+        "{\"name\":\"arg2\",\"type\":\"uint256[]\"},{\"name\":\"arg3\",\"type\":\"uint256[]\"}]") &&
+      abi.contains ("{\"type\":\"error\",\"name\":\"ERC1155InvalidArrayLength\",\"inputs\":[" ++
+        "{\"name\":\"idsLength\",\"type\":\"uint256\"},{\"name\":\"valuesLength\",\"type\":\"uint256\"}]}") &&
+      abi.contains ("{\"type\":\"error\",\"name\":\"ERC1155InsufficientBalance\",\"inputs\":[" ++
+        "{\"name\":\"sender\",\"type\":\"address\"},{\"name\":\"balance\",\"type\":\"uint256\"}," ++
+        "{\"name\":\"needed\",\"type\":\"uint256\"},{\"name\":\"tokenId\",\"type\":\"uint256\"}]}") do
+    throwError s!"MultiToken.batchTransferFrom ABI diverged:\n{abi}"
+  unless ProofForge.Evm.Keccak.selector "ERC1155InvalidArrayLength" #["uint256", "uint256"] ==
+      "5b059991" &&
+      ProofForge.Evm.Keccak.selector "ERC1155InsufficientBalance"
+        #["address", "uint256", "uint256", "uint256"] == "03dee4c5" do
+    throwError "OZ ERC-1155 error selectors diverged from cast sig"
+  let yul ←
+    match Emit.emitYul evm with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless yul.contains "shl(224, 0x5b059991)" && yul.contains "shl(224, 0x03dee4c5)" &&
+      yul.contains "revert(0, 132)" do
+    throwError "MultiToken.batchTransferFrom Yul omitted an OZ selector or the revert geometry"
+
 private def expectMultiTokenEvents : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -347,9 +464,10 @@ private def expectMultiTokenEvents : CommandElabM Unit := do
     | .error reason => throwError reason
   expectMethodNames evm
     #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "isApprovedForAll",
-      "supportsInterface", "balanceOfBatch"]
+      "supportsInterface", "balanceOfBatch", "batchTransferFrom"]
   expectTypedAbiYul evm
   expectMultiTokenBatch source evm
+  expectMultiTokenBatchTransfer source evm
 
 private def expectCraftTokenEvents : CommandElabM Unit := do
   let env ← getEnv
@@ -390,8 +508,8 @@ private def expectCraftTokenEvents : CommandElabM Unit := do
 private def expectErc1155 : CommandElabM Unit := do
   expectMultiTokenEvents
   expectCraftTokenEvents
-  expectDigest `Examples.Evm.MultiToken "59c2390d6728455a"
-  expectDigest `Examples.Evm.CraftToken "2252ee4200d2bedc"
+  expectDigest `Examples.Evm.MultiToken "34442cd92ece6a12"
+  expectDigest `Examples.Evm.CraftToken "498e28455f1c4cb7"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!
   let balanceOps := (multi.methods.find? (·.ixName == "balanceOf")).get!.ops

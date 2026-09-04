@@ -12,8 +12,8 @@ bin="$root/build/evm/CraftToken.bin"
 abi="$root/build/evm/CraftToken.abi.json"
 if [[ ! -f "$bin" || ! -f "$abi" ]]; then
   echo "building registered CraftToken.bin" >&2
-  lake build Examples.CraftToken >/dev/null \
-    || { echo "FAIL: lake build Examples.CraftToken failed" >&2; exit 1; }
+  lake build Examples.Evm.CraftToken >/dev/null \
+    || { echo "FAIL: lake build Examples.Evm.CraftToken failed" >&2; exit 1; }
   lake exe pf -- build --target evm --out "$root/build/evm" CraftToken >/dev/null \
     || { echo "FAIL: build registered CraftToken failed" >&2; exit 1; }
 fi

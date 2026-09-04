@@ -158,7 +158,7 @@ private def mockNativeCtx : NativeFx.Emit.Context Nat :=
         (.logTransfer256 lit lit lit lit lit lit lit lit lit lit) 0 with
   | .ok fragment, .ok (txt, ret, st) =>
       txt.endsWith fragment && ret == "0" && st == 3 &&
-        txt.contains "  let v2 := or(or(0, shl(64, 0)), or(shl(128, 0), shl(192, 0)))\n"
+        txt.contains "  let v2 := 0\n"
   | _, _ => false
 
 -- Consumer regression: the NativeFx Approval LOG3 consumes the shared interpreter.
@@ -180,8 +180,8 @@ private def mockNativeCtx : NativeFx.Emit.Context Nat :=
   | .error _ => false
   | .ok (txt, ret, st) =>
       txt == s!"  mstore(0, shl(224, 0x{Keccak.selector "Insufficient" #["uint256", "uint256"]}))\n" ++
-          "  mstore(4, or(or(0, shl(64, 0)), or(shl(128, 0), shl(192, 0))))\n" ++
-          "  mstore(36, or(or(0, shl(64, 0)), or(shl(128, 0), shl(192, 0))))\n" ++
+          "  mstore(4, 0)\n" ++
+          "  mstore(36, 0)\n" ++
           "  revert(0, 68)\n" &&
         ret == "0" && st == 0
 
@@ -190,7 +190,7 @@ private def mockNativeCtx : NativeFx.Emit.Context Nat :=
   match NativeFx.Emit.emitCall mockNativeCtx (.revertUnauthorized lit lit lit) 0 with
   | .error _ => false
   | .ok (txt, ret, st) =>
-      txt == "  mstore(0, 0)\n  pf_store_addr20(0, 0, 0, 0)\n  let pf_who := mload(0)\n" ++
+      txt == "  let pf_who := 0\n" ++
           s!"  mstore(0, shl(224, 0x{Keccak.selector "Unauthorized" #["address"]}))\n" ++
           "  mstore(4, pf_who)\n  revert(0, 36)\n" &&
         ret == "0" && st == 0

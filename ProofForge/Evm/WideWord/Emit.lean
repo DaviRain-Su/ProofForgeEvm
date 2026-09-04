@@ -1,5 +1,6 @@
 import ProofForge.Evm.WideWord
 import ProofForge.Evm.Ops
+import ProofForge.Evm.Codec.Emit
 import ProofForge.Evm.CallResult.Emit
 import ProofForge.Evm.Precompile.Emit
 
@@ -10,15 +11,10 @@ private def u64MaxYul : String := "0xffffffffffffffff"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 private def packU256Word (src : String) (word : Nat) : String :=
-  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), " ++ u64MaxYul ++ ")"
-
-/-- Call the shared runtime helper that packs three little-endian Addr20 limbs into an
-ABI address word at `memory[0..31]`. -/
-private def packAddrMstore8 (indent w0 w1 w2 : String) : String :=
-  indent ++ "pf_store_addr20(0, " ++ w0 ++ ", " ++ w1 ++ ", " ++ w2 ++ ")" ++ nl
+  Codec.Emit.packU256Word src word
 
 /-- Shared with hashed-map emission so the main emitter can pass one context record. -/
 structure Context (σ : Type) where
@@ -72,12 +68,8 @@ private def emitEq20 (context : Context σ)
   let (bv, t4) := context.fresh t3
   let (nm, t5) := context.fresh t4
   let txt := p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent x0 x1 x2 ++
-    indent ++ "let " ++ av ++ " := mload(0)" ++ nl ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent y0 y1 y2 ++
-    indent ++ "let " ++ bv ++ " := mload(0)" ++ nl ++
+    Codec.Emit.bindAddrWord indent av x0 x1 x2 ++
+    Codec.Emit.bindAddrWord indent bv y0 y1 y2 ++
     indent ++ "let " ++ nm ++ " := eq(" ++ av ++ ", " ++ bv ++ ")" ++ nl
   return (txt, nm, t5)
 

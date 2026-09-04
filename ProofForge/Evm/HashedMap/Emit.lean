@@ -1,5 +1,6 @@
 import ProofForge.Evm.HashedMap
 import ProofForge.Evm.Ops
+import ProofForge.Evm.Codec.Emit
 
 namespace ProofForge.Evm.HashedMap.Emit
 
@@ -8,10 +9,10 @@ private def u64MaxYul : String := "0xffffffffffffffff"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 private def packU256Word (src : String) (word : Nat) : String :=
-  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), " ++ u64MaxYul ++ ")"
+  Codec.Emit.packU256Word src word
 
 /-- Generic hashed-map emission context. The main emitter supplies materialization and
 fresh-name state; this module does not know about the surrounding Render record. -/

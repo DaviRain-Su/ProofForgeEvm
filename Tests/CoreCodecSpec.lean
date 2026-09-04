@@ -341,6 +341,93 @@ elab "#pf_guard_aggregate_boundary_schemas" : command => do
 
 end AggregateBoundary
 
+namespace WordIdentity
+
+/-! Limbs split from one ABI word pack back into that word. Anything else keeps the shuffle. -/
+
+open ProofForge.Evm.Codec.Emit
+
+#guard addrWordOfLimbs (packAddrWord "arg1" 0) (packAddrWord "arg1" 1) (packAddrWord "arg1" 2) ==
+  some "arg1"
+#guard addrWordOfLimbs (packAddrWord "caller()" 0) (packAddrWord "caller()" 1)
+  (packAddrWord "caller()" 2) == some "caller()"
+#guard addrWordOfLimbs "0" "0" "0" == some "0"
+#guard addrWordOfLimbs (packAddrWord "arg1" 0) (packAddrWord "arg0" 1) (packAddrWord "arg1" 2) ==
+  none
+#guard addrWordOfLimbs "v7" "v8" "v9" == none
+#guard bindAddrWord "" "w" (packAddrWord "arg0" 0) (packAddrWord "arg0" 1) (packAddrWord "arg0" 2) ==
+  "let w := arg0\n"
+#guard bindAddrWord "" "w" "v7" "v8" "v9" ==
+  "mstore(0, 0)\npf_store_addr20(0, v7, v8, v9)\nlet w := mload(0)\n"
+#guard packU256 (packU256Word "arg8" 0) (packU256Word "arg8" 1) (packU256Word "arg8" 2)
+  (packU256Word "arg8" 3) == "arg8"
+#guard packU256 (packU256Word "sload(add(v1, 1))" 0) (packU256Word "sload(add(v1, 1))" 1)
+  (packU256Word "sload(add(v1, 1))" 2) (packU256Word "sload(add(v1, 1))" 3) == "sload(add(v1, 1))"
+#guard packU256 "0" "0" "0" "0" == "0"
+#guard packU256 (packU256Word "arg8" 0) (packU256Word "arg8" 1) (packU256Word "arg9" 2)
+  (packU256Word "arg8" 3) == "or(or(and(shr(0, arg8), 0xffffffffffffffff), shl(64, and(shr(64, arg8), 0xffffffffffffffff))), or(shl(128, and(shr(128, arg9), 0xffffffffffffffff)), shl(192, and(shr(192, arg8), 0xffffffffffffffff))))"
+#guard packU256 "v1" "v2" "v3" "v4" == "or(or(v1, shl(64, v2)), or(shl(128, v3), shl(192, v4)))"
+#guard packU256 (packU256Word "arg8" 1) (packU256Word "arg8" 1) (packU256Word "arg8" 2)
+  (packU256Word "arg8" 3) == "or(or(and(shr(64, arg8), 0xffffffffffffffff), shl(64, and(shr(64, arg8), 0xffffffffffffffff))), or(shl(128, and(shr(128, arg8), 0xffffffffffffffff)), shl(192, and(shr(192, arg8), 0xffffffffffffffff))))"
+
+/-- Emit a two-argument `uint64` view whose result is `value`. -/
+private def selectYul (value : Extract.IR.Val) : Except String String := do
+  let init : Extract.IR.Method := {
+    kind := .init
+    name := "Select.init"
+    ixName := "initialize"
+    retSchema := .unit
+    ops := #[.returnState (.lit 0)]
+  }
+  let pick : Extract.IR.Method := {
+    kind := .get
+    name := "Select.pick"
+    ixName := "pick"
+    paramCount := 2
+    paramSchemas := #[.scalar .uint64, .scalar .uint64]
+    retTypes := #[.uint64]
+    retSchema := .scalar .uint64
+    ops := #[.returnU64 value]
+  }
+  let program : Extract.IR.Program := {
+    name := "Select"
+    slots := #[{ name := "value" }]
+    methods := #[init, pick]
+  }
+  ProofForge.Evm.Emit.emitYul (← ProofForge.Evm.IR.fromExtracted program)
+
+/-- A select whose branches are leaves is one assignment, or one guarded assignment; the
+comparison itself is the value when the branches are 1 and 0. -/
+elab "#pf_guard_select_peephole" : command => do
+  let bool ← match selectYul (.select .lt (.arg 0) (.arg 1) (.lit 1) (.lit 0)) with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless bool.contains "let v0 := lt(arg0, arg1)\n" && !bool.contains "if iszero(lt(" do
+    throwError s!"select of 1/0 on a comparison did not collapse to the comparison:\n{bool}"
+  let negated ← match selectYul (.select .eq (.arg 0) (.lit 0) (.lit 0) (.lit 1)) with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless negated.contains "let v0 := iszero(eq(arg0, 0))\n" do
+    throwError s!"select of 0/1 on a comparison did not collapse to its negation:\n{negated}"
+  let leaves ← match selectYul (.select .gt (.arg 0) (.arg 1) (.arg 0) (.arg 1)) with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless leaves.contains "let v0 := arg1\n" && leaves.contains "if gt(arg0, arg1) {\n" &&
+      leaves.contains "  v0 := arg0\n" && !leaves.contains "if iszero(gt(" do
+    throwError s!"select over leaves kept the second guarded assignment:\n{leaves}"
+  let checked ← match selectYul (.select .gt (.arg 0) (.arg 1) (.addU64 (.arg 0) (.lit 1))
+      (.arg 1)) with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless checked.contains "let v0 := arg1\n" && checked.contains "if gt(arg0, arg1) {\n" &&
+      checked.contains "  if gt(arg0, sub(0xffffffffffffffff, 0x1)) { revert(0, 0) }\n" &&
+      checked.contains "  v0 := v1\n" && !checked.contains "if iszero(gt(" do
+    throwError s!"select with a checked branch did not keep its check inside the guard:\n{checked}"
+
+#pf_guard_select_peephole
+
+end WordIdentity
+
 private def orderBatch : Schema :=
   .record "OrderBatch" #[
     ("market", .scalar .address32),

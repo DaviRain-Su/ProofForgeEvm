@@ -103,13 +103,122 @@ private def expectUnsupported (env : Environment) (name : Name) (fragment : Stri
       unless reason.contains fragment do
         throwError s!"{name}: wrong fail-closed reason: {reason}"
 
+namespace WideFields
+
+/-! Wide and address error fields share the typed-event scalar vocabulary: one ABI word each,
+packed from four, three, or two little-endian limbs, so OZ error selectors survive. -/
+
+structure State where
+  value : UInt64
+  deriving Repr, DecidableEq, Inhabited
+
+inductive Error where
+  | ERC1155InvalidArrayLength (idsLength : ProofForge.Evm.Runtime.UInt256)
+      (valuesLength : ProofForge.Evm.Runtime.UInt256)
+  | ERC1155MissingApprovalForAll (operator : ProofForge.Evm.Runtime.Addr20)
+      (owner : ProofForge.Evm.Runtime.Addr20)
+  | halfWide (value : ProofForge.Core.Value.UInt128) (flag : Bool)
+  | shortfall (balance : UInt64) (needed : UInt64)
+  deriving Repr, DecidableEq, Inhabited, BEq
+
+@[pf_inline] def positions : ProofForge.Evm.Sdk.Storage.U64Map :=
+  ProofForge.Evm.Sdk.Storage.Layout.root.u64Map.handle
+
+@[pf_entry] def init (value : UInt64) : State := ⟨value⟩
+
+@[pf_entry] def valueOf (s : State) : UInt64 := s.value
+
+@[pf_entry] def lengths (_s : State) (ids values : ProofForge.Evm.Runtime.UInt256) :
+    Except Error (State × UInt64) :=
+  .error (.ERC1155InvalidArrayLength ids values)
+
+@[pf_entry] def approval (_s : State) (operator owner : ProofForge.Evm.Runtime.Addr20) :
+    Except Error (State × UInt64) :=
+  .error (.ERC1155MissingApprovalForAll operator owner)
+
+@[pf_entry] def half (_s : State) (value : ProofForge.Core.Value.UInt128) (flag : Bool) :
+    Except Error (State × UInt64) :=
+  .error (.halfWide value flag)
+
+/-- A map read inside an error field belongs to the error frame, not to the statement-level
+query scan that once turned this revert into a `uint64` return. -/
+@[pf_entry] def short (_s : State) (key needed : UInt64) : Except Error (State × UInt64) :=
+  .error (.shortfall (positions.get key) needed)
+
+end WideFields
+
+private def frameLimbs (frame : ProofForge.Core.Ops.ErrorFrame V) :
+    Array (String × ProofForge.Core.Codec.Scalar × Nat) :=
+  frame.args.map fun arg => (arg.name, arg.type, arg.parts.size)
+
+/-- The wide-field module extracts, lowers, and emits: each field is one ABI word with the exact
+OZ selector (`cast sig` values), and the revert length is 4 + 32 words. -/
+private def expectWideFields (env : Environment) : CommandElabM Unit := do
+  let source ←
+    match ProofForge.Extract.extractModuleIR env `Tests.EvmTypedErrorSpec.WideFields with
+    | .ok source => pure source
+    | .error reason => throwError s!"wide typed errors failed to extract: {reason}"
+  let frameOf (name : String) : CommandElabM (ProofForge.Core.Ops.ErrorFrame ProofForge.Extract.IR.Val) := do
+    let some method := source.methods.find? (·.ixName == name)
+      | throwError s!"wide typed errors lost {name}"
+    let frames := sourceFrames method.ops
+    unless frames.size == 1 do
+      throwError s!"{name}: expected one typed error frame, got {repr frames}"
+    return frames[0]!
+  unless frameLimbs (← frameOf "lengths") ==
+      #[("idsLength", .uint256, 4), ("valuesLength", .uint256, 4)] do
+    throwError s!"lengths frame diverged: {repr (← frameOf "lengths")}"
+  unless frameLimbs (← frameOf "approval") ==
+      #[("operator", .address20, 3), ("owner", .address20, 3)] do
+    throwError s!"approval frame diverged: {repr (← frameOf "approval")}"
+  unless frameLimbs (← frameOf "half") == #[("value", .uint128, 2), ("flag", .boolean, 1)] do
+    throwError s!"half frame diverged: {repr (← frameOf "half")}"
+  unless frameLimbs (← frameOf "short") == #[("balance", .uint64, 1), ("needed", .uint64, 1)] do
+    throwError s!"short frame diverged: {repr (← frameOf "short")}"
+  let evm ←
+    match ProofForge.Evm.IR.fromExtracted source with
+    | .ok program => pure program
+    | .error reason => throwError reason
+  let abi ←
+    match ProofForge.Evm.Emit.emitAbiChecked evm with
+    | .ok abi => pure abi
+    | .error reason => throwError reason
+  let lengthsAbi := "{\"type\":\"error\",\"name\":\"ERC1155InvalidArrayLength\",\"inputs\":[" ++
+    "{\"name\":\"idsLength\",\"type\":\"uint256\"}," ++
+    "{\"name\":\"valuesLength\",\"type\":\"uint256\"}]}"
+  let approvalAbi := "{\"type\":\"error\",\"name\":\"ERC1155MissingApprovalForAll\",\"inputs\":[" ++
+    "{\"name\":\"operator\",\"type\":\"address\"}," ++
+    "{\"name\":\"owner\",\"type\":\"address\"}]}"
+  let halfAbi := "{\"type\":\"error\",\"name\":\"halfWide\",\"inputs\":[" ++
+    "{\"name\":\"value\",\"type\":\"uint128\"}," ++
+    "{\"name\":\"flag\",\"type\":\"bool\"}]}"
+  unless abi.contains lengthsAbi && abi.contains approvalAbi && abi.contains halfAbi do
+    throwError s!"wide typed-error ABI metadata diverged:\n{abi}"
+  let yul ←
+    match ProofForge.Evm.Emit.emitYul evm with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless ProofForge.Evm.Keccak.selector "ERC1155InvalidArrayLength" #["uint256", "uint256"] ==
+      "5b059991" &&
+      ProofForge.Evm.Keccak.selector "ERC1155MissingApprovalForAll" #["address", "address"] ==
+        "e237d922" do
+    throwError "OZ ERC-1155 error selectors diverged from cast sig"
+  unless yul.contains "shl(224, 0x5b059991)" && yul.contains "shl(224, 0xe237d922)" &&
+      yul.contains "revert(0, 68)" do
+    throwError "wide typed-error Yul omitted an OZ selector or the revert geometry"
+  -- Calldata words already are the ABI words the frame stores: no limb shuffle back into
+  -- the address words, no four-limb reassembly of the uint256 words. (The uint128 field keeps
+  -- its two-limb pack: two limbs plus two zeros are not the word's own split.)
+  if yul.contains "pf_store_addr20(0, pf_addr_w0(" || yul.contains "shl(128, and(shr(128, arg" then
+    throwError "wide typed-error Yul repacked an argument word from its own limbs"
+
 namespace Unsupported
 
-inductive WideError where
-  | wide (value : ProofForge.Core.Value.UInt128)
+inductive NatError where
+  | wide (value : Nat)
 
-def wide (value : ProofForge.Core.Value.UInt128) : Except WideError UInt64 :=
-  .error (.wide value)
+def wide (value : UInt64) : Except NatError UInt64 :=
+  .error (.wide value.toNat)
 
 inductive ManyError where
   | many (a b c d e : UInt64)
@@ -196,8 +305,9 @@ elab "#pf_guard_evm_typed_errors" : command => do
       yul.contains "revert(0, 4)" do
     throwError "typed-error Yul omitted selector, ordered ABI words, or exact revert geometry"
 
-  expectUnsupported env ``Unsupported.wide "only UInt64 fields"
-  expectUnsupported env ``Unsupported.many "at most four UInt64 fields"
+  expectWideFields env
+  expectUnsupported env ``Unsupported.wide "not a closed EVM scalar"
+  expectUnsupported env ``Unsupported.many "at most four fields"
   expectUnsupported env ``Unsupported.anonymous "extract/unsupported"
   expectUnsupported env ``Unsupported.implicitField "explicitly named"
 

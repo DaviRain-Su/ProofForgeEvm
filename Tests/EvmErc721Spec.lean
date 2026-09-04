@@ -42,8 +42,8 @@ open Lean Elab Command
 #guard Examples.Evm.Badge.balances.base == 3
 
 -- Closed ERC-20-shaped programs keep their digests; this slice only refreshes Collectible/Badge.
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
-#guard Registry.digestOf "Erc20Meta" == some "b86fa0708b74fc2c"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
+#guard Registry.digestOf "Erc20Meta" == some "9e1221ef24a9c091"
 
 private def transferAbi : String :=
   "{\"type\":\"event\",\"name\":\"Transfer\",\"inputs\":[" ++
@@ -213,8 +213,8 @@ private def expectBadgeEvents : CommandElabM Unit := do
 private def expectErc721 : CommandElabM Unit := do
   expectCollectibleEvents
   expectBadgeEvents
-  expectDigest `Examples.Evm.Collectible "df29360114f22d5f"
-  expectDigest `Examples.Evm.Badge "ef61792f697edbd3"
+  expectDigest `Examples.Evm.Collectible "4bd851369a01366d"
+  expectDigest `Examples.Evm.Badge "78a916b0b209aa21"
 
 elab "#pf_guard_evm_erc721" : command => expectErc721
 
