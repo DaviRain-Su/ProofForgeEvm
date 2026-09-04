@@ -59,6 +59,13 @@ inductive WordKind where
   | bytes4
   deriving BEq, Repr, Inhabited
 
+/-- Source `UInt64` limbs one bound word yields: three little-endian limbs for a canonical
+address (`Addr20`), one for a bool, four for any other word. -/
+def WordKind.limbCount : WordKind → Nat
+  | .address20 => 3
+  | .boolean => 1
+  | .uint256 | .bytes4 => 4
+
 def abiWordBytes : Nat := 32
 
 /-- Explicit S2 ceiling: at most four static ABI words (128 bytes), matching `LogError.maxLogDataWords`. -/
