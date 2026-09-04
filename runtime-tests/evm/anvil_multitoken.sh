@@ -3,7 +3,8 @@
 # Receipts are ABI-decoded: TransferSingle LOG4 (id+value data), TransferBatch LOG4 (two
 # uint256[] tails), and ApprovalForAll LOG3. The single transfer is safeTransferFrom with
 # the outbound onERC1155Received check against ReceiverMock.sol. safeBatchTransferFrom runs
-# the outbound onERC1155BatchReceived check against the same mock.
+# the outbound onERC1155BatchReceived check against the same mock. Duplicate ids revert
+# DuplicateId(); a Yul mutation that skips that revert must let a same-id batch succeed.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -656,4 +657,64 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$mut_receiver" \
   'seenBatchLength()(uint256)')" 0 \
   "extcodesize forced to 0 skips onERC1155BatchReceived"
 
-echo "evm-anvil-multitoken: ok (mint/burn/safeTransferFrom/operator/balanceOfBatch/safeBatchTransferFrom + ERC-1155 TransferSingle LOG4 / TransferBatch LOG4 / ApprovalForAll LOG3 + receiver hooks: magic, running balance, operator, five refusals, data bound, batch ids/values, extcodesize mutation)"
+# Skip DuplicateId so a two-slot same-id batch writes. If the rewrite missed, send reverts.
+dup_dir="$root/build/evm/multitoken-duplicate-id-mut"
+rm -rf "$dup_dir"
+mkdir -p "$dup_dir"
+"$python" -I -S -c "
+from pathlib import Path
+import re, sys
+src = Path('$yul').read_text()
+n = src.count('shl(224, 0xb1fb6bd0)')
+if n != 1:
+    sys.stderr.write(f'FAIL: expected one DuplicateId selector store, got {n}\\n')
+    sys.exit(1)
+pat = (
+    r'mstore\\(0, shl\\(224, 0xb1fb6bd0\\)\\)\\s*\\n\\s*revert\\(0, 4\\)\\s*\\n'
+    r'\\s*\\}\\s*\\n\\s*case (\\d+) \\{'
+)
+m = re.search(pat, src)
+if m is None:
+    sys.stderr.write('FAIL: DuplicateId revert case not found\\n')
+    sys.exit(1)
+nxt = m.group(1)
+out, k = re.subn(
+    pat,
+    'mstore(0, shl(224, 0xb1fb6bd0))\\n            pf_pc := ' + nxt +
+    '\\n          }\\n          case ' + nxt + ' {',
+    src,
+    count=1,
+)
+if k != 1:
+    sys.stderr.write('FAIL: DuplicateId revert rewrite missed\\n')
+    sys.exit(1)
+Path('$dup_dir/MultiToken.yul').write_text(out)
+"
+dup_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$dup_dir/MultiToken.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc --strict-assembly wrote no DuplicateId-mut bytecode')
+print(hexes[-1])
+")"
+[[ -n "$dup_code" ]] || { echo "FAIL: empty DuplicateId-mut MultiToken bytecode" >&2; exit 1; }
+dup_addr="$(pf_evm_deploy_ctor_address "$dup_code" "$sender")"
+dup_id=11
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$dup_addr" 'mint(address,uint256,uint256)' "$sender" "$dup_id" 10 >/dev/null
+if ! "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$dup_addr" "$batch_sig" "$sender" "$other" "[$dup_id,$dup_id]" "[1,1]" 0x \
+    >/dev/null 2>&1; then
+  echo "FAIL: DuplicateId mutation still reverted a same-id batch" >&2
+  exit 1
+fi
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$dup_addr" \
+  'balanceOf(address,uint256)(uint256)' "$sender" "$dup_id")" 8 \
+  "DuplicateId mutation debited both same-id slots"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$dup_addr" \
+  'balanceOf(address,uint256)(uint256)' "$other" "$dup_id")" 2 \
+  "DuplicateId mutation credited both same-id slots"
+
+echo "evm-anvil-multitoken: ok (mint/burn/safeTransferFrom/operator/balanceOfBatch/safeBatchTransferFrom + ERC-1155 TransferSingle LOG4 / TransferBatch LOG4 / ApprovalForAll LOG3 + receiver hooks: magic, running balance, operator, five refusals, data bound, batch ids/values, extcodesize mutation, DuplicateId mutation)"
