@@ -59,7 +59,16 @@ private def expectVestLink : CommandElabM Unit := do
     throwError s!"VestLink ABI lost vesting surface:\n{abi}"
   unless !abi.contains "\"name\":\"royaltyInfo\"" do
     throwError "VestLink must not grow a royalty surface"
-  unless IR.digestHex program == "b3e15e6ff33fddec" do
+  -- The mid-vesting branch is the linear formula over the SELFBALANCE read, not the read. When
+  -- the query scan still descended into operator arguments, the read under the arithmetic was
+  -- taken as the body's result and `releasable()` answered the raw balance.
+  let canon := IR.canonical program
+  for ixName in #["releasable", "vestedAmount"] do
+    let some entry := (canon.splitOn "/").find? (·.startsWith s!"view:{ixName}:")
+      | throwError s!"VestLink canonical IR lost {ixName}"
+    unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
+      throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
+  unless IR.digestHex program == "eed2a8b5af263474" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

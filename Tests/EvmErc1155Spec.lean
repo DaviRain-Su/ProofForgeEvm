@@ -559,8 +559,8 @@ private def expectCraftTokenEvents : CommandElabM Unit := do
 private def expectErc1155 : CommandElabM Unit := do
   expectMultiTokenEvents
   expectCraftTokenEvents
-  expectDigest `Examples.Evm.MultiToken "ed7b0806a745732d"
-  expectDigest `Examples.Evm.CraftToken "498e28455f1c4cb7"
+  expectDigest `Examples.Evm.MultiToken "63344e4c7925bcc5"
+  expectDigest `Examples.Evm.CraftToken "a179c983f6a4084f"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!
   let balanceOps := (multi.methods.find? (·.ixName == "balanceOf")).get!.ops

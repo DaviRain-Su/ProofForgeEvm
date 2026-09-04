@@ -23,6 +23,12 @@ private def isExceptOkHead (e : Expr) : Bool :=
 private def isExceptErrorHead (e : Expr) : Bool :=
   isConstNamed e ``Except.error || isConstNamed e ``ProofForge.Core.Except.err
 
+/-- `if c then a else a` is `a`. A select whose arms agree carries no decision, so its condition
+is never materialized; the common case is the carrier word of an effect guarded by a read,
+where both arms are the effect's `0`. -/
+private def selectOrArm (cmp : Ops.Cmp) (lhs rhs thn els : Ops.Val) : Ops.Val :=
+  if thn == els then thn else .select cmp lhs rhs thn els
+
 private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
   let e := peelLets (strip e)
   match e.getAppFn.constName? with
@@ -34,6 +40,96 @@ private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Exp
         some (e.getAppArgs.extract (e.getAppArgs.size - 4) e.getAppArgs.size)
       else none
     | _ => none
+
+private def addr20CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
+  let e := peelLets (strip e)
+  match e.getAppFn.constName? with
+  | none => none
+  | some n =>
+    match env.find? n with
+    | some (.ctorInfo c) =>
+      if c.induct == addr20Name && e.getAppArgs.size ≥ 3 then
+        some (e.getAppArgs.extract (e.getAppArgs.size - 3) e.getAppArgs.size)
+      else none
+    | _ => none
+
+/-- The closed EVM scalar vocabulary shared by typed events and typed errors: each type packs
+into exactly one ABI word from its little-endian source limbs. -/
+private def eventScalarOfLeanType (ty : Expr) : Option Core.Codec.Scalar :=
+  let ty := ty.consumeMData
+  match ty.getAppFn.constName? with
+  | some ``Bool => some .boolean
+  | some ``UInt8 => some .uint8
+  | some ``UInt16 => some .uint16
+  | some ``UInt32 => some .uint32
+  | some ``UInt64 => some .uint64
+  | some n =>
+      if n == addr20Name then some .address20
+      else if n == uint128Name then some .uint128
+      else if n == uint256Name || n == evmUInt256AliasName then some .uint256
+      else if n == fixedBytesName || n == evmBytes32AliasName then
+        (fixedBytesSize? ty).map (.fixedBytes ·)
+      else none
+  | none => none
+
+/-- Literal capacity of a `BoundedBytes n` field type. -/
+private def boundedBytesFieldType? (ty : Expr) : Option Nat := do
+  let ty := ty.consumeMData
+  guard (ty.getAppFn.constName? == some boundedBytesName)
+  let args := ty.getAppArgs
+  guard (args.size == 1)
+  natLiteral? args[0]!
+
+/-- User-written explicit binders only. Hygienic `_`, implicit/instance binders, and generated
+numeric names must not become ABI field names. -/
+private def explicitEventFieldBinder (fieldName : Name) (binderInfo : BinderInfo) : Bool :=
+  binderInfo == .default &&
+    !fieldName.isAnonymous &&
+    !fieldName.hasMacroScopes &&
+    !fieldName.isInaccessibleUserName &&
+    match fieldName with
+    | .str .anonymous s =>
+        !s.isEmpty && s.front.isAlpha && s.all (fun c => c.isAlphanum || c == '_')
+    | _ => false
+
+private inductive DecodedOpenCall where
+  | notOpenCall
+  | plan (plan : Evm.OpenCall.Plan Ops.Val)
+  | query (query : Evm.OpenCall.Query) (operands : Array Ops.Val)
+  | unsupported (reason : String)
+  deriving Inhabited
+
+private def nthFromEnd (args : Array Expr) (n : Nat) : Option Expr :=
+  if args.size ≥ n + 1 then some args[args.size - 1 - n]! else none
+
+private def isEvmOpenCallApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall || endsWith e ".evmOpenCall"
+
+private def isEvmOpenCallSuccessApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
+    endsWith e ".evmOpenCallSuccess"
+
+private def isEvmOpenCallValueApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
+    endsWith e ".evmOpenCallValue"
+
+/-- Runtime stub behind each typed STATICCALL read shape. -/
+private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
+  (``ProofForge.Evm.Runtime.evmOpenStaticWord, .word),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords2, .words2),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords3, .words3),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords4, .words4),
+  (``ProofForge.Evm.Runtime.evmOpenStaticBool, .bool),
+  (``ProofForge.Evm.Runtime.evmOpenStaticAddress, .address)
+]
+
+private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
+  (openStaticStubs.find? fun (stub, _) =>
+    isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
+
+private def isAnyOpenCallApp (e : Expr) : Bool :=
+  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
+    (openStaticShapeOf e).isSome
 
 set_option maxRecDepth 2048 in
 mutual
@@ -126,13 +222,13 @@ private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option O
             match cmp?, asVal env fuel' lhs, asVal env fuel' rhs,
                 asVal env fuel' args[args.size - 2]!, asVal env fuel' args[args.size - 1]! with
             | some cmp, some lv, some rv, some thn, some els =>
-                some (.select cmp lv rv thn els)
+                some (selectOrArm cmp lv rv thn els)
             | _, _, _, _, _ => none
           else none
         | none =>
           match asVal env fuel' rawCond,
               asVal env fuel' args[args.size - 2]!, asVal env fuel' args[args.size - 1]! with
-          | some cond, some thn, some els => some (.select .ne cond (.lit 0) thn els)
+          | some cond, some thn, some els => some (selectOrArm .ne cond (.lit 0) thn els)
           | _, _, _ => none
       else
         match e.getAppFn.constName? with
@@ -191,6 +287,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
     (asVal env fuel e.getAppArgs[e.getAppArgs.size - 1]!).map (flattenField · leaf)
   else if isConstNamed e ``Decidable.decide && e.getAppArgs.size ≥ 2 then
     asVal env fuel e.getAppArgs[e.getAppArgs.size - 2]!
+  else if openStaticShapeOf e == some .bool then
+    openStaticRead? env e 1 0
   else if let some (_, unfolded) := unfoldUserHelper env e then
     match env.find? n with
     | some (.defnInfo info) =>
@@ -349,6 +447,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
               some (.ext (.evm (.component (.closedCall (.allowance256 limb.toNat))))
                 #[a0, a1, a2, b0, b1, b2, c0, c1, c2])
             | _, _, _, _, _, _, _, _, _ => none
+        else if (openStaticShapeOf baseE).isSome then
+          openStaticRead? env baseE 4 limb.toNat
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmCallValue256 ||
             endsWith baseE ".evmCallValue256" then
           some (.ext (.evm (.callValue256 limb.toNat)) #[])
@@ -480,6 +580,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
           endsWith baseE ".evmImm20" then
         some (match leaf with
           | "w0" => .evmImmW0 | "w1" => .evmImmW1 | _ => .evmImmW2)
+      else if (openStaticShapeOf baseE).isSome then
+        openStaticRead? env baseE 3 (if leaf == "w0" then 0 else if leaf == "w1" then 1 else 2)
       else
         match asVal env fuel baseE with
         | some b => some (flattenField b leaf)
@@ -1006,13 +1108,13 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       else none
     | _ => none
   else none
-end
-private def val (env : Environment) (e : Expr) : Option Ops.Val :=
+
+private partial def val (env : Environment) (e : Expr) : Option Ops.Val :=
   -- Bounded tree algorithms naturally compose several parent/child projections. Their elaborated
   -- `GetElem`/`toNat` wrappers are deeper than ordinary scalar expressions, but still finite.
   asVal env 32 e
 
-private def addr20Leaves (env : Environment) (e : Expr) : Ops.Val × Ops.Val × Ops.Val :=
+private partial def addr20Leaves (env : Environment) (e : Expr) : Ops.Val × Ops.Val × Ops.Val :=
   let e := unfoldUserHelpers env 8 e
   if isConstNamed e ``ProofForge.Evm.Runtime.evmCaller20 || endsWith e ".evmCaller20" then
     (.evmCallerW0, .evmCallerW1, .evmCallerW2)
@@ -1048,19 +1150,7 @@ private def addr20Leaves (env : Environment) (e : Expr) : Ops.Val × Ops.Val × 
       | some v => (flattenField v "w0", flattenField v "w1", flattenField v "w2")
       | none => (.field (.arg 0) "w0", .field (.arg 0) "w1", .field (.arg 0) "w2")
 
-private def addr20CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
-  let e := peelLets (strip e)
-  match e.getAppFn.constName? with
-  | none => none
-  | some n =>
-    match env.find? n with
-    | some (.ctorInfo c) =>
-      if c.induct == addr20Name && e.getAppArgs.size ≥ 3 then
-        some (e.getAppArgs.extract (e.getAppArgs.size - 3) e.getAppArgs.size)
-      else none
-    | _ => none
-
-private def uint256Leaves (env : Environment) (e : Expr) :
+private partial def uint256Leaves (env : Environment) (e : Expr) :
     Ops.Val × Ops.Val × Ops.Val × Ops.Val :=
   let e := unfoldUserHelpers env 8 e
   let projConst : String → Name
@@ -1106,7 +1196,7 @@ private def uint256Leaves (env : Environment) (e : Expr) :
         (flattenField v "w0", flattenField v "w1", flattenField v "w2", flattenField v "w3")
       | none => (proj "w0", proj "w1", proj "w2", proj "w3")
 
-private def bytes32Leaves (env : Environment) (e : Expr) :
+private partial def bytes32Leaves (env : Environment) (e : Expr) :
     Ops.Val × Ops.Val × Ops.Val × Ops.Val :=
   let e := unfoldUserHelpers env 8 e
   let projConst : String → Name
@@ -1124,6 +1214,172 @@ private def bytes32Leaves (env : Environment) (e : Expr) :
     match val env e with
     | some v => (flattenField v "w0", flattenField v "w1", flattenField v "w2", flattenField v "w3")
     | none => (proj "w0", proj "w1", proj "w2", proj "w3")
+
+private partial def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar) (e : Expr) :
+    Option (Array Ops.Val) :=
+  match scalar with
+  | .boolean | .uint 8 | .uint 16 | .uint 32 | .uint 64 =>
+      (val env e).map (fun value => #[value])
+  | .uint 256 =>
+      let (a0, a1, a2, a3) := uint256Leaves env e
+      some #[a0, a1, a2, a3]
+  | .address 20 =>
+      let (w0, w1, w2) := addr20Leaves env e
+      some #[w0, w1, w2]
+  | .fixedBytes 32 =>
+      let (w0, w1, w2, w3) := bytes32Leaves env e
+      some #[w0, w1, w2, w3]
+  | scalar =>
+      if Evm.Codec.isWideIntegerCarrier scalar then
+        let (w0, w1, w2, w3) := uint256Leaves env e
+        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
+      else if Evm.Codec.isFixedBytesCarrier scalar then
+        let (w0, w1, w2, w3) := bytes32Leaves env e
+        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
+      else none
+
+/-- The limbs of a `BoundedBytes` open-call argument: the runtime length leaf, then
+`field.values[slot]` for every slot, read through the same `GetElem` path a source
+`bytes.values[0].toUInt64` takes. -/
+private partial def decodeBytesArgParts (env : Environment) (capacity : Nat) (field : Expr) :
+    Option (Array Ops.Val) := do
+  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.length)
+    #[mkNatLit capacity, field])
+  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.values)
+    #[mkNatLit capacity, field]
+  let mut parts : Array Ops.Val := #[length]
+  for slot in [0:capacity] do
+    let byte ← val env
+      (mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro])
+    parts := parts.push byte
+  return parts
+
+/-- Preserve a typed open-call constructor as one ABI plan. Names, closed scalar types, and the
+literal capacity of a `BoundedBytes` field stay structured; unsupported shapes must not degrade
+to raw calldata. -/
+private partial def decodeOpenCallArgs (env : Environment) (applied : Expr) :
+    Except String (String × Array (Evm.OpenCall.Arg Ops.Val)) :=
+  let applied := peelLets (strip applied)
+  match applied.getAppFn.constName? with
+  | none => .error "open-call lost constructor"
+  | some ctorName =>
+    let name := Core.IR.lastName ctorName.toString
+    match env.find? ctorName with
+    | some (.ctorInfo ctor) =>
+      if name.isEmpty then
+        .error "open-call constructor name must be non-empty"
+      else if Lean.isStructure env ctor.induct then
+        .error "open-call payload must be an inductive constructor, not a structure"
+      else
+        match env.find? ctor.induct with
+        | some (.inductInfo info) =>
+          if info.numParams != 0 || info.numIndices != 0 || info.isRec then
+            .error "open-call payload must be a nonrecursive monomorphic enum"
+          else if applied.getAppArgs.size < ctor.numFields then
+            .error "open-call lost constructor fields"
+          else if ctor.numFields > Evm.OpenCall.maxArgWords then
+            .error "open-call supports at most eight ABI arguments"
+          else Id.run do
+            let mut type := ctor.type
+            let mut args : Array (Evm.OpenCall.Arg Ops.Val) := #[]
+            let mut names : Array String := #[]
+            for fieldIndex in [:ctor.numFields] do
+              let .forallE fieldName domain body binderInfo := strip type
+                | return .error "open-call lost field metadata"
+              unless explicitEventFieldBinder fieldName binderInfo do
+                return .error "open-call fields must be explicitly named"
+              let fieldName := fieldName.toString
+              if fieldName.isEmpty || names.contains fieldName then
+                return .error "open-call field names must be unique"
+              let some fieldExpr :=
+                  applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
+                | return .error "open-call lost field value"
+              let fieldExpr := peelLets (strip fieldExpr)
+              let arg : Evm.OpenCall.Arg Ops.Val ←
+                match boundedBytesFieldType? domain with
+                | some capacity =>
+                  let argType := Evm.OpenCall.ArgType.bytes capacity
+                  unless argType.supported do
+                    return .error "open-call bytes argument exceeds the bounded bytes capacity"
+                  unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxBytesArgs do
+                    return .error "open-call supports at most one bytes argument"
+                  let some parts := decodeBytesArgParts env capacity fieldExpr
+                    | return .error "open-call bytes argument is not a bounded bytes value"
+                  pure { name := fieldName, type := argType, parts }
+                | none =>
+                  let some scalar := eventScalarOfLeanType domain
+                    | return .error "open-call field type is not a closed EVM scalar"
+                  unless Evm.OpenCall.argScalarSupported scalar do
+                    return .error "open-call field type is not a closed EVM scalar"
+                  let some parts := eventPartsOf env scalar fieldExpr
+                    | return .error "open-call field is not a scalar value"
+                  pure { name := fieldName, type := .scalar scalar, parts }
+              names := names.push fieldName
+              args := args.push arg
+              type := body
+            if !Evm.OpenCall.isIdent name then
+              return .error "open-call constructor name must be a Solidity identifier"
+            .ok (name, args)
+        | _ => .error "open-call payload has no enum metadata"
+    | _ => .error "open-call lost constructor"
+
+private partial def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedOpenCall :=
+  let e := unfoldUserHelpers env 8 (peelLets (strip e))
+  if !isAnyOpenCallApp e then .notOpenCall
+  else
+    let args := e.getAppArgs
+    let hasValue := isEvmOpenCallValueApp e
+    let payloadIdx : Nat := 0
+    let valueIdx : Nat := 1
+    let targetIdx : Nat := if hasValue then 2 else 1
+    match nthFromEnd args targetIdx, nthFromEnd args payloadIdx,
+        (if hasValue then nthFromEnd args valueIdx else none) with
+    | some targetE, some payloadE, valueE? =>
+      match decodeOpenCallArgs env payloadE with
+      | .error reason => .unsupported reason
+      | .ok (name, callArgs) =>
+        let (t0, t1, t2) := addr20Leaves env targetE
+        let target := #[t0, t1, t2]
+        let valueParts :=
+          match valueE? with
+          | some valueE =>
+            let (v0, v1, v2, v3) := uint256Leaves env valueE
+            #[v0, v1, v2, v3]
+          | none => #[]
+        match openStaticShapeOf e with
+        | some shape =>
+          let query := shape.query name (callArgs.map (·.type))
+          let operands := target ++ callArgs.flatMap (·.parts)
+          if query.wellFormed && operands.size == query.arity then
+            .query query operands
+          else .unsupported "malformed open-call query"
+        | none =>
+          let plan : Evm.OpenCall.Plan Ops.Val := {
+            name
+            args := callArgs
+            target
+            kind := .call
+            policy :=
+              if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
+              else .contractSuccess
+            valueParts
+          }
+          if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
+          else .unsupported "malformed open-call plan"
+    | _, _, _ => .unsupported "open-call lost target or payload"
+
+/-- A typed STATICCALL read in value position: limb `limb` of its result word, accepted only
+when the read's carrier has exactly `carrier` limbs (four for `UInt256`, three for `Address`,
+one for `Bool`). A CALL plan is an effect and never becomes a value. -/
+private partial def openStaticRead? (env : Environment) (e : Expr) (carrier limb : Nat) :
+    Option Ops.Val :=
+  match decodeOpenCallCtor env e with
+  | .query query operands =>
+      if query.limbCount == carrier && limb < carrier then
+        some (.ext (.evm (.component (.openCall { query with limb }))) operands)
+      else none
+  | _ => none
+end
 
 /-- Decode a scalar binding through pure explicitly-inline facade layers before substituting it.
 This preserves shared target reads without increasing the global value-decoder fuel or recognizing
@@ -1589,7 +1845,7 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       match asBoolVal env fuel' args[args.size - 4]!,
           asBoolVal env fuel' (peelProofLam args[args.size - 2]!),
           asBoolVal env fuel' (peelProofLam args[args.size - 1]!) with
-      | some cond, some thn, some els => some (.select .ne cond (.lit 0) thn els)
+      | some cond, some thn, some els => some (selectOrArm .ne cond (.lit 0) thn els)
       | _, _, _ => none
     else if isConstNamed e ``Decidable.decide && args.size ≥ 2 then
       asBoolVal env fuel' args[args.size - 2]!
@@ -1597,6 +1853,8 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
     else if endsWith e ".canSchedule" && args.size ≥ 3 then
       boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
+    else if openStaticShapeOf e == some .bool then
+      openStaticRead? env e 1 0
     else if isConstNamed e ``Eq && args.size ≥ 2 then
       let lhs := strip args[args.size - 2]!
       let rhs := strip args[args.size - 1]!
@@ -2742,48 +3000,6 @@ private inductive DecodedError where
   | typed (frame : Core.Ops.ErrorFrame Ops.Val)
   | unsupported (reason : String)
 
-/-- The closed EVM scalar vocabulary shared by typed events and typed errors: each type packs
-into exactly one ABI word from its little-endian source limbs. -/
-private def eventScalarOfLeanType (ty : Expr) : Option Core.Codec.Scalar :=
-  let ty := ty.consumeMData
-  match ty.getAppFn.constName? with
-  | some ``Bool => some .boolean
-  | some ``UInt8 => some .uint8
-  | some ``UInt16 => some .uint16
-  | some ``UInt32 => some .uint32
-  | some ``UInt64 => some .uint64
-  | some n =>
-      if n == addr20Name then some .address20
-      else if n == uint128Name then some .uint128
-      else if n == uint256Name || n == evmUInt256AliasName then some .uint256
-      else if n == fixedBytesName || n == evmBytes32AliasName then
-        (fixedBytesSize? ty).map (.fixedBytes ·)
-      else none
-  | none => none
-
-private def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar) (e : Expr) :
-    Option (Array Ops.Val) :=
-  match scalar with
-  | .boolean | .uint 8 | .uint 16 | .uint 32 | .uint 64 =>
-      (val env e).map (fun value => #[value])
-  | .uint 256 =>
-      let (a0, a1, a2, a3) := uint256Leaves env e
-      some #[a0, a1, a2, a3]
-  | .address 20 =>
-      let (w0, w1, w2) := addr20Leaves env e
-      some #[w0, w1, w2]
-  | .fixedBytes 32 =>
-      let (w0, w1, w2, w3) := bytes32Leaves env e
-      some #[w0, w1, w2, w3]
-  | scalar =>
-      if Evm.Codec.isWideIntegerCarrier scalar then
-        let (w0, w1, w2, w3) := uint256Leaves env e
-        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
-      else if Evm.Codec.isFixedBytesCarrier scalar then
-        let (w0, w1, w2, w3) := bytes32Leaves env e
-        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
-      else none
-
 /-- Preserve direct parameterized source-error constructors as one target-neutral fixed frame.
 Accepts one through four explicitly named fields over the closed EVM scalar vocabulary shared
 with typed events (`eventScalarOfLeanType`), so an OZ-shaped error such as
@@ -2880,30 +3096,6 @@ private def decodeLogTail (env : Environment) (name : String) (elementType : Exp
     elements := elements ++ parts
   return { name, elementType := scalar, capacity, length, elements }
 
-/-- Literal capacity of a `BoundedBytes n` field type. -/
-private def boundedBytesFieldType? (ty : Expr) : Option Nat := do
-  let ty := ty.consumeMData
-  guard (ty.getAppFn.constName? == some boundedBytesName)
-  let args := ty.getAppArgs
-  guard (args.size == 1)
-  natLiteral? args[0]!
-
-/-- The limbs of a `BoundedBytes` open-call argument: the runtime length leaf, then
-`field.values[slot]` for every slot, read through the same `GetElem` path a source
-`bytes.values[0].toUInt64` takes. -/
-private def decodeBytesArgParts (env : Environment) (capacity : Nat) (field : Expr) :
-    Option (Array Ops.Val) := do
-  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.length)
-    #[mkNatLit capacity, field])
-  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.values)
-    #[mkNatLit capacity, field]
-  let mut parts : Array Ops.Val := #[length]
-  for slot in [0:capacity] do
-    let byte ← val env
-      (mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro])
-    parts := parts.push byte
-  return parts
-
 private def isEvmLogTypedApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped || endsWith e ".evmLogTyped"
 
@@ -2929,18 +3121,6 @@ private def unwrapIndexedValue (env : Environment) (e : Expr) : Expr :=
       if n.toString.endsWith ".Event.Indexed.value" && e.getAppArgs.size ≥ 1 then
         e.getAppArgs[e.getAppArgs.size - 1]!
       else e
-
-/-- User-written explicit binders only. Hygienic `_`, implicit/instance binders, and generated
-numeric names must not become ABI field names. -/
-private def explicitEventFieldBinder (fieldName : Name) (binderInfo : BinderInfo) : Bool :=
-  binderInfo == .default &&
-    !fieldName.isAnonymous &&
-    !fieldName.hasMacroScopes &&
-    !fieldName.isInaccessibleUserName &&
-    match fieldName with
-    | .str .anonymous s =>
-        !s.isEmpty && s.front.isAlpha && s.all (fun c => c.isAlphanum || c == '_')
-    | _ => false
 
 /-- Preserve a typed event constructor applied to `Runtime.evmLogTyped` / `Sdk.Event.emit` as one
 target-local frame. Names, ABI types, and `Indexed` flags stay structured; a non-indexed
@@ -3047,158 +3227,6 @@ private def findTypedEventFailure (env : Environment) (e : Expr) : Option String
           | .app f a => walk fuel' f <|> walk fuel' a
           | _ => none
   walk 24 e
-
-private inductive DecodedOpenCall where
-  | notOpenCall
-  | plan (plan : Evm.OpenCall.Plan Ops.Val)
-  | query (query : Evm.OpenCall.Query) (operands : Array Ops.Val)
-  | unsupported (reason : String)
-
-private def nthFromEnd (args : Array Expr) (n : Nat) : Option Expr :=
-  if args.size ≥ n + 1 then some args[args.size - 1 - n]! else none
-
-private def isEvmOpenCallApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall || endsWith e ".evmOpenCall"
-
-private def isEvmOpenCallSuccessApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
-    endsWith e ".evmOpenCallSuccess"
-
-private def isEvmOpenCallValueApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
-    endsWith e ".evmOpenCallValue"
-
-/-- Runtime stub behind each typed STATICCALL read shape. -/
-private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
-  (``ProofForge.Evm.Runtime.evmOpenStaticWord, .word),
-  (``ProofForge.Evm.Runtime.evmOpenStaticWords2, .words2),
-  (``ProofForge.Evm.Runtime.evmOpenStaticWords3, .words3),
-  (``ProofForge.Evm.Runtime.evmOpenStaticWords4, .words4),
-  (``ProofForge.Evm.Runtime.evmOpenStaticBool, .bool),
-  (``ProofForge.Evm.Runtime.evmOpenStaticAddress, .address)
-]
-
-private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
-  (openStaticStubs.find? fun (stub, _) =>
-    isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
-
-private def isAnyOpenCallApp (e : Expr) : Bool :=
-  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
-    (openStaticShapeOf e).isSome
-
-/-- Preserve a typed open-call constructor as one ABI plan. Names, closed scalar types, and the
-literal capacity of a `BoundedBytes` field stay structured; unsupported shapes must not degrade
-to raw calldata. -/
-private def decodeOpenCallArgs (env : Environment) (applied : Expr) :
-    Except String (String × Array (Evm.OpenCall.Arg Ops.Val)) :=
-  let applied := peelLets (strip applied)
-  match applied.getAppFn.constName? with
-  | none => .error "open-call lost constructor"
-  | some ctorName =>
-    let name := Core.IR.lastName ctorName.toString
-    match env.find? ctorName with
-    | some (.ctorInfo ctor) =>
-      if name.isEmpty then
-        .error "open-call constructor name must be non-empty"
-      else if Lean.isStructure env ctor.induct then
-        .error "open-call payload must be an inductive constructor, not a structure"
-      else
-        match env.find? ctor.induct with
-        | some (.inductInfo info) =>
-          if info.numParams != 0 || info.numIndices != 0 || info.isRec then
-            .error "open-call payload must be a nonrecursive monomorphic enum"
-          else if applied.getAppArgs.size < ctor.numFields then
-            .error "open-call lost constructor fields"
-          else if ctor.numFields > Evm.OpenCall.maxArgWords then
-            .error "open-call supports at most eight ABI arguments"
-          else Id.run do
-            let mut type := ctor.type
-            let mut args : Array (Evm.OpenCall.Arg Ops.Val) := #[]
-            let mut names : Array String := #[]
-            for fieldIndex in [:ctor.numFields] do
-              let .forallE fieldName domain body binderInfo := strip type
-                | return .error "open-call lost field metadata"
-              unless explicitEventFieldBinder fieldName binderInfo do
-                return .error "open-call fields must be explicitly named"
-              let fieldName := fieldName.toString
-              if fieldName.isEmpty || names.contains fieldName then
-                return .error "open-call field names must be unique"
-              let some fieldExpr :=
-                  applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
-                | return .error "open-call lost field value"
-              let fieldExpr := peelLets (strip fieldExpr)
-              let arg : Evm.OpenCall.Arg Ops.Val ←
-                match boundedBytesFieldType? domain with
-                | some capacity =>
-                  let argType := Evm.OpenCall.ArgType.bytes capacity
-                  unless argType.supported do
-                    return .error "open-call bytes argument exceeds the bounded bytes capacity"
-                  unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxBytesArgs do
-                    return .error "open-call supports at most one bytes argument"
-                  let some parts := decodeBytesArgParts env capacity fieldExpr
-                    | return .error "open-call bytes argument is not a bounded bytes value"
-                  pure { name := fieldName, type := argType, parts }
-                | none =>
-                  let some scalar := eventScalarOfLeanType domain
-                    | return .error "open-call field type is not a closed EVM scalar"
-                  unless Evm.OpenCall.argScalarSupported scalar do
-                    return .error "open-call field type is not a closed EVM scalar"
-                  let some parts := eventPartsOf env scalar fieldExpr
-                    | return .error "open-call field is not a scalar value"
-                  pure { name := fieldName, type := .scalar scalar, parts }
-              names := names.push fieldName
-              args := args.push arg
-              type := body
-            if !Evm.OpenCall.isIdent name then
-              return .error "open-call constructor name must be a Solidity identifier"
-            .ok (name, args)
-        | _ => .error "open-call payload has no enum metadata"
-    | _ => .error "open-call lost constructor"
-
-private def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedOpenCall :=
-  let e := unfoldUserHelpers env 8 (peelLets (strip e))
-  if !isAnyOpenCallApp e then .notOpenCall
-  else
-    let args := e.getAppArgs
-    let hasValue := isEvmOpenCallValueApp e
-    let payloadIdx : Nat := 0
-    let valueIdx : Nat := 1
-    let targetIdx : Nat := if hasValue then 2 else 1
-    match nthFromEnd args targetIdx, nthFromEnd args payloadIdx,
-        (if hasValue then nthFromEnd args valueIdx else none) with
-    | some targetE, some payloadE, valueE? =>
-      match decodeOpenCallArgs env payloadE with
-      | .error reason => .unsupported reason
-      | .ok (name, callArgs) =>
-        let (t0, t1, t2) := addr20Leaves env targetE
-        let target := #[t0, t1, t2]
-        let valueParts :=
-          match valueE? with
-          | some valueE =>
-            let (v0, v1, v2, v3) := uint256Leaves env valueE
-            #[v0, v1, v2, v3]
-          | none => #[]
-        match openStaticShapeOf e with
-        | some shape =>
-          let query := shape.query name (callArgs.map (·.type))
-          let operands := target ++ callArgs.flatMap (·.parts)
-          if query.wellFormed && operands.size == query.arity then
-            .query query operands
-          else .unsupported "malformed open-call query"
-        | none =>
-          let plan : Evm.OpenCall.Plan Ops.Val := {
-            name
-            args := callArgs
-            target
-            kind := .call
-            policy :=
-              if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
-              else .contractSuccess
-            valueParts
-          }
-          if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
-          else .unsupported "malformed open-call plan"
-    | _, _, _ => .unsupported "open-call lost target or payload"
 
 private def findOpenCallFailure (env : Environment) (e : Expr) : Option String :=
   let rec walk (fuel : Nat) (e : Expr) : Option String :=
@@ -4373,6 +4401,11 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
         ]
   else none
 
+/-- The query a body *is*, reached through `let` bodies, lambdas, and inline facades. A query
+under an operator (`UInt256.ge (staticWord ..) amt`) or bound by a `let` the body computes with
+is not the body's result, so the walk answers `none` there and the value decoders own the
+expression; descending into argument positions returned the read's limbs and dropped the
+comparison around them. -/
 private def collectEvmQueryOps (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
   let rec walk (fuel : Nat) (e : Expr) : Option (Array Ops.Op) :=
     match fuel with
@@ -4386,11 +4419,29 @@ private def collectEvmQueryOps (env : Environment) (e : Expr) : Option (Array Op
           walk fuel' unfolded
         else
           match e with
-          | .letE _ _ value body _ =>
-            walk fuel' value <|> walk fuel' (body.instantiate1 value)
+          | .letE _ _ value body _ => walk fuel' (body.instantiate1 value)
           | .lam _ _ body _ => walk fuel' body
-          | .app f a => walk fuel' f <|> walk fuel' a
           | _ => none
+  walk 24 e
+
+/-- Whether `e` contains a runtime query anywhere, including under operators and inside `let`
+values. The effectful-`let` tests ask this, so a let-bound read stays one local instead of being
+substituted into every use and read again there. -/
+private def containsEvmQuery (env : Environment) (e : Expr) : Bool :=
+  let rec walk (fuel : Nat) (e : Expr) : Bool :=
+    match fuel with
+    | 0 => false
+    | fuel' + 1 =>
+      let e := e.consumeMData
+      (queryOfRuntimeApp env e).isSome ||
+        match unfoldUserHelper env e with
+        | some (_, unfolded) => walk fuel' unfolded
+        | none =>
+          match e with
+          | .letE _ _ value body _ => walk fuel' value || walk fuel' (body.instantiate1 value)
+          | .lam _ _ body _ => walk fuel' body
+          | .app f a => walk fuel' f || walk fuel' a
+          | _ => false
   walk 24 e
 
 private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
@@ -4440,6 +4491,7 @@ private partial def isBoundedStringReturn (env : Environment) (fuel : Nat) (e : 
           isBoundedStringReturn env fuel' (body.instantiate1 value)
       | _ => false
 
+/-- `e` as an EVM statement: its effect writes followed by the result, or the query it is. -/
 private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
   if isBoundedStringReturn env 32 e then none else
   -- An `Except.error` head is a terminal the error decoder owns. Without this gate the query
@@ -4453,6 +4505,11 @@ private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.O
       some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
     else
       collectEvmQueryOps env e
+
+/-- Whether `e` performs an effect or reads through a query anywhere. A `let` bound to such a
+value must stay a local: substituting it would repeat the call or read at every use. -/
+private def containsEvmEffect (env : Environment) (e : Expr) : Bool :=
+  (decodeEvmEffect env e).isSome || containsEvmQuery env e
 
 /-- Flatten one logical bounded byte value into `length, byte₀ … byteₙ₋₁`. Constructors already
 carry literal leaves; a parameter or local root is projected so the target input binder can later
@@ -4621,7 +4678,7 @@ def zetaPureHeadLets (env : Environment) (fuel : Nat) (e : Expr) : Expr :=
     match strip e with
     | .letE _ _ value body _ =>
         let effectful :=
-          (decodeEvmEffect env value).isSome || (findTypedSourceFailure env value).isSome ||
+          containsEvmEffect env value || (findTypedSourceFailure env value).isSome ||
             (findForIn env value).isSome || (findForBodyExpr env value).isSome
         -- A scalar captured before an effect must remain a local: substituting its state-field read
         -- through the call can move that read after a later state write.
@@ -5723,7 +5780,7 @@ private def nestedSequencedScalarHelper? (env : Environment) (e : Expr) : Option
             match env.find? name with
             | some (.defnInfo info) =>
                 if (resultType 16 info.type).consumeMData.getAppFn.constName? == some ``UInt64 &&
-                    (decodeEvmEffect env unfolded).isNone &&
+                    !containsEvmEffect env unfolded &&
                     (findTypedSourceFailure env unfolded).isNone &&
                     ((findForIn env unfolded).isSome || (findForBodyExpr env unfolded).isSome) then
                   some candidate
@@ -5755,7 +5812,7 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
     match strip e with
     | .letE _ ty value body _ =>
       let effectful :=
-        (decodeEvmEffect env value).isSome || (findTypedSourceFailure env value).isSome ||
+        containsEvmEffect env value || (findTypedSourceFailure env value).isSome ||
           (findForIn env value).isSome || (findForBodyExpr env value).isSome
       let scalarControlProducer := isSequencedScalarProducer env ty value
       if scalarControlProducer then

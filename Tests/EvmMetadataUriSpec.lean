@@ -50,7 +50,7 @@ private def expectArtLink : CommandElabM Unit := do
     throwError s!"ArtLink ABI lost tokenURI string output:\n{abi}"
   unless !abi.contains "\"name\":\"uri\"" do
     throwError "ArtLink must not grow ERC-1155 uri surface"
-  unless IR.digestHex program == "e95d5b45be20b193" do
+  unless IR.digestHex program == "8a9ae8e161265c03" do
     throwError s!"ArtLink digest drifted: {IR.digestHex program}"
   logInfo m!"artlink: digest={IR.digestHex program} abi-ok"
 

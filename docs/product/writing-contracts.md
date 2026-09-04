@@ -73,12 +73,29 @@ OpenCall.callSuccess target (Remote.sink tag data)
 | `OpenCall.staticAddress` | STATICCALL | `words #[.address20]` | `Address` |
 
 The target may be a parameter or a stored `Address`. Arguments are at most eight one-word
-scalars (integers, `Address`, fixed bytes). `bytes`, `string`, and arrays are not accepted as
-arguments yet. A STATICCALL read is the whole body of a view entry: `readOwner target :=
-OpenCall.staticAddress target Remote.ownerOf` compiles, but the same read inside an `if`, an
-arithmetic expression, or another call's argument is refused. If the callee reverts, or its
-returndata does not match the policy, your transaction reverts with `revert(0, 0)`, so no
-partial state remains. Reentrancy is visible to the callee. Add `Sdk.Reentrancy` yourself.
+scalars (integers, `Address`, fixed bytes), and one of them may be a `BoundedBytes n` with
+`n ≤ 63`, sent as ABI `bytes` at its runtime length. `string` and arrays are not accepted as
+arguments yet. A STATICCALL read is a value. It can be the body of a view entry, the condition
+of an `if`, an operand of a comparison, or the argument of another call:
+
+```lean
+-- Run the CALL only when the callee says so. The read happens once, before the branch.
+if OpenCall.staticBool target Remote.isOn then OpenCall.callSuccess target Remote.ping else 0
+-- Compare a read with a parameter.
+UInt256.ge (OpenCall.staticWord token (Remote.balanceOf who)) amt
+Address.eq (OpenCall.staticAddress target Remote.ownerOf) who
+-- Feed one read to another call.
+OpenCall.staticWord token (Remote.echo (OpenCall.staticWord token (Remote.balanceOf who)))
+```
+
+A CALL helper's `UInt64` result is an effect carrier, not a value. Sequence it with
+`Effect.thenTrue`, `Effect.abort`, or `Effect.ensure`. A comparison such as
+`OpenCall.callSuccess target Remote.ping == 1` does not read the callee's word. The CALL still
+runs, the comparison is not compiled, and the method returns the carrier's constant `0`. A
+fail-closed refusal of that shape is the next OpenCall unit in
+[oz-sdk-backlog.md](oz-sdk-backlog.md). If the callee reverts, or its returndata does not match
+the policy, your transaction reverts with `revert(0, 0)`, so no partial state remains.
+Reentrancy is visible to the callee. Add `Sdk.Reentrancy` yourself.
 
 Evidence: `runtime-tests/evm/anvil_compose.sh` deploys `Erc20Meta`, `Badge`, and `EvmOpenCall`,
 all compiled by `pf`. It moves tokens through `EvmOpenCall.openTransfer` and checks both
@@ -87,7 +104,9 @@ callee revert leaves no partial state. It then reads the token's `balanceOf` and
 the badge's `supportsInterface` answer (both `true` and `false`) through STATICCALL.
 `runtime-tests/evm/anvil_opencall.sh` covers every helper against a Solidity callee, including
 a bool word of `2`, an address word with dirty high bytes, wrong-size frames, empty EOA
-returndata, and effect order.
+returndata, effect order, and reads in value position (a `Bool` read gating a CALL and selecting
+a word, a `UInt256` read under `UInt256.ge`, an `Address` read under `Address.eq`, and a read as
+another read's argument), each driven to both outcomes.
 
 Out of scope, and not needed for the call above: `delegatecall`, proxies (ERC-1967, UUPS,
 beacons, clones), CREATE and CREATE2 factories, raw calldata, and receiving callbacks such as

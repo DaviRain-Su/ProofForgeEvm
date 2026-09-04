@@ -59,6 +59,20 @@ pf_evm_require_insufficient "$addr" "$beneficiary" \
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
   0 "rejected release keeps accounting"
 
+# Mid-schedule the answers are the linear formula, not the raw balance the pre-fix compiler
+# returned once a read sat under the arithmetic.
+quarter=$((start_ts + duration / 4))
+"$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$quarter" >/dev/null
+"$cast" rpc --rpc-url "$rpc" evm_mine >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasable()(uint256)')" \
+  250000000000000000 "a quarter releasable at start + duration/4"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(uint64)(uint256)' \
+  "$quarter")" 250000000000000000 "vestedAmount at the quarter mark"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(uint64)(uint256)' \
+  "$((start_ts + duration / 2))")" 500000000000000000 "vestedAmount at the half mark"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(uint64)(uint256)' \
+  "$((start_ts + duration))")" 1000000000000000000 "vestedAmount at the end"
+
 # After end, the full allocation is releasable.
 after_end=$((start_ts + duration + 1))
 "$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$after_end" >/dev/null

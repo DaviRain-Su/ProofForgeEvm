@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # OpenCall S3: parameter- and state-supplied targets, one- to four-word, bool, and address
-# STATICCALL reads with their fail-closed frames, one bounded bytes argument through CALL and
-# STATICCALL, CALL value, EOA rejection, malformed returndata, and CALL-before-sstore effect
-# order.
+# STATICCALL reads with their fail-closed frames, reads deciding a guard, compared, and passed
+# as another call's argument, one bounded bytes argument through CALL and STATICCALL, CALL
+# value, EOA rejection, malformed returndata, and CALL-before-sstore effect order.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -166,4 +166,80 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'hashBytes(address,bytes)(bytes32)' \
   exit 1
 fi
 
-echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + bytes arg + value + EOA + malformed + effect-order; engineering only)"
+# Reads in value position. Each guard is observed on both sides against the mock's state, the
+# call inside an untaken branch is proven absent through echo(0)'s two-word frame, and the
+# fail-closed frames still hold when the read feeds a guard, a comparison, or an argument.
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setOnWord(uint256)' 1 >/dev/null
+pings="$(pf_evm_to_dec "$("$cast" call --rpc-url "$rpc" "$target" 'pings()(uint256)')")"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'pingIfOn(address)' "$target" >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'pings()(uint256)')" \
+  "$((pings + 1))" "isOn true runs the guarded CALL"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'echoIfOn(address,uint256)(uint256)' "$target" 7)" 7 "isOn true selects the echoed word"
+if "$cast" call --rpc-url "$rpc" "$addr" 'echoIfOn(address,uint256)(uint256)' \
+    "$target" 0 >/dev/null 2>&1; then
+  echo "FAIL: two-word echo(0) frame passed the gate inside the taken branch" >&2
+  exit 1
+fi
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setOnWord(uint256)' 0 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'pingIfOn(address)' "$target" >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'pings()(uint256)')" \
+  "$((pings + 1))" "isOn false skips the guarded CALL"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'echoIfOn(address,uint256)(uint256)' "$target" 7)" 0 "isOn false selects zero"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'echoIfOn(address,uint256)(uint256)' "$target" 0)" 0 \
+  "isOn false never reaches echo(0)"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setOnWord(uint256)' 2 >/dev/null
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'pingIfOn(address)' "$target" >/dev/null 2>&1; then
+  echo "FAIL: bool word 2 passed the strict-bool gate feeding a guard" >&2
+  exit 1
+fi
+
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'covers(address,address,uint256)(bool)' "$target" "$eoa" 1000)" true \
+  "balanceOf 1000 covers 1000"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'covers(address,address,uint256)(bool)' "$target" "$eoa" 1001)" false \
+  "balanceOf 1000 does not cover 1001"
+big="$("$python" -I -S -c "print((1 << 200) + 12345)")"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setBalanceWord(uint256)' "$big" >/dev/null
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'covers(address,address,uint256)(bool)' "$target" "$eoa" "$big")" true \
+  "a four-limb balance covers itself"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'echoBalance(address,address)(uint256)' "$target" "$eoa")" "$big" \
+  "echo(balanceOf(who)) forwards all four limbs of the inner read"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setBalanceWord(uint256)' 0 >/dev/null
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'covers(address,address,uint256)(bool)' "$target" "$eoa" 1)" false \
+  "balanceOf 0 does not cover 1"
+if "$cast" call --rpc-url "$rpc" "$addr" 'echoBalance(address,address)(uint256)' \
+    "$target" "$eoa" >/dev/null 2>&1; then
+  echo "FAIL: echo(0) two-word frame passed the gate when the inner read was zero" >&2
+  exit 1
+fi
+
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setOwnerWord(uint256)' "$target" >/dev/null
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'ownedBy(address,address)(bool)' "$target" "$target")" true "ownerOf names the target"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'ownedBy(address,address)(bool)' "$target" "$eoa")" false "ownerOf does not name the EOA"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setOwnerWord(uint256)' "$dirty" >/dev/null
+if "$cast" call --rpc-url "$rpc" "$addr" 'ownedBy(address,address)(bool)' \
+    "$target" "$target" >/dev/null 2>&1; then
+  echo "FAIL: dirty high bytes passed the canonical-address gate inside a comparison" >&2
+  exit 1
+fi
+
+echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + reads in guards/comparisons/arguments + bytes arg + value + EOA + malformed + effect-order; engineering only)"

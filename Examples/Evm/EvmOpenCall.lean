@@ -146,6 +146,39 @@ the calldata the callee received, one word the gate compares with `cast calldata
 def hashBytes (_s : State) (target : Address) (data : BoundedBytes 8) : UInt256 :=
   OpenCall.staticWord target (Remote.calldataHash data)
 
+/-- A STATICCALL read as a guard: `ping()` runs only when the callee's `isOn()` answers true.
+The read is materialized before the branch, so a false word never reaches the CALL. -/
+@[pf_entry]
+def pingIfOn (s : State) (target : Address) : Except Error (State × Bool) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ s with dummy := 0 },
+      Effect.thenTrue
+        (if OpenCall.staticBool target Remote.isOn then OpenCall.callSuccess target Remote.ping
+         else 0))
+  else
+    .error .overflow
+
+/-- A `UInt256` read compared in a view: whether `balanceOf(who)` covers `amt`. -/
+@[pf_entry]
+def covers (_s : State) (token who : Address) (amt : UInt256) : Bool :=
+  UInt256.ge (OpenCall.staticWord token (Remote.balanceOf who)) amt
+
+/-- A read as the argument of another read: `echo(balanceOf(who))`. -/
+@[pf_entry]
+def echoBalance (_s : State) (token who : Address) : UInt256 :=
+  OpenCall.staticWord token (Remote.echo (OpenCall.staticWord token (Remote.balanceOf who)))
+
+/-- An `Address` read compared with a parameter: whether `ownerOf()` names `who`. -/
+@[pf_entry]
+def ownedBy (_s : State) (target who : Address) : Bool :=
+  Address.eq (OpenCall.staticAddress target Remote.ownerOf) who
+
+/-- A `Bool` read selecting a value: the echoed word when `isOn()` is true, else zero. -/
+@[pf_entry]
+def echoIfOn (_s : State) (target : Address) (n : UInt256) : UInt256 :=
+  if OpenCall.staticBool target Remote.isOn then OpenCall.staticWord target (Remote.echo n)
+  else UInt256.zero
+
 /-- Payable CALL value. `Ether.accept` makes the entry payable; OpenCall forwards the value. -/
 @[pf_entry]
 def payTarget (_s : State) (target : Address) (amt : UInt256) :
