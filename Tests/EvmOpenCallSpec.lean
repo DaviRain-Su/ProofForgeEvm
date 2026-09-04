@@ -428,7 +428,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "9fe4427d5b5d3114"
+#guard Registry.digestOf "EvmOpenCall" == some "9d3084c62ce8260a"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -522,6 +522,11 @@ def stringArg (target : Address) (data : BoundedString 4) : UInt64 :=
   OpenCall.call target (StringTail.text data)
 
 end Unsupported
+
+/-- A CALL's word is a dummy carrier. Compared, it still lowers as the effect statement it is,
+never as a `Query` value. -/
+def callWordCompared (_s : Examples.Evm.EvmOpenCall.State) (target : Address) : Bool :=
+  OpenCall.callSuccess target Remote.ping == 1
 
 elab "#pf_guard_evm_open_call_source" : command => do
   let env ← getEnv
@@ -654,6 +659,59 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectUnsupported env ``Unsupported.twoBytesArgs "at most one bytes argument"
   expectUnsupported env ``Unsupported.wideBytesArg "exceeds the bounded bytes capacity"
   expectUnsupported env ``Unsupported.stringArg "closed EVM scalar"
+
+  -- A read in value position keeps the computation around it: the Bool read is the `ite`
+  -- condition, the UInt256 read an operand of `ge256`, the Address read an operand of `eq20`,
+  -- the inner read the outer read's argument. With the query scan descending into operator
+  -- arguments, `covers` and `ownedBy` returned the read's limbs without the comparison.
+  -- The canonical form is `evm|name|slots|ctor|entry/entry/…`; an indexed op prints a `/` of its
+  -- own, so a split piece that does not open a new entry belongs to the previous one.
+  let entryList := ((ProofForge.Evm.IR.canonical evm).splitOn "|").getLast?.getD ""
+  let entries := (entryList.splitOn "/").foldl (init := (#[] : Array String)) fun acc piece =>
+    if acc.isEmpty || ["view:", "mut:", "pay:"].any (fun tag => piece.startsWith tag) then
+      acc.push piece
+    else acc.modify (acc.size - 1) (· ++ "/" ++ piece)
+  let expectCanon (ixName : String) (fragments : List String) : CommandElabM Unit := do
+    let some entry := entries.find? fun segment => (segment.splitOn ":")[1]? == some ixName
+      | throwError s!"EVM open-call example lost {ixName}"
+    for fragment in fragments do
+      unless entry.contains fragment do
+        throwError s!"{ixName} canonical IR lost `{fragment}`:\n{entry}"
+  let target := "f.w0(a0),f.w1(a0),f.w2(a0)"
+  let isOn := s!"ocallq.0.0.ocall.static.bool.isOn({target};)"
+  let balanceOfLimb (limb : Nat) : String :=
+    s!"ocallq.0.{limb}.ocall.static.word1.balanceOf({target};a0:ProofForge.Core.Codec.Scalar.address 20(f.w0(a1),f.w1(a1),f.w2(a1)))"
+  let ownerOfLimb (limb : Nat) : String :=
+    s!"ocallq.0.{limb}.ocall.static.typed[a20].ownerOf({target};)"
+  expectCanon "pingIfOn" [s!"ite.eq({isOn},l1,[ocall.call.ok.ping({target};)],[])"]
+  expectCanon "echoIfOn"
+    [s!"ite.eq({isOn},l1,[retu(ocallq.0.0.ocall.static.word1.echo({target};",
+     "],[retu(l0);retu(l0);retu(l0);retu(l0)])"]
+  expectCanon "covers"
+    [":r1:1:[retu(ext.ProofForge.Evm.Ops.ValKind.ge256(" ++ balanceOfLimb 0 ++ "," ++
+      balanceOfLimb 1 ++ "," ++ balanceOfLimb 2 ++ "," ++ balanceOfLimb 3 ++
+      ",f.w0(a2),f.w1(a2),f.w2(a2),f.w3(a2)))]"]
+  expectCanon "ownedBy"
+    [":r1:1:[retu(ext.ProofForge.Evm.Ops.ValKind.eq20(" ++ ownerOfLimb 0 ++ "," ++
+      ownerOfLimb 1 ++ "," ++ ownerOfLimb 2 ++ ",f.w0(a1),f.w1(a1),f.w2(a1)))]"]
+  expectCanon "echoBalance"
+    [s!"retu(ocallq.0.0.ocall.static.word1.echo({target};a0:ProofForge.Core.Codec.Scalar.uint 256(" ++
+      balanceOfLimb 0 ++ "," ++ balanceOfLimb 1 ++ "," ++ balanceOfLimb 2 ++ "," ++
+      balanceOfLimb 3 ++ ")))",
+     s!"retu(ocallq.0.3.ocall.static.word1.echo({target};"]
+  -- A compared CALL word is still the effect statement plus the dummy word: one `Call.invoke`
+  -- plan, no `Query`, and the comparison is not compiled. No CALL result reaches a value
+  -- position; refusing this shape outright is the next open-call unit.
+  match ProofForge.Extract.extractMethod env .get ``callWordCompared with
+  | .error reason => throwError s!"callWordCompared: {reason}"
+  | .ok method =>
+      let plans := sourceOpenCalls method.ops
+      let dummyReturn := match method.ops.back? with
+        | some (.returnU64 (.lit 0)) => true
+        | _ => false
+      unless plans.size == 1 && plans[0]!.name == "ping" && plans[0]!.kind == .call &&
+          dummyReturn do
+        throwError "callWordCompared must lower as the ping CALL followed by the dummy word"
 
   logInfo s!"EvmOpenCall digest: {ProofForge.Evm.IR.digestHex evm}"
 

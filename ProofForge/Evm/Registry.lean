@@ -55,7 +55,7 @@ def entries : Array Entry := #[
   { name := "SafePay", digest := "3971d7ce6eb18141" },
   { name := "RoyaltyArt", digest := "89fe67825f5f9c28" },
   { name := "Capped", digest := "b0b0b7244ebb8aed" },
-  { name := "MultiToken", digest := "c5842ac4fdac46e5" },
+  { name := "MultiToken", digest := "63344e4c7925bcc5" },
   { name := "CraftToken", digest := "a179c983f6a4084f" },
   { name := "TwoStepCounter", digest := "9e20eb417583ce6e" },
   { name := "Credits", digest := "c2ceddddbf415d40" },
@@ -77,7 +77,7 @@ def entries : Array Entry := #[
   { name := "EvmTypedErrors", digest := "499001a31fb4d9e7" },
   { name := "EvmTypedEvents", digest := "90bd573ddf9e2e49" },
   { name := "EvmChainGuard", digest := "ebef98a36a4b1cc5" },
-  { name := "EvmOpenCall", digest := "9fe4427d5b5d3114" }
+  { name := "EvmOpenCall", digest := "9d3084c62ce8260a" }
 ]
 
 def names : Array String := entries.map (·.name)

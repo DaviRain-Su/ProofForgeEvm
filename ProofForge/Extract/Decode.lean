@@ -23,6 +23,12 @@ private def isExceptOkHead (e : Expr) : Bool :=
 private def isExceptErrorHead (e : Expr) : Bool :=
   isConstNamed e ``Except.error || isConstNamed e ``ProofForge.Core.Except.err
 
+/-- `if c then a else a` is `a`. A select whose arms agree carries no decision, so its condition
+is never materialized; the common case is the carrier word of an effect guarded by a read,
+where both arms are the effect's `0`. -/
+private def selectOrArm (cmp : Ops.Cmp) (lhs rhs thn els : Ops.Val) : Ops.Val :=
+  if thn == els then thn else .select cmp lhs rhs thn els
+
 private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
   let e := peelLets (strip e)
   match e.getAppFn.constName? with
@@ -216,13 +222,13 @@ private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option O
             match cmp?, asVal env fuel' lhs, asVal env fuel' rhs,
                 asVal env fuel' args[args.size - 2]!, asVal env fuel' args[args.size - 1]! with
             | some cmp, some lv, some rv, some thn, some els =>
-                some (.select cmp lv rv thn els)
+                some (selectOrArm cmp lv rv thn els)
             | _, _, _, _, _ => none
           else none
         | none =>
           match asVal env fuel' rawCond,
               asVal env fuel' args[args.size - 2]!, asVal env fuel' args[args.size - 1]! with
-          | some cond, some thn, some els => some (.select .ne cond (.lit 0) thn els)
+          | some cond, some thn, some els => some (selectOrArm .ne cond (.lit 0) thn els)
           | _, _, _ => none
       else
         match e.getAppFn.constName? with
@@ -281,6 +287,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
     (asVal env fuel e.getAppArgs[e.getAppArgs.size - 1]!).map (flattenField · leaf)
   else if isConstNamed e ``Decidable.decide && e.getAppArgs.size ≥ 2 then
     asVal env fuel e.getAppArgs[e.getAppArgs.size - 2]!
+  else if openStaticShapeOf e == some .bool then
+    openStaticRead? env e 1 0
   else if let some (_, unfolded) := unfoldUserHelper env e then
     match env.find? n with
     | some (.defnInfo info) =>
@@ -439,6 +447,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
               some (.ext (.evm (.component (.closedCall (.allowance256 limb.toNat))))
                 #[a0, a1, a2, b0, b1, b2, c0, c1, c2])
             | _, _, _, _, _, _, _, _, _ => none
+        else if (openStaticShapeOf baseE).isSome then
+          openStaticRead? env baseE 4 limb.toNat
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmCallValue256 ||
             endsWith baseE ".evmCallValue256" then
           some (.ext (.evm (.callValue256 limb.toNat)) #[])
@@ -570,6 +580,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
           endsWith baseE ".evmImm20" then
         some (match leaf with
           | "w0" => .evmImmW0 | "w1" => .evmImmW1 | _ => .evmImmW2)
+      else if (openStaticShapeOf baseE).isSome then
+        openStaticRead? env baseE 3 (if leaf == "w0" then 0 else if leaf == "w1" then 1 else 2)
       else
         match asVal env fuel baseE with
         | some b => some (flattenField b leaf)
@@ -1355,6 +1367,18 @@ private partial def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedO
           if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
           else .unsupported "malformed open-call plan"
     | _, _, _ => .unsupported "open-call lost target or payload"
+
+/-- A typed STATICCALL read in value position: limb `limb` of its result word, accepted only
+when the read's carrier has exactly `carrier` limbs (four for `UInt256`, three for `Address`,
+one for `Bool`). A CALL plan is an effect and never becomes a value. -/
+private partial def openStaticRead? (env : Environment) (e : Expr) (carrier limb : Nat) :
+    Option Ops.Val :=
+  match decodeOpenCallCtor env e with
+  | .query query operands =>
+      if query.limbCount == carrier && limb < carrier then
+        some (.ext (.evm (.component (.openCall { query with limb }))) operands)
+      else none
+  | _ => none
 end
 
 /-- Decode a scalar binding through pure explicitly-inline facade layers before substituting it.
@@ -1821,7 +1845,7 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       match asBoolVal env fuel' args[args.size - 4]!,
           asBoolVal env fuel' (peelProofLam args[args.size - 2]!),
           asBoolVal env fuel' (peelProofLam args[args.size - 1]!) with
-      | some cond, some thn, some els => some (.select .ne cond (.lit 0) thn els)
+      | some cond, some thn, some els => some (selectOrArm .ne cond (.lit 0) thn els)
       | _, _, _ => none
     else if isConstNamed e ``Decidable.decide && args.size ≥ 2 then
       asBoolVal env fuel' args[args.size - 2]!
@@ -1829,6 +1853,8 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
     else if endsWith e ".canSchedule" && args.size ≥ 3 then
       boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
+    else if openStaticShapeOf e == some .bool then
+      openStaticRead? env e 1 0
     else if isConstNamed e ``Eq && args.size ≥ 2 then
       let lhs := strip args[args.size - 2]!
       let rhs := strip args[args.size - 1]!
@@ -4417,7 +4443,6 @@ private def containsEvmQuery (env : Environment) (e : Expr) : Bool :=
           | .app f a => walk fuel' f || walk fuel' a
           | _ => false
   walk 24 e
-
 
 private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   match ops.back? with

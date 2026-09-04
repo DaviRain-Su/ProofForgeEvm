@@ -42,10 +42,17 @@ contract OpenCallTarget {
     uint256 public tripleWords = 3;
     uint256 public quadWords = 4;
 
+    uint256 public balanceWord = 1000;
+
     function setOnWord(uint256 w) external { onWord = w; }
     function setOwnerWord(uint256 w) external { ownerWord = w; }
     function setTripleWords(uint256 n) external { tripleWords = n; }
     function setQuadWords(uint256 n) external { quadWords = n; }
+    function setBalanceWord(uint256 w) external { balanceWord = w; }
+
+    function balanceOf(address) external view returns (uint256) {
+        return balanceWord;
+    }
 
     function isOn() external view returns (bool) {
         uint256 w = onWord;
