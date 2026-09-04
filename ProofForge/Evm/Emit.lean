@@ -763,10 +763,13 @@ private partial def emitOps (p : IR.Program) (indent : String) (paramPrefix : Pa
         let (preL, lv, stL) ← materializeVal p indent paramPrefix paramCount paramWidths l st
         let (preR, rv, stR) ← materializeVal p indent paramPrefix paramCount paramWidths r stL
         let (nm, st') := fresh stR
-        st := { st' with wide := #[] }
+        -- A preceding effect's `last` is not this arm's store. `.select` already restores
+        -- `wide` so a value materialized in one arm cannot leak into the other.
+        st := { st' with last := none, wide := #[] }
         let (thenTxt, st1) ← emitOps p (indent ++ "  ") paramPrefix paramCount paramWidths thn st
         let (elseTxt, st2) ←
-          emitOps p (indent ++ "  ") paramPrefix paramCount paramWidths els { st1 with wide := #[] }
+          emitOps p (indent ++ "  ") paramPrefix paramCount paramWidths els
+            { st1 with last := none, wide := #[] }
         st := { st2 with last := none, wide := #[] }
         acc := acc ++ preL ++ preR ++
           indent ++ "let " ++ nm ++ " := " ++ cmpYul c lv rv ++ nl ++
@@ -944,8 +947,10 @@ private inductive CFGResultHint where
   deriving BEq, Inhabited
 
 private def cfgHintHasLast : CFGResultHint → Bool
-  | .checked _ | .query | .effect => true
-  | .plain | .stored | .conflict => false
+  -- `.effect` still writes `pf_last` (the write's numeric carrier). An `okState` after that
+  -- write owns its IR value, the same rule as `.returnU64` / `cfgHintReturnsLast`.
+  | .checked _ | .query => true
+  | .plain | .effect | .stored | .conflict => false
 
 private def cfgHintReturnsLast : CFGResultHint → Bool
   | .query => true

@@ -175,6 +175,40 @@ private def explicitResultAfterEffect : IR.Program :=
       yul.contains "pf_last := 0x7" && yul.contains "mstore(0, 0x1)" &&
         !yul.contains "mstore(0, pf_last)"
 
+private def explicitOkStateAfterEffect : IR.Program :=
+  {
+    name := "ExplicitOkStateAfterEffect"
+    slots := #[{ name := "dummy", index := 0, width := 8 }]
+    constructor := {
+      kind := .init
+      name := "Tests.ExplicitOkStateAfterEffect.init"
+      ixName := "initialize"
+      paramCount := 1
+      paramWidths := #[8]
+      ops := #[.returnState (.lit 0)]
+    }
+    entries := #[{
+      kind := .increment
+      name := "Tests.ExplicitOkStateAfterEffect.mutate"
+      ixName := "mutate"
+      selector := ProofForge.Evm.Keccak.selectorOfWidths "mutate" #[]
+      retTypes := #[.uint64]
+      retSchema := .scalar .uint64
+      ops := #[
+        .component (.nativeFx (.log "Result" (.lit 7))),
+        .okState (.addU64 (.field (.arg 0) "dummy") (.lit 1))
+      ]
+    }]
+  }
+
+-- `okState` after an effect owns the IR value. `pf_last` is the write's carrier, not the slot.
+#guard
+  match Emit.emitYul explicitOkStateAfterEffect with
+  | .error _ => false
+  | .ok yul =>
+      yul.contains "pf_last := 0x7" && yul.contains "add(sload(0), 0x1)" &&
+        yul.contains "sstore(0, v" && !yul.contains "sstore(0, pf_last)"
+
 -- ClosedCall mutation consumes the shared contract: the emitted transfer contains exactly the
 -- fragment the shared interpreter produces at the same state.
 #guard

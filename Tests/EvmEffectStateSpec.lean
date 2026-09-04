@@ -368,10 +368,10 @@ private def expectEffectStateMerge : CommandElabM Unit := do
   unless guards.size == 1 do
     throwError "dropped-let sequence grew extra branches"
   unless thn.any fun
-      | .storeField "count" _ => true
-      | .okState _ => true
+      | .storeField "count" (.addU64 (.field (.arg 3) "count") (.lit 1)) => true
+      | .okState (.addU64 (.field (.arg 3) "count") (.lit 1)) => true
       | _ => false do
-    throwError "dropped-let then-branch lost the count write"
+    throwError "dropped-let then-branch lost the count increment"
   unless thn.countP isMapSet == 0 && els.countP isMapSet == 0 do
     throwError "dropped-let map write leaked into a branch"
   unless (els.countP fun
