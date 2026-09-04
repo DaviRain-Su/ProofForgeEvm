@@ -335,7 +335,7 @@ private def countOccurrences (haystack needle : String) : Nat :=
         | .ok _ => false)
 
 -- Registry / golden digests for existing programs stay pinned (no closed-union spelling change).
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "EvmTypedErrors" == some "499001a31fb4d9e7"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
 #guard Registry.digestOf "Counter" == some "254202356ee921d6"

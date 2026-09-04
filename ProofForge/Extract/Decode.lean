@@ -4013,26 +4013,52 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
 
 /-- Collect EVM effect leaves by unfolding source facades into `ProofForge.Evm.Runtime`
 stubs. New closed recipes register in `opOfRuntimeApp`; this walker does not grow a name
-table. -/
-private def collectEvmEffectOps (env : Environment) (e : Expr) : Array Ops.Op :=
-  let rec walk (fuel : Nat) (e : Expr) (acc : Array Ops.Op) : Array Ops.Op :=
+table. An `if` whose branches carry effects becomes a structured `ite` so the effect runs only
+on its branch; `none` means a branch has effects but the condition has no `Cmp` or bit
+lowering, which the caller reports instead of flattening the effect into the straight line. -/
+private def collectEvmEffectOps (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
+  let rec walk (fuel : Nat) (e : Expr) (acc : Array Ops.Op) : Option (Array Ops.Op) :=
     match fuel with
-    | 0 => acc
+    | 0 => some acc
     | fuel' + 1 =>
       let e := e.consumeMData
       match opOfRuntimeApp env e with
-      | some op => acc.push op
+      | some op => some (acc.push op)
       | none =>
         if let some (_, unfolded) := unfoldUserHelper env e then
           walk fuel' unfolded acc
+        else if (isConstNamed e ``ite || isConstNamed e ``dite) && e.getAppArgs.size ≥ 5 then
+          let args := e.getAppArgs
+          let n := args.size
+          match walk fuel' args[n - 2]! #[], walk fuel' args[n - 1]! #[] with
+          | some #[], some #[] => some acc
+          | some thn, some els =>
+            match asCmp env args[n - 4]! with
+            | some (cmp, l, r) => some (acc.push (.ite cmp l r thn els))
+            | none =>
+              match asVal env 32 args[n - 4]! with
+              | some c => some (acc.push (.ite .ne c (.lit 0) thn els))
+              | none => none
+          | _, _ => none
         else
           match e with
-          | .letE _ _ value body _ =>
-            walk fuel' (body.instantiate1 value) (walk fuel' value acc)
+          | .letE _ _ value body _ => do
+            -- A `let` runs its effects once. Substituting an effectful value into the body
+            -- collected them again at every use, so NineLink spent an allowance twice.
+            let valueOps ← walk fuel' value #[]
+            let bound := if valueOps.isEmpty then value else mkConst ``Unit.unit
+            walk fuel' (body.instantiate1 bound) (acc ++ valueOps)
           | .lam _ _ body _ => walk fuel' body acc
-          | .app f a => walk fuel' a (walk fuel' f acc)
-          | _ => acc
+          | .app f a => do walk fuel' a (← walk fuel' f acc)
+          | _ => some acc
   walk 24 e #[]
+
+/-- The reason `collectEvmEffectOps` refused `e`, for the boundary error. -/
+private def conditionalEffectFailure (env : Environment) (e : Expr) : Option String :=
+  if (collectEvmEffectOps env e).isNone then
+    some "EVM effects under an `if` whose condition has no comparison or Bool lowering; \
+      branch at the `Except` result or spell the condition as a comparison"
+  else none
 
 /-- Statement-level EVM queries. 256-bit reads expand to four limb returns; scalar map
 gets remain as component Calls so the emitter does not grow a parallel family. New query
@@ -4334,11 +4360,13 @@ private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.O
   -- scan claimed the map reads inside an error field, and a typed
   -- `ERC1155InsufficientBalance(sender, balanceOf .., ..)` came back as four `returnU64` limbs.
   if isExceptErrorHead (peelControl 8 e) then none else
-  let writes := collectEvmEffectOps env e
-  if writes.size ≥ 1 then
-    some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
-  else
-    collectEvmQueryOps env e
+  match collectEvmEffectOps env e with
+  | none => none
+  | some writes =>
+    if writes.size ≥ 1 then
+      some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
+    else
+      collectEvmQueryOps env e
 
 /-- Flatten one logical bounded byte value into `length, byte₀ … byteₙ₋₁`. Constructors already
 carry literal leaves; a parameter or local root is projected so the target input binder can later
@@ -5244,6 +5272,8 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
     (getStructureFields env stateType).size > 1
   -- 必须在 peelLets 之前找效应：剥掉 `have sent := …` 后调用就没了。
   if let some reason := findTypedSourceFailure env e then
+    .error s!"extract/unsupported: {reason}"
+  else if let some reason := conditionalEffectFailure env e then
     .error s!"extract/unsupported: {reason}"
   else if let some vs := asBoundedCtorFields env e then
     .ok (returnStatesOf vs)

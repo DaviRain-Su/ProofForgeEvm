@@ -278,7 +278,7 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
         txt.contains "if and(iszero(returndatasize()), iszero(extcodesize("
 
 -- Existing ClosedCall / TipJar sendEth stay on their own interpreters.
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
 #guard Registry.digestOf "EvmOpenCall" == some "5223289d34513e5e"

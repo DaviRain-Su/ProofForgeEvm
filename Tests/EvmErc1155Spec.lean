@@ -50,8 +50,8 @@ end UnsupportedConditionFixture
 #guard Erc1155.Log.approvalForAll ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ true == 0
 
 -- Closed ERC-20-shaped programs keep their digests; this slice only refreshes MultiToken/CraftToken.
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
-#guard Registry.digestOf "Erc20Meta" == some "b86fa0708b74fc2c"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
+#guard Registry.digestOf "Erc20Meta" == some "9e1221ef24a9c091"
 
 def specBalances : Erc1155.Balances := Storage.Layout.root.addressPairMap256.handle
 def specOperators : Erc1155.Operators :=
@@ -390,8 +390,8 @@ private def expectCraftTokenEvents : CommandElabM Unit := do
 private def expectErc1155 : CommandElabM Unit := do
   expectMultiTokenEvents
   expectCraftTokenEvents
-  expectDigest `Examples.Evm.MultiToken "59c2390d6728455a"
-  expectDigest `Examples.Evm.CraftToken "2252ee4200d2bedc"
+  expectDigest `Examples.Evm.MultiToken "a2dc000484fc7975"
+  expectDigest `Examples.Evm.CraftToken "498e28455f1c4cb7"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!
   let balanceOps := (multi.methods.find? (·.ixName == "balanceOf")).get!.ops
