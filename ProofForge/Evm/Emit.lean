@@ -456,7 +456,11 @@ private partial def materializeVal (p : IR.Program) (indent paramPrefix : String
         let (preR, rv, st2) ← materializeVal p indent paramPrefix paramCount paramWidths r st1
         let (nm, st3) := fresh st2
         let (preT, tv, st4) ← materializeVal p (indent ++ "  ") paramPrefix paramCount paramWidths t st3
-        let (preF, fv, st5) ← materializeVal p (indent ++ "  ") paramPrefix paramCount paramWidths f st4
+        -- A value first materialized inside a branch block is out of scope after it; forget it.
+        let (preF, fv, st5) ←
+          materializeVal p (indent ++ "  ") paramPrefix paramCount paramWidths f
+            { st4 with wide := st3.wide }
+        let st5 := { st5 with wide := st3.wide }
         let cond := cmpYul c lv rv
         let txt := preL ++ preR ++
           indent ++ "let " ++ nm ++ " := 0" ++ nl ++

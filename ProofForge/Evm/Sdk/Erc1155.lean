@@ -21,17 +21,19 @@ balance through a view, authorization, or write.
 
 ## Owned surface
 
-Single-id checked balance reads, `setApprovalForAll`/`isApprovedForAll`, checked mint/credit,
-checked burn/debit, and alias-safe `transfer` decisions/effects (equal source/destination is a
-successful no-op after the debit gate instead of two writes through the same hashed key). Credit
-rejects UInt256 wraparound; debit rejects underflow. Canonical ERC-1155 logs are reusable
-`Event.emit` wrappers (`Log.transferSingle` / `Log.approvalForAll`): LOG4 `TransferSingle` with
-two data words (`id`, `value`), and LOG3 `ApprovalForAll` with a bool data word.
+Single-id checked balance reads, a bounded `balanceOfBatch` over at most `batchCapacity` pairs
+(one checked read per slot; unequal lengths answer an empty array because a view cannot revert),
+`setApprovalForAll`/`isApprovedForAll`, checked mint/credit, checked burn/debit, and alias-safe
+`transfer` decisions/effects (equal source/destination is a successful no-op after the debit gate
+instead of two writes through the same hashed key). Credit rejects UInt256 wraparound; debit
+rejects underflow. Canonical ERC-1155 logs are reusable `Event.emit` wrappers
+(`Log.transferSingle` / `Log.approvalForAll`): LOG4 `TransferSingle` with two data words (`id`,
+`value`), and LOG3 `ApprovalForAll` with a bool data word.
 
 ## Explicitly unsupported
 
-Batch operations (`safeBatchTransferFrom`, `balanceOfBatch`, mint/burn batches), ERC1155Receiver
-callbacks (`onERC1155Received`), metadata URI, `TransferBatch`, and unbounded inputs.
+Batch mutations (`safeBatchTransferFrom`, mint/burn batches), ERC1155Receiver callbacks
+(`onERC1155Received`), metadata URI, `TransferBatch`, and unbounded inputs.
 Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
 interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,
@@ -55,6 +57,20 @@ abbrev Balances := Storage.AddressPairMap256
 /-- Compile-time handle to (owner, operator) → UInt64 approval flag storage. -/
 abbrev Operators := Storage.AddressPairMap
 
+/-- Compile-time capacity of one batch: the most (owner, id) pairs a batch entry accepts. -/
+abbrev batchCapacity : Nat := 4
+
+/-- A bounded batch argument or result. The ABI decoder rejects `length > batchCapacity` before
+source execution and zero-fills the inactive slots. -/
+abbrev Batch (α : Type) := ProofForge.Core.Value.BoundedVec α batchCapacity
+
+/-- Active length of a batch answer. Equal lengths answer `owners.length`; unequal lengths answer
+zero, so the view publishes an empty array rather than pairing an owner with a stranger's id.
+A view has no revert channel today (`Except` on a view is refused as a mutating boundary), which
+is why this is a length rule and not an `ERC1155InvalidArrayLength` revert. -/
+@[pf_inline] def batchLength (owners : Batch Address) (ids : Batch UInt256) : UInt32 :=
+  if owners.length == ids.length then owners.length else 0
+
 namespace Balances
 
 /-- O(1) single-id balance read after an explicit key-envelope check. The `Encoded` suffix records
@@ -69,6 +85,16 @@ Unencodable ids return zero and never reach the truncated map key. -/
 @[pf_inline] def balanceOf (balances : Balances) (owner : Address) (tokenId : UInt256) :
     UInt256 :=
   if canEncode tokenId then balanceOfEncoded balances owner tokenId else UInt256.zero
+
+/-- Bounded `balanceOfBatch`: one checked single-id read per slot, `batchLength` active slots.
+Inactive slots hold the decoder's zero owner and zero id and read the unused `(0x0, 0)` key. -/
+@[pf_inline] def balanceOfBatch (balances : Balances) (owners : Batch Address)
+    (ids : Batch UInt256) : Batch UInt256 :=
+  { length := batchLength owners ids
+    values := #v[balanceOf balances owners.values[0] ids.values[0],
+      balanceOf balances owners.values[1] ids.values[1],
+      balanceOf balances owners.values[2] ids.values[2],
+      balanceOf balances owners.values[3] ids.values[3]] }
 
 /-- Credit is valid when the id encodes and the addition cannot wrap UInt256. -/
 @[pf_inline] def canCredit (balances : Balances) (owner : Address)

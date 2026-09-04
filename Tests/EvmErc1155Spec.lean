@@ -78,6 +78,22 @@ def specAmount : UInt256 := ⟨9, 0, 0, 0⟩
 #guard Examples.Evm.CraftToken.balanceOf ⟨0⟩ specOwner specAliasId == UInt256.zero
 #guard Examples.Evm.CraftToken.supplyOf ⟨0⟩ specAliasId == UInt256.zero
 
+-- Bounded batch: the length rule answers zero for unequal lengths, and the view reads one
+-- checked balance per slot (host maps are empty, so every slot is zero).
+private def specOwners : Erc1155.Batch Address :=
+  ⟨2, #v[specOwner, specOwner, Address.zero, Address.zero]⟩
+private def specIds : Erc1155.Batch UInt256 :=
+  ⟨2, #v[specId, specAliasId, UInt256.zero, UInt256.zero]⟩
+#guard Erc1155.batchCapacity == 4
+#guard Erc1155.batchLength specOwners specIds == 2
+#guard Erc1155.batchLength ⟨0, specOwners.values⟩ ⟨0, specIds.values⟩ == 0
+#guard Erc1155.batchLength ⟨1, specOwners.values⟩ specIds == 0
+#guard Erc1155.batchLength specOwners ⟨3, specIds.values⟩ == 0
+#guard (Examples.Evm.MultiToken.balanceOfBatch ⟨0⟩ specOwners specIds).length == 2
+#guard (Examples.Evm.MultiToken.balanceOfBatch ⟨0⟩ specOwners specIds).values.toList ==
+  [UInt256.zero, UInt256.zero, UInt256.zero, UInt256.zero]
+#guard (Examples.Evm.MultiToken.balanceOfBatch ⟨0⟩ specOwners ⟨1, specIds.values⟩).length == 0
+
 -- Pre-write/pre-auth envelope gates: unencodable ids fail every mutation and authorization
 -- predicate. These guards are honest on host because `canEncode` is the first `&&` conjunct and
 -- short-circuits before the comparison leaves. Positive encodable-id predicate semantics are NOT
@@ -267,6 +283,35 @@ private def expectTypedAbiYul (evm : IR.Program) : CommandElabM Unit := do
       yul.contains s!"log3(0, 32, 0x{approvalForAllTopic}" do
     throwError s!"{evm.name} Yul omitted LOG4 TransferSingle or LOG3 ApprovalForAll"
 
+/-- The bounded `balanceOfBatch` frame is one length leaf plus four elements of four limbs, its
+ABI is `(address[],uint256[]) -> uint256[]`, and its Yul computes every element into a local
+before the first frame word is stored (element code hashes map keys in low memory). -/
+private def expectMultiTokenBatch (source : ProofForge.Extract.IR.Program) (evm : IR.Program) :
+    CommandElabM Unit := do
+  let ops ← methodOps source "balanceOfBatch"
+  let returns := ops.filter fun
+    | .returnU64 _ => true
+    | _ => false
+  unless returns.size == 1 + 4 * 4 do
+    throwError s!"MultiToken.balanceOfBatch publishes {returns.size} leaves, expected 17"
+  let abi ←
+    match Emit.emitAbiChecked evm with
+    | .ok abi => pure abi
+    | .error reason => throwError reason
+  unless abi.contains "\"name\":\"balanceOfBatch\",\"stateMutability\":\"view\"" &&
+      abi.contains "\"inputs\":[{\"name\":\"arg0\",\"type\":\"address[]\"},{\"name\":\"arg1\",\"type\":\"uint256[]\"}]" &&
+      abi.contains "\"outputs\":[{\"name\":\"\",\"type\":\"uint256[]\"}]" do
+    throwError s!"MultiToken.balanceOfBatch ABI diverged:\n{abi}"
+  let yul ←
+    match Emit.emitYul evm with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  let parts := yul.splitOn "mstore(0, 32)"
+  unless parts.length == 2 && parts[0]!.contains "abi_ret_3_0 := " &&
+      parts[1]!.contains "mstore(64, abi_ret_0_0)" &&
+      parts[1]!.contains "mstore(160, abi_ret_3_0)" do
+    throwError "MultiToken.balanceOfBatch Yul stored a frame word before computing every element"
+
 private def expectMultiTokenEvents : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -302,8 +347,9 @@ private def expectMultiTokenEvents : CommandElabM Unit := do
     | .error reason => throwError reason
   expectMethodNames evm
     #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "isApprovedForAll",
-      "supportsInterface"]
+      "supportsInterface", "balanceOfBatch"]
   expectTypedAbiYul evm
+  expectMultiTokenBatch source evm
 
 private def expectCraftTokenEvents : CommandElabM Unit := do
   let env ← getEnv
@@ -344,7 +390,7 @@ private def expectCraftTokenEvents : CommandElabM Unit := do
 private def expectErc1155 : CommandElabM Unit := do
   expectMultiTokenEvents
   expectCraftTokenEvents
-  expectDigest `Examples.Evm.MultiToken "22ffde18b95a2030"
+  expectDigest `Examples.Evm.MultiToken "59c2390d6728455a"
   expectDigest `Examples.Evm.CraftToken "2252ee4200d2bedc"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!
