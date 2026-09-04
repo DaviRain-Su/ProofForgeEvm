@@ -367,11 +367,17 @@ private def expectEffectStateMerge : CommandElabM Unit := do
     | throwError "dropped-let if lost its branches"
   unless guards.size == 1 do
     throwError "dropped-let sequence grew extra branches"
-  unless thn.any fun | .storeField "count" _ => true | _ => false do
-    throwError "dropped-let then-branch lost the count store"
+  unless thn.any fun
+      | .storeField "count" _ => true
+      | .okState _ => true
+      | _ => false do
+    throwError "dropped-let then-branch lost the count write"
   unless thn.countP isMapSet == 0 && els.countP isMapSet == 0 do
     throwError "dropped-let map write leaked into a branch"
-  unless (els.countP fun | .storeField "count" _ => true | _ => false) == 0 do
+  unless (els.countP fun
+      | .storeField "count" _ => true
+      | .okState _ => true
+      | _ => false) == 0 do
     throwError "dropped-let else-branch wrote count"
 
 elab "#pf_guard_evm_effect_state" : command => expectEffectStateMerge

@@ -24,7 +24,7 @@ def decodeBody (env : Environment) (e : Expr) (preserveLocals : Bool := false)
   -- Storage effects need the same lexical boundary: a value captured before a write or external
   -- call must not be substituted into that later effect and re-read after the mutation.
   let hasStructuredState := containsStructuredStateLet env 128 body
-  let retainLets := hasStructuredState
+  let retainLets := hasStructuredState || containsDroppedEffectfulLet env 128 body
   let fullySubstituted := if retainLets then body else substLets 256 body
   let body :=
     if (unfoldUserHelper env fullySubstituted).isSome then fullySubstituted
