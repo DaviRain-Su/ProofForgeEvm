@@ -3,6 +3,7 @@ import ProofForge.Evm.CallResult.Emit
 import ProofForge.Evm.LogError.Emit
 import ProofForge.Evm.Precompile.Emit
 import ProofForge.Evm.Ops
+import ProofForge.Evm.Codec.Emit
 import ProofForge.Crypto.Keccak
 
 namespace ProofForge.Evm.ClosedCall.Emit
@@ -14,10 +15,10 @@ private def u64MaxYul : String := "0xffffffffffffffff"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 private def packU256Word (src : String) (word : Nat) : String :=
-  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), " ++ u64MaxYul ++ ")"
+  Codec.Emit.packU256Word src word
 
 /-- Call the shared runtime helper that packs three little-endian Addr20 limbs into an
 ABI address word at `memory[off..off+31]`. -/

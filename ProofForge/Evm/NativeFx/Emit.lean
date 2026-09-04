@@ -3,6 +3,7 @@ import ProofForge.Evm.LogError.Emit
 import ProofForge.Evm.Payable.Emit
 import ProofForge.Evm.Ops
 import ProofForge.Evm.Codec
+import ProofForge.Evm.Codec.Emit
 import ProofForge.Core.Ops
 import ProofForge.Crypto.Keccak
 
@@ -14,7 +15,7 @@ private def nl : String := "\n"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 /-- Call the shared runtime helper that packs three little-endian Addr20 limbs into an
 ABI address word at `memory[0..31]`. -/
@@ -128,12 +129,8 @@ private def emitLogTransfer256 (context : Context σ)
   let logTxt ← LogError.Emit.emitLog context.logError
     { data := #[amt], topics := #[sigTopic, fromT, toT] }
   let txt := p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++ r0 ++ r1 ++ r2 ++ r3 ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent x0 x1 x2 ++
-    indent ++ "let " ++ fromT ++ " := mload(0)" ++ nl ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent y0 y1 y2 ++
-    indent ++ "let " ++ toT ++ " := mload(0)" ++ nl ++
+    Codec.Emit.bindAddrWord indent fromT x0 x1 x2 ++
+    Codec.Emit.bindAddrWord indent toT y0 y1 y2 ++
     indent ++ "let " ++ amt ++ " := " ++ packU256 z0 z1 z2 z3 ++ nl ++
     logTxt
   return (txt, z0, s12)
@@ -156,10 +153,8 @@ def packAbiWord (context : Context σ) (type : Core.Codec.Scalar) (limbs : Array
     throw "extract/unsupported: typed field has no limbs"
   if Codec.isAddressCarrier type then
     let (word, st') := context.fresh st
-    let txt := prelude ++
-      indent ++ "mstore(0, 0)" ++ nl ++
-      packAddrMstore8 indent (parts[0]!) ((parts[1]?).getD "0") ((parts[2]?).getD "0") ++
-      indent ++ "let " ++ word ++ " := mload(0)" ++ nl
+    let txt := prelude ++ Codec.Emit.bindAddrWord indent word (parts[0]!)
+      ((parts[1]?).getD "0") ((parts[2]?).getD "0")
     return (txt, word, st')
   else if Codec.isFixedBytesCarrier type then
     let (word, st') := context.fresh st
@@ -223,12 +218,8 @@ private def emitLogApproval256 (context : Context σ)
   let logTxt ← LogError.Emit.emitLog context.logError
     { data := #[amt], topics := #[sigTopic, ownT, spdT] }
   let txt := p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++ r0 ++ r1 ++ r2 ++ r3 ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent x0 x1 x2 ++
-    indent ++ "let " ++ ownT ++ " := mload(0)" ++ nl ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent y0 y1 y2 ++
-    indent ++ "let " ++ spdT ++ " := mload(0)" ++ nl ++
+    Codec.Emit.bindAddrWord indent ownT x0 x1 x2 ++
+    Codec.Emit.bindAddrWord indent spdT y0 y1 y2 ++
     indent ++ "let " ++ amt ++ " := " ++ packU256 z0 z1 z2 z3 ++ nl ++
     logTxt
   return (txt, z0, s12)
@@ -258,11 +249,7 @@ private def emitRevertUnauthorized (context : Context σ)
   let (p2, a2, s2) ← context.materialize w2 s1
   let errTxt ← LogError.Emit.emitRevert context.logError
     { selector := Keccak.selector "Unauthorized" #["address"], args := #["pf_who"] }
-  let txt := p0 ++ p1 ++ p2 ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent a0 a1 a2 ++
-    indent ++ "let pf_who := mload(0)" ++ nl ++
-    errTxt
+  let txt := p0 ++ p1 ++ p2 ++ Codec.Emit.bindAddrWord indent "pf_who" a0 a1 a2 ++ errTxt
   return (txt, a0, s2)
 
 private def emitRevertZeroAddress (context : Context σ) (st : σ) :

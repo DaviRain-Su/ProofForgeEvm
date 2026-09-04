@@ -204,8 +204,13 @@ private def expectWideFields (env : Environment) : CommandElabM Unit := do
         "e237d922" do
     throwError "OZ ERC-1155 error selectors diverged from cast sig"
   unless yul.contains "shl(224, 0x5b059991)" && yul.contains "shl(224, 0xe237d922)" &&
-      yul.contains "revert(0, 68)" && yul.contains "pf_store_addr20(0, " do
-    throwError "wide typed-error Yul omitted an OZ selector, the address packer, or the revert geometry"
+      yul.contains "revert(0, 68)" do
+    throwError "wide typed-error Yul omitted an OZ selector or the revert geometry"
+  -- Calldata words already are the ABI words the frame stores: no limb shuffle back into
+  -- the address words, no four-limb reassembly of the uint256 words. (The uint128 field keeps
+  -- its two-limb pack: two limbs plus two zeros are not the word's own split.)
+  if yul.contains "pf_store_addr20(0, pf_addr_w0(" || yul.contains "shl(128, and(shr(128, arg" then
+    throwError "wide typed-error Yul repacked an argument word from its own limbs"
 
 namespace Unsupported
 

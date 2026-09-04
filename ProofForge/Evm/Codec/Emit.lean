@@ -5,6 +5,83 @@ namespace ProofForge.Evm.Codec.Emit
 private def nl : String := "\n"
 private def revert0 : String := "revert(0, 0)"
 
+/-- Limb `word` of an ABI address word `src` as the inline byte shuffle: Addr20 is three
+little-endian limbs over address bytes `8*word ..`, which sit at bytes 12..31 of the word. -/
+def addrLimbChain (src : String) (word : Nat) : String :=
+  let rec orBytes (i : Nat) (n : Nat) (acc : String) : String :=
+    match n with
+    | 0 => acc
+    | n' + 1 =>
+      let b := "byte(" ++ toString (12 + 8 * word + i) ++ ", " ++ src ++ ")"
+      let next :=
+        if i == 0 then b
+        else "or(" ++ acc ++ ", shl(" ++ toString (8 * i) ++ ", " ++ b ++ "))"
+      orBytes (i + 1) n' next
+  let count := if word == 2 then 4 else 8
+  orBytes 0 count "0"
+
+/-- Limb `word` of the address word `src`, as a call to the runtime helper. Every keyed map
+read, topic and comparison re-derives the limbs of the same few words, and the inline shuffle
+is twenty-two nested opcodes solc neither shares across dispatcher cases nor keeps shallow on
+the stack; the helper body is the one copy. -/
+def packAddrWord (src : String) (word : Nat) : String :=
+  s!"pf_addr_w{word}({src})"
+
+/-- The word three address limbs came from, when they are `packAddrWord` of one source word
+(or all zero). Packing such limbs back into an ABI word is the identity on that word. -/
+def addrWordOfLimbs (w0 w1 w2 : String) : Option String :=
+  if w0 == "0" && w1 == "0" && w2 == "0" then some "0"
+  else
+    let head := "pf_addr_w0("
+    if w0.startsWith head && w0.endsWith ")" then
+      let src := ((w0.drop head.length).dropEnd 1).toString
+      if w1 == packAddrWord src 1 && w2 == packAddrWord src 2 then some src else none
+    else none
+
+/-- Runtime limb helpers, one per limb, each the shuffle `addrLimbChain` spells. -/
+def renderAddrLimbHelpers (indent : String) : String :=
+  String.join <| (List.range 3).map fun word =>
+    indent ++ s!"function pf_addr_w{word}(x) -> r \{" ++ nl ++
+    indent ++ "  r := " ++ addrLimbChain "x" word ++ nl ++
+    indent ++ "}" ++ nl
+
+/-- Bind `word` to the ABI address word of three limbs: the source word itself when the limbs
+were taken from one, otherwise the runtime byte shuffle through scratch memory. -/
+def bindAddrWord (indent word w0 w1 w2 : String) : String :=
+  match addrWordOfLimbs w0 w1 w2 with
+  | some src => indent ++ "let " ++ word ++ " := " ++ src ++ nl
+  | none =>
+      indent ++ "mstore(0, 0)" ++ nl ++
+      indent ++ "pf_store_addr20(0, " ++ w0 ++ ", " ++ w1 ++ ", " ++ w2 ++ ")" ++ nl ++
+      indent ++ "let " ++ word ++ " := mload(0)" ++ nl
+
+/-- Little-endian 64-bit limb `word` of a 256-bit ABI/storage word. -/
+def packU256Word (src : String) (word : Nat) : String :=
+  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), 0xffffffffffffffff)"
+
+/-- The word four limbs came from, when they are `packU256Word` 0..3 of one source word (or
+all zero), so packing them back is the identity on that word. -/
+def u256WordOfLimbs (w0 w1 w2 w3 : String) : Option String :=
+  if w0 == "0" && w1 == "0" && w2 == "0" && w3 == "0" then some "0"
+  else
+    let head := "and(shr(0, "
+    let tail := "), 0xffffffffffffffff)"
+    if w0.startsWith head && w0.endsWith tail && w0.length > head.length + tail.length then
+      let src := ((w0.drop head.length).dropEnd tail.length).toString
+      if w1 == packU256Word src 1 && w2 == packU256Word src 2 && w3 == packU256Word src 3
+      then some src else none
+    else none
+
+/-- A 256-bit word from four little-endian limbs. Limbs that were just split from one word
+name that word again instead of rebuilding it (seven nested opcodes solc keeps on the stack
+next to every live argument of the method). -/
+def packU256 (w0 w1 w2 w3 : String) : String :=
+  match u256WordOfLimbs w0 w1 w2 w3 with
+  | some src => src
+  | none =>
+      "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++
+        w3 ++ ")))"
+
 /-- Render canonical padding/range checks for one standard-ABI word. -/
 def renderWordGuard (indent name : String) (type : Core.Codec.Scalar) :
     Except String String := do

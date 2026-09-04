@@ -73,17 +73,7 @@ private def yulLit (n : UInt64) : String :=
 
 /-- Addr20 小端三叶：word i 收 `src` 的字节 0..19 中第 8i ..。`src` 是 `caller()` / `address()`。 -/
 private def packAddrWord (src : String) (word : Nat) : String :=
-  let rec orBytes (i : Nat) (n : Nat) (acc : String) : String :=
-    match n with
-    | 0 => acc
-    | n' + 1 =>
-      let b := "byte(" ++ toString (12 + 8 * word + i) ++ ", " ++ src ++ ")"
-      let next :=
-        if i == 0 then b
-        else "or(" ++ acc ++ ", shl(" ++ toString (8 * i) ++ ", " ++ b ++ "))"
-      orBytes (i + 1) n' next
-  let count := if word == 2 then 4 else 8
-  orBytes 0 count "0"
+  Codec.Emit.packAddrWord src word
 
 /-- 调用 runtime helper，把三叶小端 Addr20 写成 memory[0..31] 的 ABI address word。 -/
 private def packAddrMstore8 (indent w0 w1 w2 : String) : String :=
@@ -157,10 +147,10 @@ private def packFixedBytesLimb (src : String) (bytes limb : Nat) : String :=
 
 /-- Little-endian 64-bit limb `word` of a 256-bit ABI/storage word. -/
 private def packU256Word (src : String) (word : Nat) : String :=
-  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), " ++ u64MaxYul ++ ")"
+  Codec.Emit.packU256Word src word
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 private def maskExpr (width : Nat) (value : String) : String :=
   if width == 8 then value else "and(" ++ value ++ ", " ++ widthMask width ++ ")"
@@ -462,13 +452,27 @@ private partial def materializeVal (p : IR.Program) (indent paramPrefix : String
             { st4 with wide := st3.wide }
         let st5 := { st5 with wide := st3.wide }
         let cond := cmpYul c lv rv
-        let txt := preL ++ preR ++
-          indent ++ "let " ++ nm ++ " := 0" ++ nl ++
-          indent ++ "if " ++ cond ++ " {" ++ nl ++ preT ++
-          indent ++ "  " ++ nm ++ " := " ++ tv ++ nl ++ indent ++ "}" ++ nl ++
-          indent ++ "if iszero(" ++ cond ++ ") {" ++ nl ++ preF ++
-          indent ++ "  " ++ nm ++ " := " ++ fv ++ nl ++ indent ++ "}" ++ nl
-        return (txt, nm, { st5 with last := some nm })
+        -- A branch with no prelude is a leaf expression, valid and effect-free in the
+        -- enclosing scope, so it can be the default and its `if` disappears. A comparison is
+        -- already 0 or 1, so selecting 1/0 on it is the comparison itself.
+        let guarded (default : String) (test : String) (pre : String) (value : String) :=
+          indent ++ "let " ++ nm ++ " := " ++ default ++ nl ++
+          indent ++ "if " ++ test ++ " {" ++ nl ++ pre ++
+          indent ++ "  " ++ nm ++ " := " ++ value ++ nl ++ indent ++ "}" ++ nl
+        let body :=
+          if preT.isEmpty && preF.isEmpty && tv == "0x1" && fv == "0" then
+            indent ++ "let " ++ nm ++ " := " ++ cond ++ nl
+          else if preT.isEmpty && preF.isEmpty && tv == "0" && fv == "0x1" then
+            indent ++ "let " ++ nm ++ " := iszero(" ++ cond ++ ")" ++ nl
+          else if preF.isEmpty then guarded fv cond preT tv
+          else if preT.isEmpty then guarded tv s!"iszero({cond})" preF fv
+          else
+            indent ++ "let " ++ nm ++ " := 0" ++ nl ++
+            indent ++ "if " ++ cond ++ " {" ++ nl ++ preT ++
+            indent ++ "  " ++ nm ++ " := " ++ tv ++ nl ++ indent ++ "}" ++ nl ++
+            indent ++ "if iszero(" ++ cond ++ ") {" ++ nl ++ preF ++
+            indent ++ "  " ++ nm ++ " := " ++ fv ++ nl ++ indent ++ "}" ++ nl
+        return (preL ++ preR ++ body, nm, { st5 with last := some nm })
     | .indexGet _ name idx len off =>
         let (pre, iv, st1) ←
           match idx with
@@ -1450,6 +1454,7 @@ def emitYul (p : IR.Program) : Except String String := do
     "// digest=" ++ IR.digestHex p ++ nl ++
     "object " ++ q p.name ++ " {" ++ nl ++
     "  code {" ++ nl ++
+    Codec.Emit.renderAddrLimbHelpers "    " ++
     ctorHead ++ ctorStores ++
     "    datacopy(0, dataoffset(" ++ q runtimeName ++ "), datasize(" ++ q runtimeName ++ "))" ++ nl ++
     ctorImm ++
@@ -1458,6 +1463,7 @@ def emitYul (p : IR.Program) : Except String String := do
     "  object " ++ q runtimeName ++ " {" ++ nl ++
     "    code {" ++ nl ++
     "      mstore(64, memoryguard(" ++ toString memoryGuardBytes ++ "))" ++ nl ++
+    Codec.Emit.renderAddrLimbHelpers "      " ++
     renderAddr20Helper ++
     renderFixedBytesHelper ++
     globalGuard ++
