@@ -6,8 +6,8 @@ ProofForge EVM 用户工程骨架。
 |---|---|---|
 | [`evm-counter`](evm-counter/) | EVM Yul | `pf init` |
 
-`pf init <name>` 会复制该目录，并把 `require … from ".." / ".."`
-改写成相对 monorepo 根的路径（通常为 `..`）。
+`pf init <name>` 会复制该目录。从 checkout 运行时，把发布形态的 git-tag
+`require`（`@ "v0.1.0"`）改写成指向本仓的 path require（通常为 `..`）。
 
 约束：
 

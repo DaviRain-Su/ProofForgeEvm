@@ -26,7 +26,7 @@
 6. **Named user-project CI gate** — `pf init demo` → `lake build` → `lake env pf build` (solc) for the counter template. *(landed as CI job `pf-init-user-project`)*
 7. **Standard ERC-20 example profile** — `Examples.Evm.Erc20Meta`: `string` name/symbol + standard selectors; Token remains the richer non-standard metadata surface. *(landed)*
 8. **Deploy story docs** — Anvil vs Base Sepolia / VibeNet honesty in `docs/product/deploy.md`. *(landed)*
-9. **Release v0.1** — tagged `pf` binary + template `require … @ tag` path; stop rewriting absolute checkout paths as the only story.
+9. **Release v0.1** — in progress / prep. Version `0.1.0`, template git-tag `require`, and checkout `pf init` rewrite are in tree. Pushing tag `v0.1.0` is the cut. Do not claim the tag exists yet.
 10. **Website artifact honesty** — generate Forge panel excerpts from real `pf build` output, or keep them clearly labeled illustrative.
 
 ## Later (compiler depth; not P0 product copy)

@@ -73,8 +73,13 @@ CI job `pf-init-user-project`（检查名 **pf init demo**）跑同一条路径�
 `pf init demo` 创建命名工程，再 `lake build` 与 `lake env pf build`，并断言
 `Counter.bin` / `Counter.yul` / `Counter.abi.json`。
 
-`pf init` 目前依赖仓库 checkout（复制 `templates/evm-counter` 并改写 path-`require`）。
-尚无独立安装包。
+`pf init` 会复制 `templates/evm-counter`；从 checkout 运行时，把发布形态的 git-tag
+`require`（`@ "v0.1.0"`）改写成指向本树的 path `require`。这样 tag 还不存在时 CI 也能构建生成的工程。
+
+一旦存在 `v0.1.0` GitHub Release，可下载 `pf-linux-x86_64` 或 `pf-macos-aarch64`，
+并在用户 lakefile 里用 Lake `require … @ "v0.1.0"`。
+`proofforge-common` 仍是 `@ "main"`。没有独立安装包，也没有 `curl | sh`。
+`pf init` 复制模板仍需要 checkout。
 
 合约只 import `ProofForge.Attr` + `ProofForge.Evm.Sdk`，不要 import `ProofForge` 伞模块。
 SDK 传递闭包不得触及 Emit/Assemble/Registry（CI：`scripts/check_sdk_import_closure.py`）。

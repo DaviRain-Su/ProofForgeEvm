@@ -76,8 +76,15 @@ CI job `pf-init-user-project` (check name **pf init demo**) runs this same path:
 `pf init demo` creates a named project, then `lake build` and `lake env pf build`
 must produce `Counter.bin` / `Counter.yul` / `Counter.abi.json`.
 
-`pf init` currently requires a repo checkout (copies `templates/evm-counter` and
-rewrites a path-`require`). There is no standalone installer yet.
+`pf init` copies `templates/evm-counter` and, when run from a checkout, rewrites
+the published git-tag `require` (`@ "v0.1.0"`) to a path `require` against this
+tree. CI can then build the generated project before the tag exists.
+
+Once a `v0.1.0` GitHub Release exists, download `pf-linux-x86_64` or
+`pf-macos-aarch64` and pin a user lakefile with Lake
+`require … @ "v0.1.0"`. `proofforge-common` stays `@ "main"`.
+There is no standalone installer and no `curl | sh` install. `pf init` still needs
+a checkout for the template files.
 
 Contracts import only `ProofForge.Attr` + `ProofForge.Evm.Sdk` — never the
 `ProofForge` umbrella. The SDK transitive closure must not reach

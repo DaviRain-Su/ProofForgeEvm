@@ -192,8 +192,8 @@ export const COMMANDS = [
     title: { zh: "用户项目（checkout 内）", en: "User project (from checkout)" },
     cmd: "export PATH=\"$PWD/.lake/build/bin:$PATH\" && lake exe pf -- init demo && cd demo && lake build && lake env pf build",
     note: {
-      zh: "模板在 templates/evm-counter。当前 init 依赖仓库 checkout；尚无独立安装包。",
-      en: "Template is templates/evm-counter. init currently requires a repo checkout; there is no standalone installer yet.",
+      zh: "模板在 templates/evm-counter。checkout 里的 pf init 把 git-tag require 改成 path require。没有独立安装包。有 v* tag 时可用 GitHub Release 二进制与 Lake require @ \"v0.1.0\"。",
+      en: "Template is templates/evm-counter. Checkout pf init rewrites the git-tag require to a path require. No standalone installer. When a v* tag exists, use GitHub Release binaries and Lake require @ \"v0.1.0\".",
     },
   },
 ];
@@ -350,7 +350,7 @@ export const DOCS: Record<
       title: "边界",
       blocks: [
         "CLI 表面只有 pf build / pf init / pf --version。没有 doctor / install / artifacts / local，也没有本仓 MCP server。",
-        "pf init 目前必须在仓库 checkout 根附近运行，并改写 path-require；离开 checkout 的独立安装包尚未发布。",
+        "有 v* tag 时，GitHub Release 提供 pf-linux-x86_64 与 pf-macos-aarch64。Lake 可用 require … @ \"v0.1.0\"。没有独立安装包，也没有 curl|sh。pf init 仍需要 checkout 才能复制模板。从 checkout 运行时，它把 git-tag require 改写成 path require。",
         "明确不做：动态 callee、delegatecall、create2、proxy、无界循环、主网部署声明、bytecode refinement。",
         "官网 Forge 面板里的 Yul/ABI 摘录是示意形状，不是每次构建的实时产物。",
       ],
@@ -359,7 +359,7 @@ export const DOCS: Record<
       title: "Limits",
       blocks: [
         "The CLI surface is pf build / pf init / pf --version only. There is no doctor / install / artifacts / local, and no in-repo MCP server.",
-        "pf init currently must run from a repo checkout and rewrites a path-require; a standalone installer outside the checkout is not published yet.",
+        "When a v* tag exists, a GitHub Release ships pf-linux-x86_64 and pf-macos-aarch64. Lake can require … @ \"v0.1.0\". There is no standalone installer and no curl|sh. pf init still needs a checkout for templates. From a checkout it rewrites the git-tag require to a path require.",
         "Explicitly out of scope: dynamic callee, delegatecall, create2, proxy, unbounded loops, mainnet deployment claims, bytecode refinement.",
         "Yul/ABI excerpts in the website Forge panel are illustrative shapes, not live build artifacts.",
       ],

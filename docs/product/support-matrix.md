@@ -18,7 +18,7 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | Command | Status |
 |---|---|
 | `pf build` | Supported |
-| `pf init <name>` | Supported **inside a repo checkout** (copies `templates/evm-counter`, rewrites path-require) |
+| `pf init <name>` | Supported **inside a repo checkout** (copies `templates/evm-counter`, rewrites the published git-tag require to a path require) |
 | `pf --version` / `-h` | Supported |
 | `pf doctor` / `install` / `artifacts` / `local` | **Not implemented** |
 | In-repo MCP server | **Not shipped** |
@@ -91,7 +91,9 @@ lake env pf build
 ```
 
 CI job `pf-init-user-project` gates this exact command (`pf init demo`, then build artifacts).
-`pf init` currently requires the checkout (template path + require rewrite). A standalone installer / release tarball is roadmap work, not v0.
+`pf init` copies `templates/evm-counter` and, from a checkout, rewrites the published git-tag `require` (`@ "v0.1.0"`) to a path `require`. That is the CI path.
+
+When a `v0.1.0` GitHub Release exists, download `pf-linux-x86_64` or `pf-macos-aarch64` and use Lake `require … @ "v0.1.0"` for `proofforge`. `proofforge-common` stays `@ "main"`. There is no standalone installer and no `curl | sh` install. `pf init` still needs the checkout for templates.
 
 ## Related
 
