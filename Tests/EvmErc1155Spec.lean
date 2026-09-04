@@ -7,7 +7,7 @@ import Examples.Evm.CraftToken
 /-!
 EVM-SDK-8 focused suite: bounded ERC-1155 key envelope, predicate surface, and two independent
 consumers. MultiToken/CraftToken emit canonical ERC-1155 typed events (LOG4 TransferSingle with
-two data words, LOG3 ApprovalForAll). Live mint/burn/transfer/operator matrices live in
+two data words, LOG3 ApprovalForAll). Live mint/burn/safeTransferFrom/operator matrices live in
 `runtime-tests/evm/anvil_multitoken.sh` and `anvil_crafttoken.sh`.
 -/
 
@@ -496,6 +496,47 @@ private def expectMultiTokenBatchTransfer (source : ProofForge.Extract.IR.Progra
   unless yul.contains s!"log4(0, pf_log_end, 0x{transferBatchTopic}" do
     throwError "MultiToken.batchTransferFrom Yul omitted the LOG4 TransferBatch with a cursor length"
 
+/-- `safeTransferFrom` on an ERC-1155 consumer: the `TransferSingle` frame beside one CALL plan
+whose magic is its own selector, five head words plus the 32-byte bounded `data` tail
+(4 + 5 * 32 + 32 = 196 static calldata bytes), then the Yul code-size guard and magic gate. -/
+private def expectSafeTransferFromHook (source : ProofForge.Extract.IR.Program)
+    (evm : IR.Program) : CommandElabM Unit := do
+  let safeOps ← methodOps source "safeTransferFrom"
+  let safeFrames := sourceTypedFrames safeOps
+  unless safeFrames.size == 1 &&
+      eventMatches safeFrames[0]! "TransferSingle"
+        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
+    throwError s!"{evm.name}.safeTransferFrom TransferSingle frame diverged: {repr safeFrames}"
+  let hookSelector := ProofForge.Evm.Keccak.selector "onERC1155Received"
+    #["address", "address", "uint256", "uint256", "bytes"]
+  unless hookSelector == "f23a6e61" do
+    throwError s!"onERC1155Received selector is {hookSelector}"
+  let hookPlans := sourceOpenCalls safeOps
+  unless hookPlans.size == 1 && hookPlans[0]!.name == "onERC1155Received" &&
+      hookPlans[0]!.kind == .call && hookPlans[0]!.policy == .magicBytes4 hookSelector &&
+      hookPlans[0]!.args.size == 5 &&
+      hookPlans[0]!.args[0]!.name == "operator" && hookPlans[0]!.args[1]!.name == "from" &&
+      hookPlans[0]!.args[2]!.name == "id" && hookPlans[0]!.args[3]!.name == "value" &&
+      hookPlans[0]!.args[4]!.name == "data" &&
+      hookPlans[0]!.args[4]!.type == .bytes 32 && hookPlans[0]!.inSize == 196 &&
+      hookPlans[0]!.abiTypes matches
+        .ok #["address", "address", "uint256", "uint256", "bytes"] do
+    throwError s!"{evm.name}.safeTransferFrom hook plan diverged: {repr hookPlans}"
+  let abi ←
+    match Emit.emitAbiChecked evm with
+    | .ok abi => pure abi
+    | .error reason => throwError reason
+  unless abi.contains safeTransferFromAbi do
+    throwError s!"{evm.name} ABI lost safeTransferFrom(address,address,uint256,uint256,bytes):\n{abi}"
+  let yul ←
+    match Emit.emitYul evm with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  unless yul.contains "extcodesize(" &&
+      yul.contains s!"shl(224, 0x{hookSelector}))) \{ revert(0, 0) }" &&
+      yul.contains "calldatacopy(" do
+    throwError s!"{evm.name} Yul lost the receiver code-size guard, the magic equality gate, or the calldata copy"
+
 private def expectMultiTokenEvents : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -504,7 +545,7 @@ private def expectMultiTokenEvents : CommandElabM Unit := do
     | .error reason => throwError reason
   let mintFrames := sourceTypedFrames (← methodOps source "mint")
   let operatorFrames := sourceTypedFrames (← methodOps source "setApprovalForAll")
-  let transferFrames := sourceTypedFrames (← methodOps source "transferFrom")
+  let transferFrames := sourceTypedFrames (← methodOps source "safeTransferFrom")
   let burnFrames := sourceTypedFrames (← methodOps source "burn")
   unless mintFrames.size == 1 &&
       eventMatches mintFrames[0]! "TransferSingle"
@@ -520,7 +561,7 @@ private def expectMultiTokenEvents : CommandElabM Unit := do
   unless transferFrames.size == 1 &&
       eventMatches transferFrames[0]! "TransferSingle"
         #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
-    throwError s!"MultiToken.transferFrom TransferSingle frame diverged: {repr transferFrames}"
+    throwError s!"MultiToken.safeTransferFrom TransferSingle frame diverged: {repr transferFrames}"
   unless burnFrames.size == 1 &&
       eventMatches burnFrames[0]! "TransferSingle"
         #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
@@ -529,56 +570,15 @@ private def expectMultiTokenEvents : CommandElabM Unit := do
     match IR.fromExtracted source with
     | .ok program => pure program
     | .error reason => throwError reason
-  -- MultiToken keeps the hook-less `transferFrom`: with `safeTransferFrom` in its place the
-  -- program measures 26,005 runtime bytes, over EIP-170. The hook consumer is CraftToken.
+  -- ERC-1155 has no `transferFrom`; the single transfer is `safeTransferFrom` with the hook.
+  -- Packed-bytes calldatacopy is what lets this entry fit MultiToken under EIP-170.
   expectMethodNames evm
-    #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "isApprovedForAll",
+    #["mint", "burn", "setApprovalForAll", "safeTransferFrom", "balanceOf", "isApprovedForAll",
       "supportsInterface", "balanceOfBatch", "batchTransferFrom"]
   expectTypedAbiYul evm
   expectMultiTokenBatch source evm
   expectMultiTokenBatchTransfer source evm
-
-/-- `safeTransferFrom` on CraftToken: the `TransferSingle` frame beside one CALL plan whose
-magic is its own selector, five head words plus the 32-byte bounded `data` tail
-(4 + 5 * 32 + 32 = 196 static calldata bytes), then the Yul code-size guard and magic gate. -/
-private def expectCraftTokenSafeTransfer (source : ProofForge.Extract.IR.Program)
-    (evm : IR.Program) : CommandElabM Unit := do
-  let safeOps ← methodOps source "safeTransferFrom"
-  let safeFrames := sourceTypedFrames safeOps
-  unless safeFrames.size == 1 &&
-      eventMatches safeFrames[0]! "TransferSingle"
-        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] do
-    throwError s!"CraftToken.safeTransferFrom TransferSingle frame diverged: {repr safeFrames}"
-  let hookSelector := ProofForge.Evm.Keccak.selector "onERC1155Received"
-    #["address", "address", "uint256", "uint256", "bytes"]
-  unless hookSelector == "f23a6e61" do
-    throwError s!"onERC1155Received selector is {hookSelector}"
-  let hookPlans := sourceOpenCalls safeOps
-  unless hookPlans.size == 1 && hookPlans[0]!.name == "onERC1155Received" &&
-      hookPlans[0]!.kind == .call && hookPlans[0]!.policy == .magicBytes4 hookSelector &&
-      hookPlans[0]!.args.size == 5 &&
-      hookPlans[0]!.args[0]!.name == "operator" && hookPlans[0]!.args[1]!.name == "from" &&
-      hookPlans[0]!.args[2]!.name == "id" && hookPlans[0]!.args[3]!.name == "value" &&
-      hookPlans[0]!.args[4]!.name == "data" &&
-      hookPlans[0]!.args[4]!.type == .bytes 32 && hookPlans[0]!.inSize == 196 &&
-      hookPlans[0]!.abiTypes matches
-        .ok #["address", "address", "uint256", "uint256", "bytes"] do
-    throwError s!"CraftToken.safeTransferFrom hook plan diverged: {repr hookPlans}"
-  let abi ←
-    match Emit.emitAbiChecked evm with
-    | .ok abi => pure abi
-    | .error reason => throwError reason
-  unless abi.contains safeTransferFromAbi do
-    throwError s!"CraftToken ABI lost safeTransferFrom(address,address,uint256,uint256,bytes):\n{abi}"
-  let yul ←
-    match Emit.emitYul evm with
-    | .ok yul => pure yul
-    | .error reason => throwError reason
-  -- OZ order: the recipient's code size decides whether the hook runs, and a hook answer other
-  -- than the left-aligned selector reverts.
-  unless yul.contains "extcodesize(" &&
-      yul.contains s!"shl(224, 0x{hookSelector}))) \{ revert(0, 0) }" do
-    throwError "CraftToken Yul lost the receiver code-size guard or the magic equality gate"
+  expectSafeTransferFromHook source evm
 
 private def expectCraftTokenEvents : CommandElabM Unit := do
   let env ← getEnv
@@ -616,12 +616,12 @@ private def expectCraftTokenEvents : CommandElabM Unit := do
       if abi.contains "TransferBatch" then
         throwError s!"CraftToken has no batch transfer yet its ABI names TransferBatch:\n{abi}"
   | .error reason => throwError reason
-  expectCraftTokenSafeTransfer source evm
+  expectSafeTransferFromHook source evm
 
 private def expectErc1155 : CommandElabM Unit := do
   expectMultiTokenEvents
   expectCraftTokenEvents
-  expectDigest `Examples.Evm.MultiToken "63344e4c7925bcc5"
+  expectDigest `Examples.Evm.MultiToken "96e96f9633d8d673"
   expectDigest `Examples.Evm.CraftToken "2ba8b59633a3bd11"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!

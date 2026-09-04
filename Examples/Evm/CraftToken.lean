@@ -7,9 +7,8 @@ capped at `maxPerId`), burn accounting (supply moves with the balance), and erro
 The supply map is a separate `Storage.AddressMap256` namespace keyed by `tokenKey`, so it shares
 the same 192-bit key envelope and never aliases the balance/operator namespaces. Successful mint,
 burn, and transfer emit canonical ERC-1155 `TransferSingle`; operator writes emit `ApprovalForAll`.
-The single transfer is `safeTransferFrom` with the SDK's receiver check (`Erc1155.checkOnReceived`);
-`MultiToken` keeps the hook-less `transferFrom` because the hook entry does not fit it under
-EIP-170.
+The single transfer is `safeTransferFrom` with the SDK's receiver check (`Erc1155.checkOnReceived`).
+`MultiToken` uses the same entry; its batch transfer still has no hook.
 -/
 
 namespace Examples.Evm.CraftToken

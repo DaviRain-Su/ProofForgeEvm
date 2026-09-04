@@ -56,7 +56,7 @@ def entries : Array Entry := #[
   { name := "SafePay", digest := "3971d7ce6eb18141" },
   { name := "RoyaltyArt", digest := "89fe67825f5f9c28" },
   { name := "Capped", digest := "b0b0b7244ebb8aed" },
-  { name := "MultiToken", digest := "63344e4c7925bcc5" },
+  { name := "MultiToken", digest := "96e96f9633d8d673" },
   { name := "CraftToken", digest := "2ba8b59633a3bd11" },
   { name := "TwoStepCounter", digest := "9e20eb417583ce6e" },
   { name := "Credits", digest := "c2ceddddbf415d40" },

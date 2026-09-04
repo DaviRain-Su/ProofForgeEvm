@@ -8,14 +8,16 @@ movement. This contract owns the immutable minter gate, zero-address policy, err
 `TransferBatch` / `ApprovalForAll` logs (`Erc1155.Log`). `balanceOfBatch` and
 `batchTransferFrom` are bounded to four pairs; the batch transfer reverts with the OZ-shaped
 `ERC1155InvalidArrayLength` and `ERC1155InsufficientBalance` errors and logs one `TransferBatch`
-whose arrays carry exactly the submitted slots. There is no `safeBatchTransferFrom` (`bytes data`
-and the receiver hook) or safe callback; `supportsInterface` exposes IERC165 only, not the
-incomplete IERC1155 interface.
+whose arrays carry exactly the submitted slots. The single transfer is `safeTransferFrom` with
+the SDK's outbound `onERC1155Received` check (`data` at most 32 bytes). There is no
+`safeBatchTransferFrom` (an open-call argument is a scalar or one `bytes` tail, never an array)
+or receiving-side callback; `supportsInterface` exposes IERC165 only, not the incomplete IERC1155
+interface.
 -/
 
 namespace Examples.Evm.MultiToken
 open ProofForge.Evm.Sdk
-open ProofForge.Core.Value (BoundedVec)
+open ProofForge.Core.Value (BoundedVec BoundedBytes)
 
 structure State where
   dummy : UInt64
@@ -81,18 +83,25 @@ def setApprovalForAll (s : State) (operator : Address) (approved : Bool) :
         Erc1155.Operators.setApprovalForAll operators Context.caller operator approved },
       Erc1155.Log.approvalForAll Context.caller operator approved)
 
+/-- `safeTransferFrom(address,address,uint256,uint256,bytes)`, the single transfer ERC-1155 has:
+the checked move and the `TransferSingle` log land first, then OZ's receiver check. A recipient
+without code is not called; a recipient with code must answer `onERC1155Received` with its own
+selector or the whole transaction reverts, and a receiver that reads `balanceOf` inside the hook
+sees the credited balance. `data` is bounded to 32 bytes. -/
 @[pf_entry]
-def transferFrom (s : State) (source to : Address) (tokenId : UInt256) (amount : UInt256) :
-    Except Error (State × UInt64) :=
+def safeTransferFrom (s : State) (source to : Address) (tokenId : UInt256) (amount : UInt256)
+    (data : BoundedBytes 32) : Except Error (State × Bool) :=
   if !Erc1155.isApprovedOrOwner operators Context.caller source tokenId then
-    .ok (s, Revert.unauthorized Context.caller)
+    Effect.abort s (Revert.unauthorized Context.caller)
   else if Address.isZero to then
-    .ok (s, Revert.zeroAddress)
+    Effect.abort s Revert.zeroAddress
   else if Erc1155.Balances.canTransfer balances source to tokenId amount then
-    .ok ({ dummy := Erc1155.Balances.transfer balances source to tokenId amount },
-      Erc1155.Log.transferSingle Context.caller source to tokenId amount)
+    .ok ({ dummy := Erc1155.Balances.transfer balances source to tokenId amount |||
+        Erc1155.Log.transferSingle Context.caller source to tokenId amount },
+      Effect.thenTrue
+        (Erc1155.checkOnReceived to Context.caller source tokenId amount data))
   else
-    .ok (s, Erc1155.Balances.insufficient balances source tokenId amount)
+    Effect.abort s (Erc1155.Balances.insufficient balances source tokenId amount)
 
 /-- Bounded `batchTransferFrom(address,address,uint256[],uint256[])` over at most four slots, in
 OZ check order: operator authorization (with the key envelope over every id), nonzero receiver,
@@ -100,9 +109,9 @@ equal lengths, then one checked movement per slot. Duplicate ids fail closed wit
 so the per-slot checks stay exact. A slot whose source balance is short reverts
 `ERC1155InsufficientBalance(sender, balance, needed, tokenId)` for the first such slot; a credit
 that would wrap the destination stops in the checked `add256` of that slot's pre-check with an
-empty revert, as `mint` and `transferFrom` do. Success persists every active slot and logs one
+empty revert, as `mint` does. Success persists every active slot and logs one
 `TransferBatch` whose `ids` and `values` are the submitted arrays.
-Like `transferFrom`, there is no receiver hook, so the name drops the `safe` prefix. -/
+The batch has no receiver hook, so the name drops the `safe` prefix. -/
 @[pf_entry]
 def batchTransferFrom (s : State) (source to : Address) (ids : BoundedVec UInt256 4)
     (amounts : BoundedVec UInt256 4) : Except Error (State × UInt64) :=
