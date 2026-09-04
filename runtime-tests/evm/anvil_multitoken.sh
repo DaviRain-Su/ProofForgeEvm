@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # MultiToken: owner-minted bounded ERC-1155 core consumer. Darwin + Linux.
-# Receipts are ABI-decoded: TransferSingle LOG4 (id+value data) and ApprovalForAll LOG3.
+# Receipts are ABI-decoded: TransferSingle LOG4 (id+value data), TransferBatch LOG4 (two
+# uint256[] tails), and ApprovalForAll LOG3.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,13 +43,20 @@ pf_evm_require_equal "$(supports_interface 0xffffffff)" false "ERC-165 invalid i
 pf_evm_require_equal "$(supports_interface 0xdeadbeef)" false "unknown interface id"
 
 sig_xfer="$(pf_evm_typed_event_sig "$abi" TransferSingle)"
+sig_batch="$(pf_evm_typed_event_sig "$abi" TransferBatch)"
 sig_op="$(pf_evm_typed_event_sig "$abi" ApprovalForAll)"
 pf_evm_require_equal "$sig_xfer" 'TransferSingle(address,address,address,uint256,uint256)' \
   "ABI TransferSingle signature"
+pf_evm_require_equal "$sig_batch" 'TransferBatch(address,address,address,uint256[],uint256[])' \
+  "ABI TransferBatch signature"
 pf_evm_require_equal "$sig_op" 'ApprovalForAll(address,address,bool)' \
   "ABI ApprovalForAll signature"
 topic_xfer="$("$cast" keccak "$sig_xfer")"
+topic_batch="$("$cast" keccak "$sig_batch")"
 topic_op="$("$cast" keccak "$sig_op")"
+# The ERC-1155 TransferBatch topic0 every indexer matches on.
+pf_evm_require_equal "$topic_batch" \
+  0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb "TransferBatch topic0"
 
 balance_of() { # owner id
   pf_evm_to_dec "$("$cast" call --rpc-url "$rpc" "$addr" \
@@ -266,7 +274,8 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'balanceOfBatch(address[],uint256[])(ui
   exit 1
 fi
 
-# Bounded batchTransferFrom: capacity 4, OZ check order, one TransferSingle per active slot.
+# Bounded batchTransferFrom: capacity 4, OZ check order, OZ log rule (a one-slot batch logs
+# TransferSingle, any other length logs one TransferBatch whose arrays are the submitted slots).
 # State here: sender holds 50 of id 7 and near_max of id 8; other holds 45 of id 7.
 second_id=9
 batch_calldata() { # source to ids amounts
@@ -332,12 +341,11 @@ pf_evm_require_uint "$(balance_of "$other" "$big_id")" 20 "wrapping batch left d
 pf_evm_require_uint "$(balance_of "$sender" "$big_id")" "$near_max" "wrapping batch left source"
 
 receipt="$(batch_send "$private_key" "$sender" "$other" "[$token_id,$second_id]" "[10,30]")"
-pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
-  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $token_id, \"value\": 10}" \
-  "batch slot 0 TransferSingle LOG4" 2 0
-pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
-  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $second_id, \"value\": 30}" \
-  "batch slot 1 TransferSingle LOG4" 2 1
+pf_evm_typed_event_check "$abi" "$receipt" TransferBatch "$topic_batch" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"ids\": [$token_id, $second_id], \"values\": [10, 30]}" \
+  "two-slot batch TransferBatch LOG4"
+pf_evm_typed_event_absent "$receipt" TransferSingle "$topic_xfer" \
+  "two-slot batch logs no TransferSingle"
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 40 "batch source slot 0"
 pf_evm_require_uint "$(balance_of "$other" "$token_id")" 55 "batch destination slot 0"
 pf_evm_require_uint "$(balance_of "$sender" "$second_id")" 0 "batch source slot 1"
@@ -346,13 +354,19 @@ pf_evm_require_equal "$(balance_of_batch "[$sender,$other,$sender,$other]" \
   "[$token_id,$token_id,$second_id,$second_id]")" "[40, 55, 0, 30]" \
   "balanceOfBatch reflects the batch transfer"
 
-# Empty batch: authorized no-op with no log. Zero amounts on a held id move nothing.
+# Empty batch: authorized no-op that logs a TransferBatch with two empty arrays, as OZ does.
+# A one-slot batch takes the OZ TransferSingle branch; zero amounts on a held id move nothing.
 receipt="$(batch_send "$private_key" "$sender" "$other" "[]" "[]")"
-pf_evm_typed_event_absent "$receipt" TransferSingle "$topic_xfer" "empty batch logs nothing"
+pf_evm_typed_event_check "$abi" "$receipt" TransferBatch "$topic_batch" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"ids\": [], \"values\": []}" \
+  "empty batch TransferBatch LOG4"
+pf_evm_typed_event_absent "$receipt" TransferSingle "$topic_xfer" "empty batch logs no TransferSingle"
 receipt="$(batch_send "$private_key" "$sender" "$other" "[$token_id]" "[0]")"
 pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
   "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $token_id, \"value\": 0}" \
-  "zero-amount slot still logs"
+  "one-slot batch logs TransferSingle"
+pf_evm_typed_event_absent "$receipt" TransferBatch "$topic_batch" \
+  "one-slot batch logs no TransferBatch"
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 40 "zero-amount slot moves nothing"
 
 # Operator batch at full capacity, then revoked. other holds 55 of id 7 and 30 of id 9.
@@ -366,9 +380,11 @@ fourth_id=11
   "$addr" 'setApprovalForAll(address,bool)' "$sender" true >/dev/null
 receipt="$(batch_send "$private_key" "$other" "$sender" \
   "[$token_id,$second_id,$third_id,$fourth_id]" "[5,30,3,4]")"
-pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
-  "{\"operator\": \"$sender\", \"from\": \"$other\", \"to\": \"$sender\", \"id\": $fourth_id, \"value\": 4}" \
-  "operator batch slot 3 TransferSingle LOG4" 4 3
+pf_evm_typed_event_check "$abi" "$receipt" TransferBatch "$topic_batch" \
+  "{\"operator\": \"$sender\", \"from\": \"$other\", \"to\": \"$sender\", \"ids\": [$token_id, $second_id, $third_id, $fourth_id], \"values\": [5, 30, 3, 4]}" \
+  "full-capacity operator batch TransferBatch LOG4"
+pf_evm_typed_event_absent "$receipt" TransferSingle "$topic_xfer" \
+  "full-capacity batch logs no TransferSingle"
 pf_evm_require_equal "$(balance_of_batch "[$sender,$sender,$sender,$sender]" \
   "[$token_id,$second_id,$third_id,$fourth_id]")" "[45, 30, 3, 4]" \
   "operator batch credited every slot"
@@ -385,4 +401,4 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   exit 1
 fi
 
-echo "evm-anvil-multitoken: ok (mint/burn/transferFrom/operator/balanceOfBatch/batchTransferFrom + ERC-1155 TransferSingle LOG4 / ApprovalForAll LOG3)"
+echo "evm-anvil-multitoken: ok (mint/burn/transferFrom/operator/balanceOfBatch/batchTransferFrom + ERC-1155 TransferSingle LOG4 / TransferBatch LOG4 / ApprovalForAll LOG3)"

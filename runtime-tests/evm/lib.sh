@@ -596,11 +596,15 @@ print(ev['name']+'('+','.join(i['type'] for i in ev['inputs'])+')')
 }
 
 # Decode the receipt log with topic0 == keccak(sig) using the ABI declaration of NAME:
-# indexed inputs come from topics in declaration order, non-indexed inputs from consecutive
-# 32-byte data words. Every decoded word must be canonical for its type, and the decoded
-# arguments must equal EXPECTED (JSON object keyed by input name; ints, bools, or hex
-# addresses). The receipt must carry exactly COUNT such logs (default 1) and INDEX (default 0)
-# selects which one is decoded, in log order.
+# indexed inputs come from topics in declaration order, non-indexed inputs from the data
+# section: one head word per input, holding the value for a static type or the byte offset of
+# the tail for a `T[]` type. A tail is a length word followed by `length` element words. The
+# layout must be canonical: tails follow the head in declaration order with no gap, every
+# offset is exactly where the previous tail ended, and the data ends with the last tail. Every
+# decoded word must be canonical for its type, and the decoded arguments must equal EXPECTED
+# (JSON object keyed by input name; ints, bools, hex addresses, or lists of those). The receipt
+# must carry exactly COUNT such logs (default 1) and INDEX (default 0) selects which one is
+# decoded, in log order.
 pf_evm_typed_event_check() {
   local abi_json="$1" receipt="$2" name="$3" topic0="$4" expected="$5" label="$6"
   local count="${7:-1}" index="${8:-0}"
@@ -622,8 +626,13 @@ plain=[i for i in inputs if not i.get('indexed')]
 if len(topics)!=1+len(indexed):
     raise SystemExit(f'FAIL: $label: $name should carry {1+len(indexed)} topics, got {len(topics)}')
 data=(lg.get('data') or '0x')[2:]
-if len(data)!=64*len(plain):
-    raise SystemExit(f'FAIL: $label: $name data should be {len(plain)} words, got {len(data)//2} bytes')
+if len(data)%64:
+    raise SystemExit(f'FAIL: $label: $name data is {len(data)//2} bytes, not whole words')
+words=len(data)//64
+if words<len(plain):
+    raise SystemExit(f'FAIL: $label: $name data should hold {len(plain)} head words, got {words}')
+def word_at(i):
+    return data[i*64:(i+1)*64]
 def decode(ty, word):
     v=int(word,16)
     if ty=='address':
@@ -650,15 +659,38 @@ def decode(ty, word):
 got={}
 ti=1
 di=0
+tail=len(plain)
 for inp in inputs:
+    ty=inp['type']
     if inp.get('indexed'):
-        word=topics[ti][2:]; ti+=1
-    else:
-        word=data[di:di+64]; di+=64
-    got[inp['name']]=decode(inp['type'], word)
-norm={k:(v.lower() if isinstance(v,str) else v) for k,v in expected.items()}
-if got!=norm:
-    raise SystemExit(f'FAIL: $label: decoded {got} != expected {norm}')
+        if ty.endswith('[]'):
+            raise SystemExit(f'FAIL: $label: indexed {ty} is not a decodable topic')
+        got[inp['name']]=decode(ty, topics[ti][2:]); ti+=1
+        continue
+    head=word_at(di); di+=1
+    if not ty.endswith('[]'):
+        got[inp['name']]=decode(ty, head)
+        continue
+    offset=int(head,16)
+    if offset!=tail*32:
+        raise SystemExit(f'FAIL: $label: {inp[\"name\"]} offset {offset} is not the canonical {tail*32}')
+    length=int(word_at(tail),16)
+    if tail+1+length>words:
+        raise SystemExit(f'FAIL: $label: {inp[\"name\"]} length {length} overruns the data')
+    elem=ty[:-2]
+    got[inp['name']]=[decode(elem, word_at(tail+1+k)) for k in range(length)]
+    tail+=1+length
+if words!=tail:
+    raise SystemExit(f'FAIL: $label: $name data holds {words} words, canonical encoding is {tail}')
+def norm(v):
+    if isinstance(v,str):
+        return v.lower()
+    if isinstance(v,list):
+        return [norm(x) for x in v]
+    return v
+want_args={k:norm(v) for k,v in expected.items()}
+if got!=want_args:
+    raise SystemExit(f'FAIL: $label: decoded {got} != expected {want_args}')
 "
 }
 

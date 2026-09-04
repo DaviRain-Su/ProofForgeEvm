@@ -5,11 +5,12 @@ Owner-minted bounded ERC-1155 consumer. The SDK owns the token-id key envelope, 
 (owner, id) balance and (owner, operator) operator maps, and checked mint/burn/transfer
 movement. This contract owns the immutable minter gate, zero-address policy, error ordering
 (`Unauthorized`/`ZeroAddress`/`Insufficient`) and canonical ERC-1155 `TransferSingle` /
-`ApprovalForAll` logs (`Erc1155.Log`). `balanceOfBatch` and `batchTransferFrom` are bounded to
-four pairs; the batch transfer reverts with the OZ-shaped `ERC1155InvalidArrayLength` and
-`ERC1155InsufficientBalance` errors and logs one `TransferSingle` per slot. There is no
-`safeBatchTransferFrom` (`bytes data` and the receiver hook), `TransferBatch`, or safe callback;
-`supportsInterface` exposes IERC165 only, not the incomplete IERC1155 interface.
+`TransferBatch` / `ApprovalForAll` logs (`Erc1155.Log`). `balanceOfBatch` and
+`batchTransferFrom` are bounded to four pairs; the batch transfer reverts with the OZ-shaped
+`ERC1155InvalidArrayLength` and `ERC1155InsufficientBalance` errors and logs one `TransferBatch`
+whose arrays carry exactly the submitted slots. There is no `safeBatchTransferFrom` (`bytes data`
+and the receiver hook) or safe callback; `supportsInterface` exposes IERC165 only, not the
+incomplete IERC1155 interface.
 -/
 
 namespace Examples.Evm.MultiToken
@@ -100,7 +101,7 @@ so the per-slot checks stay exact. A slot whose source balance is short reverts
 `ERC1155InsufficientBalance(sender, balance, needed, tokenId)` for the first such slot; a credit
 that would wrap the destination stops in the checked `add256` of that slot's pre-check with an
 empty revert, as `mint` and `transferFrom` do. Success persists every active slot and logs one
-`TransferSingle` per slot in array order.
+`TransferBatch` whose `ids` and `values` are the submitted arrays.
 Like `transferFrom`, there is no receiver hook, so the name drops the `safe` prefix. -/
 @[pf_entry]
 def batchTransferFrom (s : State) (source to : Address) (ids : BoundedVec UInt256 4)
@@ -131,7 +132,7 @@ def batchTransferFrom (s : State) (source to : Address) (ids : BoundedVec UInt25
       (Erc1155.Balances.balanceOf balances source ids.values[3]) amounts.values[3] ids.values[3])
   else
     .ok ({ dummy := Erc1155.Balances.batchTransfer balances source to ids amounts },
-      Erc1155.Log.transferBatchSingles Context.caller source to ids amounts)
+      Erc1155.Log.transferBatchOrSingle Context.caller source to ids amounts)
 
 /-- Single-id balance view through the SDK-owned checked key-envelope gate. -/
 @[pf_entry]

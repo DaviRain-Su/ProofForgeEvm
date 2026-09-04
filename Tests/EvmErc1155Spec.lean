@@ -127,8 +127,7 @@ private def specAmounts : Erc1155.Batch UInt256 :=
 #guard !Erc1155.Balances.canTransferSlot specBalances specOwner specOther true specAliasId specAmount
 #guard !Erc1155.Balances.canBatchTransfer specBalances specOwner specOther specIds specAmounts
 #guard Erc1155.Balances.transferSlot specBalances specOwner specOther false specId specAmount == 0
-#guard Erc1155.Log.transferSlot specOwner specOwner specOther false specId specAmount == 0
-#guard Erc1155.Log.transferBatchSingles specOwner specOwner specOther specGoodIds specAmounts == 0
+#guard Erc1155.Log.transferBatch specOwner specOwner specOther specGoodIds specAmounts == 0
 
 -- Pre-write/pre-auth envelope gates: unencodable ids fail every mutation and authorization
 -- predicate. These guards are honest on host because `canEncode` is the first `&&` conjunct and
@@ -258,6 +257,21 @@ private def transferSingleTopic : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString
     "TransferSingle(address,address,address,uint256,uint256)"
 
+private def transferBatchAbi : String :=
+  "{\"type\":\"event\",\"name\":\"TransferBatch\",\"inputs\":[" ++
+    "{\"name\":\"operator\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"from\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"to\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"ids\",\"type\":\"uint256[]\",\"indexed\":false}," ++
+    "{\"name\":\"values\",\"type\":\"uint256[]\",\"indexed\":false}],\"anonymous\":false}"
+
+/-- The ERC-1155 `TransferBatch` topic0 every indexer matches on. -/
+private def transferBatchTopic : String :=
+  "4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb"
+
+#guard ProofForge.Crypto.Keccak.keccak256HexOfString
+  "TransferBatch(address,address,address,uint256[],uint256[])" == transferBatchTopic
+
 private def approvalForAllTopic : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString "ApprovalForAll(address,address,bool)"
 
@@ -271,6 +285,18 @@ private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     | .ite _ _ _ yes no => frames ++ sourceTypedFrames yes ++ sourceTypedFrames no
     | .forBody _ body => frames ++ sourceTypedFrames body
     | _ => frames
+
+/-- The dynamic-array tails of every typed event under `ops`, one array per event. -/
+private partial def sourceTypedTails (ops : Array ProofForge.Extract.IR.Op) :
+    Array (Array (NativeFx.LogTail ProofForge.Extract.IR.Val)) :=
+  ops.foldl (init := #[]) fun tails op =>
+    let tails := match op with
+      | .ext (.evm (.component (.nativeFx (.logTyped _ eventTails)))) => tails.push eventTails
+      | _ => tails
+    match op with
+    | .ite _ _ _ yes no => tails ++ sourceTypedTails yes ++ sourceTypedTails no
+    | .forBody _ body => tails ++ sourceTypedTails body
+    | _ => tails
 
 private partial def sourceErrorFrames (ops : Array ProofForge.Extract.IR.Op) :
     Array (ProofForge.Core.Ops.ErrorFrame ProofForge.Extract.IR.Val) :=
@@ -336,7 +362,7 @@ private def expectTypedAbiYul (evm : IR.Program) : CommandElabM Unit := do
     | .ok abi => pure abi
     | .error reason => throwError reason
   unless abi.contains transferSingleAbi && abi.contains approvalForAllAbi &&
-      !abi.contains erc20TransferAbi && !abi.contains "TransferBatch" do
+      !abi.contains erc20TransferAbi do
     throwError s!"{evm.name} ABI lost ERC-1155 TransferSingle/ApprovalForAll:\n{abi}"
   let yul ←
     match Emit.emitYul evm with
@@ -377,8 +403,10 @@ private def expectMultiTokenBatch (source : ProofForge.Extract.IR.Program) (evm 
 
 /-- The bounded `batchTransferFrom` carries one OZ-shaped `ERC1155InvalidArrayLength` frame, one
 `ERC1155InsufficientBalance` frame per slot with the OZ field order, one selector-only
-`DuplicateId`, and one `TransferSingle` per slot. Its ABI is `(address,address,uint256[],uint256[])`
-nonpayable, and its Yul reverts with the `cast sig` selectors and the 4 + 4 * 32 byte geometry. -/
+`DuplicateId`, and one `TransferBatch` whose two `uint256[]` tails read the entry's own arrays
+(length leaf plus four slots of four limbs each). Its ABI is
+`(address,address,uint256[],uint256[])` nonpayable, and its Yul reverts with the `cast sig`
+selectors and the 4 + 4 * 32 byte geometry and logs LOG4 with the cursor as data length. -/
 private def expectMultiTokenBatchTransfer (source : ProofForge.Extract.IR.Program)
     (evm : IR.Program) : CommandElabM Unit := do
   let ops ← methodOps source "batchTransferFrom"
@@ -399,14 +427,30 @@ private def expectMultiTokenBatchTransfer (source : ProofForge.Extract.IR.Progra
         ("tokenId", .uint256, 4)]) do
     throwError s!"ERC1155InsufficientBalance frame diverged: {repr (shortfalls.map frameLimbs)}"
   let logs := sourceTypedFrames ops
-  unless logs.size == 4 && logs.all (eventMatches · "TransferSingle"
-      #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)]) do
-    throwError s!"MultiToken.batchTransferFrom logs {logs.size} typed events, expected four \
-      TransferSingle: {logs.map (·.constructor)}"
+  unless logs.size == 2 &&
+      eventMatches logs[0]! "TransferSingle"
+        #[("operator", true), ("from", true), ("to", true), ("id", false), ("value", false)] &&
+      eventMatches logs[1]! "TransferBatch" #[("operator", true), ("from", true), ("to", true)] do
+    throwError s!"MultiToken.batchTransferFrom logs {logs.size} typed events, expected the OZ \
+      TransferSingle-or-TransferBatch pair: {logs.map (·.constructor)}"
+  let tails := sourceTypedTails ops
+  let tailShape (tail : NativeFx.LogTail ProofForge.Extract.IR.Val) :=
+    (tail.name, tail.elementType, tail.capacity, tail.elements.size)
+  unless tails.size == 2 && tails[0]!.isEmpty && tails[1]!.map tailShape ==
+      #[("ids", .uint256, 4, 16), ("values", .uint256, 4, 16)] do
+    throwError s!"MultiToken.batchTransferFrom TransferBatch tails diverged: {repr tails}"
+  let argLeaf : ProofForge.Extract.IR.Val → Bool
+    | .field (.arg _) _ => true
+    | _ => false
+  unless tails[1]!.all fun tail => argLeaf tail.length && tail.elements.all argLeaf do
+    throwError s!"MultiToken.batchTransferFrom TransferBatch tails are not argument leaves: \
+      {repr tails}"
   let abi ←
     match Emit.emitAbiChecked evm with
     | .ok abi => pure abi
     | .error reason => throwError reason
+  unless abi.contains transferBatchAbi do
+    throwError s!"MultiToken ABI lost TransferBatch:\n{abi}"
   unless abi.contains "\"name\":\"batchTransferFrom\",\"stateMutability\":\"nonpayable\"" &&
       abi.contains ("\"inputs\":[{\"name\":\"arg0\",\"type\":\"address\"},{\"name\":\"arg1\",\"type\":\"address\"}," ++
         "{\"name\":\"arg2\",\"type\":\"uint256[]\"},{\"name\":\"arg3\",\"type\":\"uint256[]\"}]") &&
@@ -428,6 +472,8 @@ private def expectMultiTokenBatchTransfer (source : ProofForge.Extract.IR.Progra
   unless yul.contains "shl(224, 0x5b059991)" && yul.contains "shl(224, 0x03dee4c5)" &&
       yul.contains "revert(0, 132)" do
     throwError "MultiToken.batchTransferFrom Yul omitted an OZ selector or the revert geometry"
+  unless yul.contains s!"log4(0, pf_log_end, 0x{transferBatchTopic}" do
+    throwError "MultiToken.batchTransferFrom Yul omitted the LOG4 TransferBatch with a cursor length"
 
 private def expectMultiTokenEvents : CommandElabM Unit := do
   let env ← getEnv
@@ -504,11 +550,16 @@ private def expectCraftTokenEvents : CommandElabM Unit := do
     #["mint", "burn", "setApprovalForAll", "transferFrom", "balanceOf", "supplyOf",
       "isApprovedForAll", "supportsInterface"]
   expectTypedAbiYul evm
+  match Emit.emitAbiChecked evm with
+  | .ok abi =>
+      if abi.contains "TransferBatch" then
+        throwError s!"CraftToken has no batch transfer yet its ABI names TransferBatch:\n{abi}"
+  | .error reason => throwError reason
 
 private def expectErc1155 : CommandElabM Unit := do
   expectMultiTokenEvents
   expectCraftTokenEvents
-  expectDigest `Examples.Evm.MultiToken "34442cd92ece6a12"
+  expectDigest `Examples.Evm.MultiToken "ed7b0806a745732d"
   expectDigest `Examples.Evm.CraftToken "498e28455f1c4cb7"
   let env ← getEnv
   let multi := (ProofForge.Extract.extractModuleIR env `Examples.Evm.MultiToken).toOption.get!

@@ -27,8 +27,9 @@ Single-id checked balance reads, a bounded `balanceOfBatch` over at most `batchC
 `transfer` decisions/effects (equal source/destination is a successful no-op after the debit gate
 instead of two writes through the same hashed key). Credit rejects UInt256 wraparound; debit
 rejects underflow. Canonical ERC-1155 logs are reusable `Event.emit` wrappers
-(`Log.transferSingle` / `Log.approvalForAll`): LOG4 `TransferSingle` with two data words (`id`,
-`value`), and LOG3 `ApprovalForAll` with a bool data word.
+(`Log.transferSingle` / `Log.transferBatch` / `Log.approvalForAll`): LOG4 `TransferSingle` with
+two data words (`id`, `value`), LOG4 `TransferBatch` with two bounded `uint256[]` tails, and LOG3
+`ApprovalForAll` with a bool data word.
 
 ## Bounded batch transfer
 
@@ -42,18 +43,17 @@ makes per-slot pre-write checks exact: with pairwise distinct ids no two slots r
 same `(owner, id)` key, so checking every slot before the first write equals OZ's sequential
 checks. OZ accepts duplicate ids by applying slots in order; here a duplicate fails closed and the
 caller splits the batch. `Balances.batchTransfer` persists the active slots in array order and
-`Log.transferBatchSingles` emits one `TransferSingle` per active slot in the same order. EIP-1155
-allows this shape: `TransferSingle` "MAY be emitted multiple times to indicate multiple balance
-changes in the transaction, but note that `TransferBatch` is designed for this to reduce gas
-consumption". `TransferBatch` is the SHOULD shape for a batch. It is a typed event with two
-dynamic tails and stays unsupported until the emitter carries them.
+`Log.transferBatch` emits the one `TransferBatch` EIP-1155 asks for, whose `ids` and `values`
+arrays carry exactly the active slots in the same order. The event is a typed frame with two
+bounded dynamic-array tails; the EVM emitter writes the ABI head (one offset word per array),
+then each array's length and its first `length` slots.
 
 ## Explicitly unsupported
 
 `safeBatchTransferFrom` with its `bytes data` and `onERC1155BatchReceived` callback (the bounded
 `batchTransferFrom` consumers ship instead has no receiver hook), mint/burn batches,
-ERC1155Receiver callbacks (`onERC1155Received`), metadata URI, `TransferBatch`, duplicate ids
-inside one batch, and unbounded inputs.
+ERC1155Receiver callbacks (`onERC1155Received`), metadata URI, duplicate ids inside one batch,
+and unbounded inputs.
 Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
 interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,
@@ -277,12 +277,22 @@ the id-encoding gate). -/
     (tokenId amount : UInt256) : UInt64 :=
   balances.debit source tokenId amount
 
+-- `Notice` derives `Repr`/`DecidableEq` like every SDK event, and Common's `BoundedVec` ships
+-- neither; these stay here until ProofForgeCommon derives them at the type.
+deriving instance Repr, DecidableEq for ProofForge.Core.Value.BoundedVec
+
 /-- Canonical ERC-1155 events. Constructor names and field names are the ABI surface
-(`TransferSingle` / `ApprovalForAll`). Indexed flags produce LOG4 (two data words) for
-TransferSingle and LOG3 (bool data word) for ApprovalForAll. -/
+(`TransferSingle` / `TransferBatch` / `ApprovalForAll`). Indexed flags produce LOG4 (two data
+words) for TransferSingle, LOG4 (two `uint256[]` tails, no static word) for TransferBatch, and
+LOG3 (bool data word) for ApprovalForAll. The batch fields spell `BoundedVec UInt256 4` rather
+than `Batch UInt256` because the event decoder, like the entry-type profile, accepts only a
+literal capacity; `Log.transferBatch` takes `Batch` and the two are the same type. -/
 inductive Notice where
   | TransferSingle (operator : Event.Indexed Address) («from» : Event.Indexed Address)
       (to : Event.Indexed Address) (id : UInt256) (value : UInt256)
+  | TransferBatch (operator : Event.Indexed Address) («from» : Event.Indexed Address)
+      (to : Event.Indexed Address) (ids : ProofForge.Core.Value.BoundedVec UInt256 4)
+      (values : ProofForge.Core.Value.BoundedVec UInt256 4)
   | ApprovalForAll (account : Event.Indexed Address) (operator : Event.Indexed Address)
       (approved : Bool)
   deriving Repr, DecidableEq, Inhabited
@@ -295,27 +305,25 @@ namespace Log
   Event.emit (Notice.TransferSingle (Event.indexed operator) (Event.indexed source)
     (Event.indexed destination) tokenId amount)
 
+/-- LOG4 `TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)`.
+Both arrays publish exactly `ids.length` / `amounts.length` elements; the emitter reverts if a
+length ever exceeds the capacity, which the ABI decoder already rules out for entry arguments. -/
+@[pf_inline] def transferBatch (operator source destination : Address)
+    (ids amounts : Batch UInt256) : UInt64 :=
+  Event.emit (Notice.TransferBatch (Event.indexed operator) (Event.indexed source)
+    (Event.indexed destination) ids amounts)
+
+/-- OZ's `_update` log rule: a one-element batch logs `TransferSingle` for its only slot, any
+other length logs `TransferBatch`. Indexers built against OZ ledgers see the same receipts. -/
+@[pf_inline] def transferBatchOrSingle (operator source destination : Address)
+    (ids amounts : Batch UInt256) : UInt64 :=
+  if ids.length == 1 then
+    transferSingle operator source destination ids.values[0] amounts.values[0]
+  else transferBatch operator source destination ids amounts
+
 /-- LOG3 `ApprovalForAll(address indexed account, address indexed operator, bool approved)`. -/
 @[pf_inline] def approvalForAll (account operator : Address) (approved : Bool) : UInt64 :=
   Event.emit (Notice.ApprovalForAll (Event.indexed account) (Event.indexed operator) approved)
-
-/-- `TransferSingle` for one active batch slot; inactive slots log nothing. -/
-@[pf_inline] def transferSlot (operator source destination : Address) (active : Bool)
-    (tokenId amount : UInt256) : UInt64 :=
-  if active then transferSingle operator source destination tokenId amount else 0
-
-/-- One `TransferSingle` per active slot, in array order. EIP-1155 lets `TransferSingle` be
-"emitted multiple times to indicate multiple balance changes in the transaction"; `TransferBatch`
-is the recommended shape and needs a typed event with two dynamic tails the emitter does not
-carry yet. -/
-@[pf_inline] def transferBatchSingles (operator source destination : Address)
-    (ids amounts : Batch UInt256) : UInt64 :=
-  transferSlot operator source destination (slotActive ids 0) ids.values[0] amounts.values[0] |||
-    transferSlot operator source destination (slotActive ids 1) ids.values[1]
-      amounts.values[1] |||
-    transferSlot operator source destination (slotActive ids 2) ids.values[2]
-      amounts.values[2] |||
-    transferSlot operator source destination (slotActive ids 3) ids.values[3] amounts.values[3]
 
 end Log
 
