@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SignerLink: Sdk.Ierc1271.checkSignature against a Solidity ERC-1271 wallet. Darwin + Linux.
+# SignerLink: Ierc1271.checkSignature (1271-only) and checkNow (EOA or 1271). Darwin + Linux.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,13 +7,11 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$here/lib.sh"
 
 pf_evm_evm_init evm-anvil-signerlink
+echo "building SignerLink.bin" >&2
+lake exe pf -- build --target evm --out "$root/build/evm" SignerLink \
+  || { echo "FAIL: pf build SignerLink failed" >&2; exit 1; }
 bin="$root/build/evm/SignerLink.bin"
 abi="$root/build/evm/SignerLink.abi.json"
-if [[ ! -f "$bin" || ! -f "$abi" ]]; then
-  echo "building SignerLink.bin" >&2
-  lake exe pf -- build --target evm --out "$root/build/evm" SignerLink \
-    || { echo "FAIL: pf build SignerLink failed" >&2; exit 1; }
-fi
 [[ -f "$bin" ]] || { echo "FAIL: missing $bin" >&2; exit 1; }
 [[ -f "$abi" ]] || { echo "FAIL: missing $abi" >&2; exit 1; }
 solc_bin="$(pf_evm_find_tool solc)" || {
@@ -106,4 +104,93 @@ pf_evm_require_equal "$(accepted)" 2 "frame refusals left the counter in place"
 require "$wallet" "$digest" "$good_sig"
 pf_evm_require_equal "$(accepted)" 3 "the real wallet accepts again once the frame is cleared"
 
-echo "evm-anvil-signerlink: ok (ERC-1271 isValidSignature via callMagic: owner signature, five signature refusals, the 65-byte bound, two no-code signers, five frame refusals)"
+now_of='requireNow(address,bytes32,bytes)'
+require_now() {
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" "$now_of" "$1" "$2" "$3" >/dev/null
+}
+refuse_now_empty() {
+  pf_evm_require_empty_revert "$addr" "$sender" \
+    "$("$cast" calldata "$now_of" "$1" "$2" "$3")" "$4"
+  if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+      "$addr" "$now_of" "$1" "$2" "$3" >/dev/null 2>&1; then
+    echo "FAIL: $4 passed requireNow" >&2
+    exit 1
+  fi
+}
+refuse_now_unauth() {
+  pf_evm_require_unauthorized "$addr" "$sender" \
+    "$("$cast" calldata "$now_of" "$1" "$2" "$3")" "$1" "$4"
+  if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+      "$addr" "$now_of" "$1" "$2" "$3" >/dev/null 2>&1; then
+    echo "FAIL: $4 passed requireNow" >&2
+    exit 1
+  fi
+}
+
+wallet_calls="$(seen 'calls()(uint256)')"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" \
+  "$now_of(bool)" "$sender" "$digest" "$good_sig")" true "requireNow accepts an EOA signer"
+require_now "$sender" "$digest" "$good_sig"
+pf_evm_require_equal "$(accepted)" 4 "accepted counts the EOA check"
+pf_evm_require_equal "$(seen 'calls()(uint256)')" "$wallet_calls" "the EOA check did not call the wallet"
+
+refuse_now_unauth "$sender" "$digest" "$foreign_sig" "requireNow rejects another key on an EOA"
+refuse_now_unauth "$sender" "$digest" "${good_sig:0:130}" "requireNow rejects a 64-byte EOA frame"
+refuse_now_unauth "$sender" "$digest" 0x "requireNow rejects an empty EOA frame"
+pf_evm_require_equal "$(accepted)" 4 "EOA refusals left the counter in place"
+pf_evm_require_equal "$(seen 'calls()(uint256)')" "$wallet_calls" "EOA refusals did not call the wallet"
+
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" \
+  "$now_of(bool)" "$wallet" "$digest" "$good_sig")" true \
+  "requireNow accepts a contract signer through ERC-1271"
+require_now "$wallet" "$digest" "$good_sig"
+pf_evm_require_equal "$(accepted)" 5 "accepted counts the 1271 arm of requireNow"
+pf_evm_require_equal "$(seen 'calls()(uint256)')" "$((wallet_calls + 1))" "requireNow called the wallet"
+
+refuse_now_empty "$wallet" "$digest" "$foreign_sig" \
+  "requireNow on a wallet still empty-reverts a foreign 1271 answer"
+
+yul="$root/build/evm/SignerLink.yul"
+[[ -f "$yul" ]] || { echo "FAIL: missing $yul" >&2; exit 1; }
+mut_dir="$root/build/evm/signerlink-extcodesize-mut"
+rm -rf "$mut_dir"
+mkdir -p "$mut_dir"
+"$python" -I -S -c "
+from pathlib import Path
+import re, sys
+src = Path('$yul').read_text()
+n = src.count('extcodesize(')
+if n != 1:
+    sys.stderr.write(f'FAIL: expected one extcodesize(, got {n}\\n')
+    sys.exit(1)
+out, k = re.subn(r'extcodesize\\([^)]*\\)', '0', src, count=1)
+if k != 1:
+    sys.stderr.write('FAIL: extcodesize rewrite missed\\n')
+    sys.exit(1)
+Path('$mut_dir/SignerLink.yul').write_text(out)
+"
+mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$mut_dir/SignerLink.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc --strict-assembly wrote no bytecode')
+print(hexes[-1])
+")"
+[[ -n "$mut_code" ]] || { echo "FAIL: empty mutated SignerLink bytecode" >&2; exit 1; }
+mut_addr="$(pf_evm_deploy_ctor_address "$mut_code" "$sender")"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" --from "$sender" "$mut_addr" \
+  "$now_of(bool)" "$sender" "$digest" "$good_sig")" true \
+  "extcodesize forced to 0 still accepts an EOA through ecrecover"
+pf_evm_require_unauthorized "$mut_addr" "$sender" \
+  "$("$cast" calldata "$now_of" "$wallet" "$digest" "$good_sig")" "$wallet" \
+  "extcodesize forced to 0 treats the wallet as an EOA"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$mut_addr" "$now_of" "$wallet" "$digest" "$good_sig" >/dev/null 2>&1; then
+  echo "FAIL: mutated requireNow accepted the wallet as an EOA" >&2
+  exit 1
+fi
+
+echo "evm-anvil-signerlink: ok (ERC-1271 isValidSignature via callMagic; checkNow EOA + wallet; extcodesize mutation)"
