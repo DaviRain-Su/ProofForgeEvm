@@ -45,6 +45,10 @@ def blockedCount (_s : State) : UInt64 :=
   OzAudit.blockedCount
 
 @[pf_entry]
+def temporaryGapCount (_s : State) : UInt64 :=
+  OzAudit.temporaryGapCount
+
+@[pf_entry]
 def isComplete (_s : State) : Bool :=
   OzAudit.isComplete
 
@@ -98,7 +102,7 @@ def statusOf (_s : State) (row : UInt64) : UInt8 :=
   else if row == 9 then 2
   else if row == 10 then 2
   else if row == 11 then 1
-  else if row == 12 then 3
+  else if row == 12 then 2
   else if row == 13 then 2
   else if row == 14 then 3
   else if row == 15 then 2
@@ -125,7 +129,6 @@ def isBlocked (_s : State) (row : UInt64) : Bool :=
   if row == 3 then true
   else if row == 4 then true
   else if row == 6 then true
-  else if row == 12 then true
   else if row == 14 then true
   else if row == 17 then true
   else if row == 18 then true
@@ -134,12 +137,17 @@ def isBlocked (_s : State) (row : UInt64) : Bool :=
   else if row == 31 then true
   else false
 
+/-- ABSENT without a permanent non-goal. No row today: row 12, `interfaces/IERC1271.sol`, was the
+last one and shipped as `Sdk.Ierc1271`; the view stays so the next reopened row has a home. -/
+@[pf_entry]
+def isTemporaryGap (_s : State) (_row : UInt64) : Bool :=
+  false
+
 @[pf_entry]
 def nonGoalTagOf (_s : State) (row : UInt64) : UInt8 :=
   if row == 3 then 3
   else if row == 4 then 5
   else if row == 6 then 4
-  else if row == 12 then 2
   else if row == 14 then 5
   else if row == 17 then 2
   else if row == 18 then 1

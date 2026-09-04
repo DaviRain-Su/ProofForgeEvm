@@ -42,10 +42,17 @@ contract OpenCallTarget {
     uint256 public tripleWords = 3;
     uint256 public quadWords = 4;
 
+    uint256 public balanceWord = 1000;
+
     function setOnWord(uint256 w) external { onWord = w; }
     function setOwnerWord(uint256 w) external { ownerWord = w; }
     function setTripleWords(uint256 n) external { tripleWords = n; }
     function setQuadWords(uint256 n) external { quadWords = n; }
+    function setBalanceWord(uint256 w) external { balanceWord = w; }
+
+    function balanceOf(address) external view returns (uint256) {
+        return balanceWord;
+    }
 
     function isOn() external view returns (bool) {
         uint256 w = onWord;
@@ -74,4 +81,53 @@ contract OpenCallTarget {
     }
 
     function deposit() external payable {}
+
+    /// What a bounded `bytes` argument decodes to, plus the keccak of the whole calldata so
+    /// the gate can compare the caller's encoding byte for byte with `cast calldata`.
+    uint256 public sunkTag;
+    uint256 public sunkLength;
+    bytes32 public sunkHash;
+    bytes32 public sunkCalldataHash;
+
+    function sink(uint256 tag, bytes calldata data) external {
+        sunkTag = tag;
+        sunkLength = data.length;
+        sunkHash = keccak256(data);
+        sunkCalldataHash = keccak256(msg.data);
+    }
+
+    /// Keccak of the whole calldata, so a STATICCALL read proves its selector, head, tail,
+    /// and size at once against `cast calldata`.
+    function calldataHash(bytes calldata) external pure returns (bytes32) {
+        return keccak256(msg.data);
+    }
+
+    /// Receiver hook. The returned frame is `hookWord` over `hookSize` bytes so the gate can
+    /// answer with the right magic, a wrong selector, a dirty low byte, or a wrong size.
+    /// `onERC721Received(address,address,uint256,bytes)`, left-aligned.
+    uint256 public hookWord = uint256(bytes32(bytes4(0x150b7a02)));
+    uint256 public hookSize = 32;
+    address public hookOperator;
+    address public hookFrom;
+    uint256 public hookTokenId;
+    bytes32 public hookDataHash;
+
+    function setHookWord(uint256 w) external { hookWord = w; }
+    function setHookSize(uint256 n) external { hookSize = n; }
+
+    function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data)
+        external
+        returns (bytes4)
+    {
+        hookOperator = operator;
+        hookFrom = from;
+        hookTokenId = tokenId;
+        hookDataHash = keccak256(data);
+        uint256 w = hookWord;
+        uint256 n = hookSize;
+        assembly {
+            mstore(0, w)
+            return(0, n)
+        }
+    }
 }

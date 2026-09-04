@@ -38,4 +38,9 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'balanceOf(address,
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" 'setOperator(address,bool)' "$other" true >/dev/null
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'isOperator(address,address)(bool)' "$sender" "$other")" true "operator"
 
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'allowance(address,address,uint256)(uint256)' "$sender" "$other" "$token_id")" 15 "allowance after transferFrom"
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" "$addr" 'transferFrom(address,address,uint256,uint256)' "$sender" "$other" "$token_id" 20 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'balanceOf(address,uint256)(uint256)' "$sender" "$token_id")" 70 "operator moves more than the allowance"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'allowance(address,address,uint256)(uint256)' "$sender" "$other" "$token_id")" 15 "operator transfer leaves the allowance"
+
 echo "evm-anvil-ninelink: ok"

@@ -23,6 +23,12 @@ private def isExceptOkHead (e : Expr) : Bool :=
 private def isExceptErrorHead (e : Expr) : Bool :=
   isConstNamed e ``Except.error || isConstNamed e ``ProofForge.Core.Except.err
 
+/-- `if c then a else a` is `a`. A select whose arms agree carries no decision, so its condition
+is never materialized; the common case is the carrier word of an effect guarded by a read,
+where both arms are the effect's `0`. -/
+private def selectOrArm (cmp : Ops.Cmp) (lhs rhs thn els : Ops.Val) : Ops.Val :=
+  if thn == els then thn else .select cmp lhs rhs thn els
+
 private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
   let e := peelLets (strip e)
   match e.getAppFn.constName? with
@@ -34,6 +40,121 @@ private def uint256CtorFields (env : Environment) (e : Expr) : Option (Array Exp
         some (e.getAppArgs.extract (e.getAppArgs.size - 4) e.getAppArgs.size)
       else none
     | _ => none
+
+private def addr20CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
+  let e := peelLets (strip e)
+  match e.getAppFn.constName? with
+  | none => none
+  | some n =>
+    match env.find? n with
+    | some (.ctorInfo c) =>
+      if c.induct == addr20Name && e.getAppArgs.size ≥ 3 then
+        some (e.getAppArgs.extract (e.getAppArgs.size - 3) e.getAppArgs.size)
+      else none
+    | _ => none
+
+/-- The closed EVM scalar vocabulary shared by typed events and typed errors: each type packs
+into exactly one ABI word from its little-endian source limbs. -/
+private def eventScalarOfLeanType (ty : Expr) : Option Core.Codec.Scalar :=
+  let ty := ty.consumeMData
+  match ty.getAppFn.constName? with
+  | some ``Bool => some .boolean
+  | some ``UInt8 => some .uint8
+  | some ``UInt16 => some .uint16
+  | some ``UInt32 => some .uint32
+  | some ``UInt64 => some .uint64
+  | some n =>
+      if n == addr20Name then some .address20
+      else if n == uint128Name then some .uint128
+      else if n == uint256Name || n == evmUInt256AliasName then some .uint256
+      else if n == fixedBytesName || n == evmBytes32AliasName then
+        (fixedBytesSize? ty).map (.fixedBytes ·)
+      else none
+  | none => none
+
+/-- Literal capacity of a `BoundedBytes n` field type. -/
+private def boundedBytesFieldType? (ty : Expr) : Option Nat := do
+  let ty := ty.consumeMData
+  guard (ty.getAppFn.constName? == some boundedBytesName)
+  let args := ty.getAppArgs
+  guard (args.size == 1)
+  natLiteral? args[0]!
+
+/-- Element type and literal capacity of a `BoundedVec α n` field type. -/
+private def boundedVecFieldType? (ty : Expr) : Option (Expr × Nat) := do
+  let ty := ty.consumeMData
+  guard (ty.getAppFn.constName? == some boundedVecName)
+  let args := ty.getAppArgs
+  guard (args.size == 2)
+  let capacity ← natLiteral? args[1]!
+  return (args[0]!, capacity)
+
+/-- Source spelling of `field.values[slot]`, the same `GetElem` application the scalar leaf
+decoders already read, so a tail element takes the exact path a single `ids.values[0]` takes. -/
+private def boundedVecSlotExpr (elementType : Expr) (capacity : Nat) (field : Expr) (slot : Nat) :
+    Expr :=
+  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedVec.values)
+    #[elementType, mkNatLit capacity, field]
+  mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro]
+
+/-- User-written explicit binders only. Hygienic `_`, implicit/instance binders, and generated
+numeric names must not become ABI field names. -/
+private def explicitEventFieldBinder (fieldName : Name) (binderInfo : BinderInfo) : Bool :=
+  binderInfo == .default &&
+    !fieldName.isAnonymous &&
+    !fieldName.hasMacroScopes &&
+    !fieldName.isInaccessibleUserName &&
+    match fieldName with
+    | .str .anonymous s =>
+        !s.isEmpty && s.front.isAlpha && s.all (fun c => c.isAlphanum || c == '_')
+    | _ => false
+
+private inductive DecodedOpenCall where
+  | notOpenCall
+  | plan (plan : Evm.OpenCall.Plan Ops.Val)
+  | query (query : Evm.OpenCall.Query) (operands : Array Ops.Val)
+  | unsupported (reason : String)
+  deriving Inhabited
+
+private def nthFromEnd (args : Array Expr) (n : Nat) : Option Expr :=
+  if args.size ≥ n + 1 then some args[args.size - 1 - n]! else none
+
+private def isEvmOpenCallApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall || endsWith e ".evmOpenCall"
+
+private def isEvmOpenCallSuccessApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
+    endsWith e ".evmOpenCallSuccess"
+
+private def isEvmOpenCallValueApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
+    endsWith e ".evmOpenCallValue"
+
+private def isEvmOpenCallMagicApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallMagic ||
+    endsWith e ".evmOpenCallMagic"
+
+/-- Any CALL-kind open-call stub: the effect carriers, as opposed to the STATICCALL reads. -/
+private def isOpenCallPlanApp (e : Expr) : Bool :=
+  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
+    isEvmOpenCallMagicApp e
+
+/-- Runtime stub behind each typed STATICCALL read shape. -/
+private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
+  (``ProofForge.Evm.Runtime.evmOpenStaticWord, .word),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords2, .words2),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords3, .words3),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords4, .words4),
+  (``ProofForge.Evm.Runtime.evmOpenStaticBool, .bool),
+  (``ProofForge.Evm.Runtime.evmOpenStaticAddress, .address)
+]
+
+private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
+  (openStaticStubs.find? fun (stub, _) =>
+    isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
+
+private def isAnyOpenCallApp (e : Expr) : Bool :=
+  isOpenCallPlanApp e || (openStaticShapeOf e).isSome
 
 set_option maxRecDepth 2048 in
 mutual
@@ -126,13 +247,13 @@ private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option O
             match cmp?, asVal env fuel' lhs, asVal env fuel' rhs,
                 asVal env fuel' args[args.size - 2]!, asVal env fuel' args[args.size - 1]! with
             | some cmp, some lv, some rv, some thn, some els =>
-                some (.select cmp lv rv thn els)
+                some (selectOrArm cmp lv rv thn els)
             | _, _, _, _, _ => none
           else none
         | none =>
           match asVal env fuel' rawCond,
               asVal env fuel' args[args.size - 2]!, asVal env fuel' args[args.size - 1]! with
-          | some cond, some thn, some els => some (.select .ne cond (.lit 0) thn els)
+          | some cond, some thn, some els => some (selectOrArm .ne cond (.lit 0) thn els)
           | _, _, _ => none
       else
         match e.getAppFn.constName? with
@@ -191,6 +312,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
     (asVal env fuel e.getAppArgs[e.getAppArgs.size - 1]!).map (flattenField · leaf)
   else if isConstNamed e ``Decidable.decide && e.getAppArgs.size ≥ 2 then
     asVal env fuel e.getAppArgs[e.getAppArgs.size - 2]!
+  else if openStaticShapeOf e == some .bool then
+    openStaticRead? env e 1 0
   else if let some (_, unfolded) := unfoldUserHelper env e then
     match env.find? n with
     | some (.defnInfo info) =>
@@ -349,6 +472,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
               some (.ext (.evm (.component (.closedCall (.allowance256 limb.toNat))))
                 #[a0, a1, a2, b0, b1, b2, c0, c1, c2])
             | _, _, _, _, _, _, _, _, _ => none
+        else if (openStaticShapeOf baseE).isSome then
+          openStaticRead? env baseE 4 limb.toNat
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmCallValue256 ||
             endsWith baseE ".evmCallValue256" then
           some (.ext (.evm (.callValue256 limb.toNat)) #[])
@@ -480,6 +605,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
           endsWith baseE ".evmImm20" then
         some (match leaf with
           | "w0" => .evmImmW0 | "w1" => .evmImmW1 | _ => .evmImmW2)
+      else if (openStaticShapeOf baseE).isSome then
+        openStaticRead? env baseE 3 (if leaf == "w0" then 0 else if leaf == "w1" then 1 else 2)
       else
         match asVal env fuel baseE with
         | some b => some (flattenField b leaf)
@@ -830,12 +957,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogApproval256) ||
       (endsWith e ".evmLogTyped" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped) ||
-      (endsWith e ".evmOpenCall" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall) ||
-      (endsWith e ".evmOpenCallSuccess" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess) ||
-      (endsWith e ".evmOpenCallValue" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue) ||
+      isOpenCallPlanApp e ||
       (endsWith e ".evmSendEth" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmSendEth) ||
       (endsWith e ".evmSendEth256" ||
@@ -898,12 +1020,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       else if endsWith e ".evmLogTyped" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped then
       some (.lit 0)
-      else if endsWith e ".evmOpenCall" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall ||
-          endsWith e ".evmOpenCallSuccess" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
-          endsWith e ".evmOpenCallValue" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue then
+      else if isOpenCallPlanApp e then
       some (.lit 0)
       else if endsWith e ".evmLogTransfer256" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTransfer256 ||
@@ -1006,13 +1123,13 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       else none
     | _ => none
   else none
-end
-private def val (env : Environment) (e : Expr) : Option Ops.Val :=
+
+private partial def val (env : Environment) (e : Expr) : Option Ops.Val :=
   -- Bounded tree algorithms naturally compose several parent/child projections. Their elaborated
   -- `GetElem`/`toNat` wrappers are deeper than ordinary scalar expressions, but still finite.
   asVal env 32 e
 
-private def addr20Leaves (env : Environment) (e : Expr) : Ops.Val × Ops.Val × Ops.Val :=
+private partial def addr20Leaves (env : Environment) (e : Expr) : Ops.Val × Ops.Val × Ops.Val :=
   let e := unfoldUserHelpers env 8 e
   if isConstNamed e ``ProofForge.Evm.Runtime.evmCaller20 || endsWith e ".evmCaller20" then
     (.evmCallerW0, .evmCallerW1, .evmCallerW2)
@@ -1048,19 +1165,7 @@ private def addr20Leaves (env : Environment) (e : Expr) : Ops.Val × Ops.Val × 
       | some v => (flattenField v "w0", flattenField v "w1", flattenField v "w2")
       | none => (.field (.arg 0) "w0", .field (.arg 0) "w1", .field (.arg 0) "w2")
 
-private def addr20CtorFields (env : Environment) (e : Expr) : Option (Array Expr) :=
-  let e := peelLets (strip e)
-  match e.getAppFn.constName? with
-  | none => none
-  | some n =>
-    match env.find? n with
-    | some (.ctorInfo c) =>
-      if c.induct == addr20Name && e.getAppArgs.size ≥ 3 then
-        some (e.getAppArgs.extract (e.getAppArgs.size - 3) e.getAppArgs.size)
-      else none
-    | _ => none
-
-private def uint256Leaves (env : Environment) (e : Expr) :
+private partial def uint256Leaves (env : Environment) (e : Expr) :
     Ops.Val × Ops.Val × Ops.Val × Ops.Val :=
   let e := unfoldUserHelpers env 8 e
   let projConst : String → Name
@@ -1070,6 +1175,17 @@ private def uint256Leaves (env : Environment) (e : Expr) :
     | _ => ``ProofForge.Core.Value.UInt256.w3
   let proj (name : String) : Ops.Val :=
     (val env (mkApp (mkConst (projConst name)) e)).getD (flattenField (.arg 0) name)
+  -- A wide `if c then a else b` selects each limb: `wN (ite c a b)` is `ite c (wN a) (wN b)`,
+  -- which `asVal` already lowers to one `.select`.
+  if isConstNamed e ``ite && e.getAppArgs.size ≥ 5 then
+    let args := e.getAppArgs
+    let n := args.size
+    let limb (name : String) : Ops.Val :=
+      let ite := mkAppN (mkConst ``ite [Level.one]) #[mkConst ``UInt64, args[n - 4]!, args[n - 3]!,
+        mkApp (mkConst (projConst name)) args[n - 2]!, mkApp (mkConst (projConst name)) args[n - 1]!]
+      (val env ite).getD (flattenField (.arg 0) name)
+    (limb "w0", limb "w1", limb "w2", limb "w3")
+  else
   match uint256CtorFields env e with
   | some fields =>
     let leaf (i : Nat) : Ops.Val := (val env fields[i]!).getD (proj s!"w{i}")
@@ -1095,7 +1211,7 @@ private def uint256Leaves (env : Environment) (e : Expr) :
         (flattenField v "w0", flattenField v "w1", flattenField v "w2", flattenField v "w3")
       | none => (proj "w0", proj "w1", proj "w2", proj "w3")
 
-private def bytes32Leaves (env : Environment) (e : Expr) :
+private partial def bytes32Leaves (env : Environment) (e : Expr) :
     Ops.Val × Ops.Val × Ops.Val × Ops.Val :=
   let e := unfoldUserHelpers env 8 e
   let projConst : String → Name
@@ -1113,6 +1229,207 @@ private def bytes32Leaves (env : Environment) (e : Expr) :
     match val env e with
     | some v => (flattenField v "w0", flattenField v "w1", flattenField v "w2", flattenField v "w3")
     | none => (proj "w0", proj "w1", proj "w2", proj "w3")
+
+private partial def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar) (e : Expr) :
+    Option (Array Ops.Val) :=
+  match scalar with
+  | .boolean | .uint 8 | .uint 16 | .uint 32 | .uint 64 =>
+      (val env e).map (fun value => #[value])
+  | .uint 256 =>
+      let (a0, a1, a2, a3) := uint256Leaves env e
+      some #[a0, a1, a2, a3]
+  | .address 20 =>
+      let (w0, w1, w2) := addr20Leaves env e
+      some #[w0, w1, w2]
+  | .fixedBytes 32 =>
+      let (w0, w1, w2, w3) := bytes32Leaves env e
+      some #[w0, w1, w2, w3]
+  | scalar =>
+      if Evm.Codec.isWideIntegerCarrier scalar then
+        let (w0, w1, w2, w3) := uint256Leaves env e
+        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
+      else if Evm.Codec.isFixedBytesCarrier scalar then
+        let (w0, w1, w2, w3) := bytes32Leaves env e
+        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
+      else none
+
+/-- The limbs of a `BoundedBytes` open-call argument: the runtime length leaf, then
+`field.values[slot]` for every slot, read through the same `GetElem` path a source
+`bytes.values[0].toUInt64` takes. -/
+private partial def decodeBytesArgParts (env : Environment) (capacity : Nat) (field : Expr) :
+    Option (Array Ops.Val) := do
+  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.length)
+    #[mkNatLit capacity, field])
+  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.values)
+    #[mkNatLit capacity, field]
+  let mut parts : Array Ops.Val := #[length]
+  for slot in [0:capacity] do
+    let byte ← val env
+      (mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro])
+    parts := parts.push byte
+  return parts
+
+/-- Length limb plus every slot's scalar limbs, the same frame a log tail already carries. -/
+private partial def decodeArrayArgParts (env : Environment) (elementType : Expr)
+    (scalar : Core.Codec.Scalar) (capacity : Nat) (field : Expr) : Option (Array Ops.Val) := do
+  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedVec.length)
+    #[elementType, mkNatLit capacity, field])
+  let mut parts : Array Ops.Val := #[length]
+  for slot in [0:capacity] do
+    let slotParts ← eventPartsOf env scalar (boundedVecSlotExpr elementType capacity field slot)
+    parts := parts ++ slotParts
+  return parts
+
+/-- Preserve a typed open-call constructor as one ABI plan. Names, closed scalar types, the
+literal capacity of a `BoundedBytes` field, and the literal capacity of a `BoundedVec` field
+stay structured; unsupported shapes must not degrade to raw calldata. -/
+private partial def decodeOpenCallArgs (env : Environment) (applied : Expr) :
+    Except String (String × Array (Evm.OpenCall.Arg Ops.Val)) :=
+  let applied := peelLets (strip applied)
+  match applied.getAppFn.constName? with
+  | none => .error "open-call lost constructor"
+  | some ctorName =>
+    let name := Core.IR.lastName ctorName.toString
+    match env.find? ctorName with
+    | some (.ctorInfo ctor) =>
+      if name.isEmpty then
+        .error "open-call constructor name must be non-empty"
+      else if Lean.isStructure env ctor.induct then
+        .error "open-call payload must be an inductive constructor, not a structure"
+      else
+        match env.find? ctor.induct with
+        | some (.inductInfo info) =>
+          if info.numParams != 0 || info.numIndices != 0 || info.isRec then
+            .error "open-call payload must be a nonrecursive monomorphic enum"
+          else if applied.getAppArgs.size < ctor.numFields then
+            .error "open-call lost constructor fields"
+          else if ctor.numFields > Evm.OpenCall.maxArgWords then
+            .error "open-call supports at most eight ABI arguments"
+          else Id.run do
+            let mut type := ctor.type
+            let mut args : Array (Evm.OpenCall.Arg Ops.Val) := #[]
+            let mut names : Array String := #[]
+            for fieldIndex in [:ctor.numFields] do
+              let .forallE fieldName domain body binderInfo := strip type
+                | return .error "open-call lost field metadata"
+              unless explicitEventFieldBinder fieldName binderInfo do
+                return .error "open-call fields must be explicitly named"
+              let fieldName := fieldName.toString
+              if fieldName.isEmpty || names.contains fieldName then
+                return .error "open-call field names must be unique"
+              let some fieldExpr :=
+                  applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
+                | return .error "open-call lost field value"
+              let fieldExpr := peelLets (strip fieldExpr)
+              let arg : Evm.OpenCall.Arg Ops.Val ←
+                match boundedVecFieldType? domain with
+                | some (elementType, capacity) =>
+                  let some scalar := eventScalarOfLeanType elementType
+                    | return .error "open-call array element type is not a closed EVM scalar"
+                  let argType := Evm.OpenCall.ArgType.array capacity scalar
+                  unless argType.supported do
+                    return .error "open-call array argument exceeds the bounded array capacity"
+                  unless (args.filter (·.type.isArray)).size < Evm.OpenCall.maxArrayArgs do
+                    return .error "open-call supports at most two array arguments"
+                  unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxDynamicArgs do
+                    return .error "open-call supports at most three dynamic arguments"
+                  let some parts :=
+                      decodeArrayArgParts env elementType scalar capacity fieldExpr
+                    | return .error "open-call array argument is not a bounded vector value"
+                  pure { name := fieldName, type := argType, parts }
+                | none =>
+                  match boundedBytesFieldType? domain with
+                  | some capacity =>
+                    let argType := Evm.OpenCall.ArgType.bytes capacity
+                    unless argType.supported do
+                      return .error "open-call bytes argument exceeds the bounded bytes capacity"
+                    unless (args.filter (·.type.isBytes)).size < Evm.OpenCall.maxBytesArgs do
+                      return .error "open-call supports at most one bytes argument"
+                    unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxDynamicArgs do
+                      return .error "open-call supports at most three dynamic arguments"
+                    let some parts := decodeBytesArgParts env capacity fieldExpr
+                      | return .error "open-call bytes argument is not a bounded bytes value"
+                    pure { name := fieldName, type := argType, parts }
+                  | none =>
+                    let some scalar := eventScalarOfLeanType domain
+                      | return .error "open-call field type is not a closed EVM scalar"
+                    unless Evm.OpenCall.argScalarSupported scalar do
+                      return .error "open-call field type is not a closed EVM scalar"
+                    let some parts := eventPartsOf env scalar fieldExpr
+                      | return .error "open-call field is not a scalar value"
+                    pure { name := fieldName, type := .scalar scalar, parts }
+              names := names.push fieldName
+              args := args.push arg
+              type := body
+            if !Evm.OpenCall.isIdent name then
+              return .error "open-call constructor name must be a Solidity identifier"
+            .ok (name, args)
+        | _ => .error "open-call payload has no enum metadata"
+    | _ => .error "open-call lost constructor"
+
+private partial def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedOpenCall :=
+  let e := unfoldUserHelpers env 8 (peelLets (strip e))
+  if !isAnyOpenCallApp e then .notOpenCall
+  else
+    let args := e.getAppArgs
+    let hasValue := isEvmOpenCallValueApp e
+    let payloadIdx : Nat := 0
+    let valueIdx : Nat := 1
+    let targetIdx : Nat := if hasValue then 2 else 1
+    match nthFromEnd args targetIdx, nthFromEnd args payloadIdx,
+        (if hasValue then nthFromEnd args valueIdx else none) with
+    | some targetE, some payloadE, valueE? =>
+      match decodeOpenCallArgs env payloadE with
+      | .error reason => .unsupported reason
+      | .ok (name, callArgs) =>
+        let (t0, t1, t2) := addr20Leaves env targetE
+        let target := #[t0, t1, t2]
+        let valueParts :=
+          match valueE? with
+          | some valueE =>
+            let (v0, v1, v2, v3) := uint256Leaves env valueE
+            #[v0, v1, v2, v3]
+          | none => #[]
+        match openStaticShapeOf e with
+        | some shape =>
+          let query := shape.query name (callArgs.map (·.type))
+          let operands := target ++ callArgs.flatMap (·.parts)
+          if query.wellFormed && operands.size == query.arity then
+            .query query operands
+          else .unsupported "malformed open-call query"
+        | none =>
+          let plan : Evm.OpenCall.Plan Ops.Val := {
+            name
+            args := callArgs
+            target
+            kind := .call
+            policy :=
+              if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
+              else .contractSuccess
+            valueParts
+          }
+          if !plan.wellFormed (·.wellFormed IR.ValKind.arity) then
+            .unsupported "malformed open-call plan"
+          else if isEvmOpenCallMagicApp e then
+            -- The hook convention: the callee answers with the selector it was called by.
+            match plan.selectorHex (·.wellFormed IR.ValKind.arity) with
+            | .ok selector => .plan { plan with policy := .magicBytes4 selector }
+            | .error reason => .unsupported reason
+          else .plan plan
+    | _, _, _ => .unsupported "open-call lost target or payload"
+
+/-- A typed STATICCALL read in value position: limb `limb` of its result word, accepted only
+when the read's carrier has exactly `carrier` limbs (four for `UInt256`, three for `Address`,
+one for `Bool`). A CALL plan is an effect and never becomes a value. -/
+private partial def openStaticRead? (env : Environment) (e : Expr) (carrier limb : Nat) :
+    Option Ops.Val :=
+  match decodeOpenCallCtor env e with
+  | .query query operands =>
+      if query.limbCount == carrier && limb < carrier then
+        some (.ext (.evm (.component (.openCall { query with limb }))) operands)
+      else none
+  | _ => none
+end
 
 /-- Decode a scalar binding through pure explicitly-inline facade layers before substituting it.
 This preserves shared target reads without increasing the global value-decoder fuel or recognizing
@@ -1578,7 +1895,7 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       match asBoolVal env fuel' args[args.size - 4]!,
           asBoolVal env fuel' (peelProofLam args[args.size - 2]!),
           asBoolVal env fuel' (peelProofLam args[args.size - 1]!) with
-      | some cond, some thn, some els => some (.select .ne cond (.lit 0) thn els)
+      | some cond, some thn, some els => some (selectOrArm .ne cond (.lit 0) thn els)
       | _, _, _ => none
     else if isConstNamed e ``Decidable.decide && args.size ≥ 2 then
       asBoolVal env fuel' args[args.size - 2]!
@@ -1586,6 +1903,8 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
     else if endsWith e ".canSchedule" && args.size ≥ 3 then
       boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
+    else if openStaticShapeOf e == some .bool then
+      openStaticRead? env e 1 0
     else if isConstNamed e ``Eq && args.size ≥ 2 then
       let lhs := strip args[args.size - 2]!
       let rhs := strip args[args.size - 1]!
@@ -1714,67 +2033,6 @@ private def asConstructedOptionResult (env : Environment) : Nat → Expr →
         asConstructedOptionResult env fuel' e.getAppArgs[e.getAppArgs.size - 1]!
       else
         asOptionStorage env e
-
-/-- Flatten one `#v[…]` / `List.cons` element into ABI leaves. Static `Prod.mk` trees become
-ordered scalar limbs so a constructed `BoundedVec (α × β) n` publishes the same
-`length ‖ leaf₀ ‖ …` frame codecs already pack for `(α,β)[]`. -/
-private partial def flattenListElementVals (env : Environment) (fuel : Nat) (e : Expr) :
-    Array Ops.Val :=
-  match fuel with
-  | 0 => #[]
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``Prod.mk && e.getAppArgs.size ≥ 2 then
-      let args := e.getAppArgs
-      flattenListElementVals env fuel' args[args.size - 2]! ++
-        flattenListElementVals env fuel' args[args.size - 1]!
-    else
-      match val env e with
-      | some v => #[v]
-      | none => #[]
-
-/-- `#v[a, b, …]` = `Vector.mk (List.toArray (a :: b :: []))`。 -/
-private def collectListVals (env : Environment) (fuel : Nat) (e : Expr) : Array Ops.Val :=
-  match fuel with
-  | 0 => #[]
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``List.nil || endsWith e ".nil" then
-      #[]
-    else if isConstNamed e ``List.cons || endsWith e ".cons" then
-      let args := e.getAppArgs
-      if args.size ≥ 2 then
-        let head := args[args.size - 2]!
-        let tail := args[args.size - 1]!
-        let headVals := flattenListElementVals env 8 head
-        if headVals.isEmpty then collectListVals env fuel' tail
-        else headVals ++ collectListVals env fuel' tail
-      else #[]
-    else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
-      let args := e.getAppArgs
-      if args.size ≥ 1 then collectListVals env fuel' args[args.size - 1]! else #[]
-    else
-      flattenListElementVals env 8 e
-
-private def findListVals (env : Environment) (fuel : Nat) (e : Expr) : Option (Array Ops.Val) :=
-  match fuel with
-  | 0 => none
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``List.cons || endsWith e ".cons" then
-      -- Recognition may traverse the largest internal raw-storage key literal. Acceptance remains
-      -- owned by each consumer's capacity predicate after this syntax-only flattening step.
-      some (collectListVals env 80 e)
-    else
-      e.getAppArgs.findSome? (findListVals env fuel')
-
-private def asVectorLits (env : Environment) (e : Expr) : Option (Array Ops.Val) :=
-  let e := strip e
-  if isConstNamed e ``Vector.mk || endsWith e "Vector.mk" then
-    match findListVals env 16 e with
-    | some vs => if vs.isEmpty then none else some vs
-    | none => none
-  else none
 
 /-- Compiler-owned fixed-width scalar constructors are boundary values, not persistent State.
 Expose their ordered limbs directly so target codecs see the same frame as projected wide values. -/
@@ -2508,6 +2766,84 @@ private def boundedLengthVal (env : Environment) (e : Expr) : Option Ops.Val :=
       | some #[v] => some v
       | _ => none
 
+/-- Limbs of one constructed element whose type is `elem`. A wide element (`UInt256`, `Addr20`)
+publishes every limb, as the echo path does for an argument; any other element is one scalar. -/
+private def constructedElementVals (env : Environment) (elem : Option Expr) (e : Expr) :
+    Array Ops.Val :=
+  match elem with
+  | some t =>
+    if isUInt256Type t then
+      let (w0, w1, w2, w3) := uint256Leaves env e
+      #[w0, w1, w2, w3]
+    else if isAddr20Type t || endsWith t ".Address" then
+      let (a0, a1, a2) := addr20Leaves env e
+      #[a0, a1, a2]
+    else
+      ((val env e).map (#[·])).getD #[]
+  | none => ((val env e).map (#[·])).getD #[]
+
+/-- Flatten one `#v[…]` / `List.cons` element into ABI leaves. Static `Prod.mk` trees become
+ordered scalar limbs so a constructed `BoundedVec (α × β) n` publishes the same
+`length ‖ leaf₀ ‖ …` frame codecs already pack for `(α,β)[]`. -/
+private partial def flattenListElementVals (env : Environment) (elem : Option Expr) (fuel : Nat)
+    (e : Expr) : Array Ops.Val :=
+  match fuel with
+  | 0 => #[]
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``Prod.mk && e.getAppArgs.size ≥ 2 then
+      let args := e.getAppArgs
+      flattenListElementVals env none fuel' args[args.size - 2]! ++
+        flattenListElementVals env none fuel' args[args.size - 1]!
+    else
+      constructedElementVals env elem e
+
+/-- `#v[a, b, …]` = `Vector.mk (List.toArray (a :: b :: []))`。 -/
+private def collectListVals (env : Environment) (elem : Option Expr) (fuel : Nat) (e : Expr) :
+    Array Ops.Val :=
+  match fuel with
+  | 0 => #[]
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``List.nil || endsWith e ".nil" then
+      #[]
+    else if isConstNamed e ``List.cons || endsWith e ".cons" then
+      let args := e.getAppArgs
+      if args.size ≥ 2 then
+        let head := args[args.size - 2]!
+        let tail := args[args.size - 1]!
+        let headVals := flattenListElementVals env elem 8 head
+        if headVals.isEmpty then collectListVals env elem fuel' tail
+        else headVals ++ collectListVals env elem fuel' tail
+      else #[]
+    else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
+      let args := e.getAppArgs
+      if args.size ≥ 1 then collectListVals env elem fuel' args[args.size - 1]! else #[]
+    else
+      flattenListElementVals env elem 8 e
+
+private def findListVals (env : Environment) (elem : Option Expr) (fuel : Nat) (e : Expr) :
+    Option (Array Ops.Val) :=
+  match fuel with
+  | 0 => none
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``List.cons || endsWith e ".cons" then
+      -- Recognition may traverse the largest internal raw-storage key literal. Acceptance remains
+      -- owned by each consumer's capacity predicate after this syntax-only flattening step.
+      some (collectListVals env elem 80 e)
+    else
+      e.getAppArgs.findSome? (findListVals env elem fuel')
+
+private def asVectorLits (env : Environment) (elem : Option Expr) (e : Expr) :
+    Option (Array Ops.Val) :=
+  let e := strip e
+  if isConstNamed e ``Vector.mk || endsWith e "Vector.mk" then
+    match findListVals env elem 16 e with
+    | some vs => if vs.isEmpty then none else some vs
+    | none => none
+  else none
+
 private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
   let e := substLets 32 (strip e)
   let ctor ← e.getAppFn.constName?
@@ -2516,8 +2852,10 @@ private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array O
       info.induct == boundedStringName do none
   let args := e.getAppArgs
   unless args.size ≥ 2 do none
+  -- `BoundedVec.mk α capacity length values` names its element type; bytes and strings do not.
+  let elem := if info.induct == boundedVecName && args.size ≥ 4 then some (strip args[0]!) else none
   let length ← boundedLengthVal env args[args.size - 2]!
-  let values ← asVectorLits env args[args.size - 1]!
+  let values ← asVectorLits env elem args[args.size - 1]!
   return #[length] ++ values
 
 /-- Keep the historical scalar `okState` shorthand, but spell multi-leaf effectful results as the
@@ -2713,8 +3051,10 @@ private inductive DecodedError where
   | unsupported (reason : String)
 
 /-- Preserve direct parameterized source-error constructors as one target-neutral fixed frame.
-The first safe slice accepts one through four explicitly named UInt64 fields. Unsupported payloads
-must not silently degrade to selector-only errors. -/
+Accepts one through four explicitly named fields over the closed EVM scalar vocabulary shared
+with typed events (`eventScalarOfLeanType`), so an OZ-shaped error such as
+`ERC1155InvalidArrayLength(uint256,uint256)` keeps its selector. Unsupported payloads must not
+silently degrade to selector-only errors. -/
 private def decodeErrorCtor (env : Environment) (e : Expr) : DecodedError :=
   let e := peelControl 8 e
   if isExceptErrorHead e then
@@ -2732,7 +3072,7 @@ private def decodeErrorCtor (env : Environment) (e : Expr) : DecodedError :=
           else if name == "overflow" then
             .unsupported "overflow error constructor cannot carry fields"
           else if ctor.numFields > 4 then
-            .unsupported "parameterized source error supports at most four UInt64 fields"
+            .unsupported "parameterized source error supports at most four fields"
           else
             match env.find? ctor.induct with
             | some (.inductInfo info) =>
@@ -2749,17 +3089,19 @@ private def decodeErrorCtor (env : Environment) (e : Expr) : DecodedError :=
                     | return .unsupported "parameterized source error lost field metadata"
                   if fieldName.isAnonymous || binderInfo != .default then
                     return .unsupported "parameterized source error fields must be explicitly named"
-                  if domain.consumeMData.getAppFn.constName? != some ``UInt64 then
-                    return .unsupported "parameterized source error currently supports only UInt64 fields"
+                  let some scalar := eventScalarOfLeanType domain
+                    | return .unsupported "parameterized source error field type is not a closed EVM scalar"
+                  unless Evm.NativeFx.eventScalarSupported scalar do
+                    return .unsupported "parameterized source error field type is not a closed EVM scalar"
                   let fieldName := fieldName.toString
                   if fieldName.isEmpty || names.contains fieldName then
                     return .unsupported "parameterized source error field names must be unique"
                   let some fieldExpr := applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
                     | return .unsupported "parameterized source error lost field value"
-                  let some value := val env fieldExpr
+                  let some parts := eventPartsOf env scalar (peelLets (strip fieldExpr))
                     | return .unsupported "parameterized source error field is not a scalar value"
                   names := names.push fieldName
-                  errorArgs := errorArgs.push { name := fieldName, type := .uint64, parts := #[value] }
+                  errorArgs := errorArgs.push { name := fieldName, type := scalar, parts }
                   type := body
                 let frame : Core.Ops.ErrorFrame Ops.Val := { constructor := name, args := errorArgs }
                 if frame.wellFormed (·.wellFormed IR.ValKind.arity) then .typed frame
@@ -2771,8 +3113,21 @@ private def decodeErrorCtor (env : Environment) (e : Expr) : DecodedError :=
 
 private inductive DecodedEvent where
   | notEvent
-  | typed (frame : Core.Ops.EventFrame Ops.Val)
+  | typed (frame : Core.Ops.EventFrame Ops.Val) (tails : Array (Evm.NativeFx.LogTail Ops.Val))
   | unsupported (reason : String)
+
+/-- One bounded dynamic-array event field as an EVM log tail: the runtime length leaf plus the
+limbs of every slot in order. -/
+private def decodeLogTail (env : Environment) (name : String) (elementType : Expr)
+    (scalar : Core.Codec.Scalar) (capacity : Nat) (field : Expr) :
+    Option (Evm.NativeFx.LogTail Ops.Val) := do
+  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedVec.length)
+    #[elementType, mkNatLit capacity, field])
+  let mut elements : Array Ops.Val := #[]
+  for slot in [0:capacity] do
+    let parts ← eventPartsOf env scalar (boundedVecSlotExpr elementType capacity field slot)
+    elements := elements ++ parts
+  return { name, elementType := scalar, capacity, length, elements }
 
 private def isEvmLogTypedApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped || endsWith e ".evmLogTyped"
@@ -2800,61 +3155,10 @@ private def unwrapIndexedValue (env : Environment) (e : Expr) : Expr :=
         e.getAppArgs[e.getAppArgs.size - 1]!
       else e
 
-private def eventScalarOfLeanType (ty : Expr) : Option Core.Codec.Scalar :=
-  let ty := ty.consumeMData
-  match ty.getAppFn.constName? with
-  | some ``Bool => some .boolean
-  | some ``UInt8 => some .uint8
-  | some ``UInt16 => some .uint16
-  | some ``UInt32 => some .uint32
-  | some ``UInt64 => some .uint64
-  | some n =>
-      if n == addr20Name then some .address20
-      else if n == uint128Name then some .uint128
-      else if n == uint256Name || n == evmUInt256AliasName then some .uint256
-      else if n == fixedBytesName || n == evmBytes32AliasName then
-        (fixedBytesSize? ty).map (.fixedBytes ·)
-      else none
-  | none => none
-
-private def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar) (e : Expr) :
-    Option (Array Ops.Val) :=
-  match scalar with
-  | .boolean | .uint 8 | .uint 16 | .uint 32 | .uint 64 =>
-      (val env e).map (fun value => #[value])
-  | .uint 256 =>
-      let (a0, a1, a2, a3) := uint256Leaves env e
-      some #[a0, a1, a2, a3]
-  | .address 20 =>
-      let (w0, w1, w2) := addr20Leaves env e
-      some #[w0, w1, w2]
-  | .fixedBytes 32 =>
-      let (w0, w1, w2, w3) := bytes32Leaves env e
-      some #[w0, w1, w2, w3]
-  | scalar =>
-      if Evm.Codec.isWideIntegerCarrier scalar then
-        let (w0, w1, w2, w3) := uint256Leaves env e
-        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
-      else if Evm.Codec.isFixedBytesCarrier scalar then
-        let (w0, w1, w2, w3) := bytes32Leaves env e
-        some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
-      else none
-
-/-- User-written explicit binders only. Hygienic `_`, implicit/instance binders, and generated
-numeric names must not become ABI field names. -/
-private def explicitEventFieldBinder (fieldName : Name) (binderInfo : BinderInfo) : Bool :=
-  binderInfo == .default &&
-    !fieldName.isAnonymous &&
-    !fieldName.hasMacroScopes &&
-    !fieldName.isInaccessibleUserName &&
-    match fieldName with
-    | .str .anonymous s =>
-        !s.isEmpty && s.front.isAlpha && s.all (fun c => c.isAlphanum || c == '_')
-    | _ => false
-
 /-- Preserve a typed event constructor applied to `Runtime.evmLogTyped` / `Sdk.Event.emit` as one
-target-local frame. Names, ABI types, and `Indexed` flags stay structured; unsupported shapes
-must not degrade to closed LOG helpers. -/
+target-local frame. Names, ABI types, and `Indexed` flags stay structured; a non-indexed
+`BoundedVec` field over a closed scalar becomes a dynamic-array tail and must follow every
+scalar field; unsupported shapes must not degrade to closed LOG helpers. -/
 private def decodeEventPayload (env : Environment) (applied : Expr) : DecodedEvent :=
   let applied := peelLets (strip applied)
   match applied.getAppFn.constName? with
@@ -2875,6 +3179,7 @@ private def decodeEventPayload (env : Environment) (applied : Expr) : DecodedEve
           else Id.run do
             let mut type := ctor.type
             let mut eventArgs : Array (Core.Ops.EventArg Ops.Val) := #[]
+            let mut tails : Array (Evm.NativeFx.LogTail Ops.Val) := #[]
             let mut names : Array String := #[]
             for fieldIndex in [:ctor.numFields] do
               let .forallE fieldName domain body binderInfo := strip type
@@ -2885,28 +3190,43 @@ private def decodeEventPayload (env : Environment) (applied : Expr) : DecodedEve
                 match indexedPayloadType domain with
                 | some payload => (payload, true)
                 | none => (domain, false)
-              let some scalar := eventScalarOfLeanType fieldType
-                | return .unsupported "typed event field type is not a closed EVM scalar"
-              unless Evm.NativeFx.eventScalarSupported scalar do
-                return .unsupported "typed event field type is not a closed EVM scalar"
               let fieldName := fieldName.toString
               if fieldName.isEmpty || names.contains fieldName then
                 return .unsupported "typed event field names must be unique"
               let some fieldExpr :=
                   applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
                 | return .unsupported "typed event lost field value"
-              let fieldExpr :=
-                if indexed then unwrapIndexedValue env fieldExpr else peelLets (strip fieldExpr)
-              let some parts := eventPartsOf env scalar fieldExpr
-                | return .unsupported "typed event field is not a scalar value"
               names := names.push fieldName
-              eventArgs := eventArgs.push
-                { name := fieldName, type := scalar, parts, indexed }
               type := body
+              match boundedVecFieldType? fieldType with
+              | some (elementType, capacity) =>
+                if indexed then
+                  return .unsupported "typed event dynamic-array field cannot be indexed"
+                let some scalar := eventScalarOfLeanType elementType
+                  | return .unsupported "typed event array element type is not a closed EVM scalar"
+                unless Evm.NativeFx.eventScalarSupported scalar do
+                  return .unsupported "typed event array element type is not a closed EVM scalar"
+                let some tail := decodeLogTail env fieldName elementType scalar capacity
+                    (peelLets (strip fieldExpr))
+                  | return .unsupported "typed event array field is not a bounded vector value"
+                tails := tails.push tail
+              | none =>
+                unless tails.isEmpty do
+                  return .unsupported "typed event dynamic-array fields must be the last fields"
+                let some scalar := eventScalarOfLeanType fieldType
+                  | return .unsupported "typed event field type is not a closed EVM scalar"
+                unless Evm.NativeFx.eventScalarSupported scalar do
+                  return .unsupported "typed event field type is not a closed EVM scalar"
+                let fieldExpr :=
+                  if indexed then unwrapIndexedValue env fieldExpr else peelLets (strip fieldExpr)
+                let some parts := eventPartsOf env scalar fieldExpr
+                  | return .unsupported "typed event field is not a scalar value"
+                eventArgs := eventArgs.push
+                  { name := fieldName, type := scalar, parts, indexed }
             let frame : Core.Ops.EventFrame Ops.Val := { constructor := name, args := eventArgs }
             if frame.wellFormed (·.wellFormed IR.ValKind.arity) &&
-                Evm.NativeFx.Call.logTypedWellFormed (·.wellFormed IR.ValKind.arity) frame then
-              .typed frame
+                Evm.NativeFx.Call.logTypedWellFormed (·.wellFormed IR.ValKind.arity) frame tails then
+              .typed frame tails
             else .unsupported "malformed typed event frame"
         | _ => .unsupported "typed event has no enum metadata"
     | _ => .unsupported "typed event lost constructor"
@@ -2928,7 +3248,7 @@ private def findTypedEventFailure (env : Environment) (e : Expr) : Option String
       let e := e.consumeMData
       match decodeEventCtor env e with
       | .unsupported reason => some reason
-      | .typed _ => none
+      | .typed .. => none
       | .notEvent =>
         if let some (_, unfolded) := unfoldUserHelper env e then
           walk fuel' unfolded
@@ -2940,143 +3260,6 @@ private def findTypedEventFailure (env : Environment) (e : Expr) : Option String
           | .app f a => walk fuel' f <|> walk fuel' a
           | _ => none
   walk 24 e
-
-private inductive DecodedOpenCall where
-  | notOpenCall
-  | plan (plan : Evm.OpenCall.Plan Ops.Val)
-  | query (query : Evm.OpenCall.Query) (operands : Array Ops.Val)
-  | unsupported (reason : String)
-
-private def nthFromEnd (args : Array Expr) (n : Nat) : Option Expr :=
-  if args.size ≥ n + 1 then some args[args.size - 1 - n]! else none
-
-private def isEvmOpenCallApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall || endsWith e ".evmOpenCall"
-
-private def isEvmOpenCallSuccessApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
-    endsWith e ".evmOpenCallSuccess"
-
-private def isEvmOpenCallValueApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
-    endsWith e ".evmOpenCallValue"
-
-/-- Runtime stub behind each typed STATICCALL read shape. -/
-private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
-  (``ProofForge.Evm.Runtime.evmOpenStaticWord, .word),
-  (``ProofForge.Evm.Runtime.evmOpenStaticWords2, .words2),
-  (``ProofForge.Evm.Runtime.evmOpenStaticWords3, .words3),
-  (``ProofForge.Evm.Runtime.evmOpenStaticWords4, .words4),
-  (``ProofForge.Evm.Runtime.evmOpenStaticBool, .bool),
-  (``ProofForge.Evm.Runtime.evmOpenStaticAddress, .address)
-]
-
-private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
-  (openStaticStubs.find? fun (stub, _) =>
-    isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
-
-private def isAnyOpenCallApp (e : Expr) : Bool :=
-  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
-    (openStaticShapeOf e).isSome
-
-/-- Preserve a typed open-call constructor as one ABI plan. Names and closed scalar types stay
-structured; unsupported shapes must not degrade to raw calldata. -/
-private def decodeOpenCallArgs (env : Environment) (applied : Expr) :
-    Except String (String × Array (Evm.OpenCall.Arg Ops.Val)) :=
-  let applied := peelLets (strip applied)
-  match applied.getAppFn.constName? with
-  | none => .error "open-call lost constructor"
-  | some ctorName =>
-    let name := Core.IR.lastName ctorName.toString
-    match env.find? ctorName with
-    | some (.ctorInfo ctor) =>
-      if name.isEmpty then
-        .error "open-call constructor name must be non-empty"
-      else if Lean.isStructure env ctor.induct then
-        .error "open-call payload must be an inductive constructor, not a structure"
-      else
-        match env.find? ctor.induct with
-        | some (.inductInfo info) =>
-          if info.numParams != 0 || info.numIndices != 0 || info.isRec then
-            .error "open-call payload must be a nonrecursive monomorphic enum"
-          else if applied.getAppArgs.size < ctor.numFields then
-            .error "open-call lost constructor fields"
-          else if ctor.numFields > Evm.OpenCall.maxArgWords then
-            .error "open-call supports at most eight ABI arguments"
-          else Id.run do
-            let mut type := ctor.type
-            let mut args : Array (Evm.OpenCall.Arg Ops.Val) := #[]
-            let mut names : Array String := #[]
-            for fieldIndex in [:ctor.numFields] do
-              let .forallE fieldName domain body binderInfo := strip type
-                | return .error "open-call lost field metadata"
-              unless explicitEventFieldBinder fieldName binderInfo do
-                return .error "open-call fields must be explicitly named"
-              let some scalar := eventScalarOfLeanType domain
-                | return .error "open-call field type is not a closed EVM scalar"
-              unless Evm.OpenCall.argScalarSupported scalar do
-                return .error "open-call field type is not a closed EVM scalar"
-              let fieldName := fieldName.toString
-              if fieldName.isEmpty || names.contains fieldName then
-                return .error "open-call field names must be unique"
-              let some fieldExpr :=
-                  applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
-                | return .error "open-call lost field value"
-              let some parts := eventPartsOf env scalar (peelLets (strip fieldExpr))
-                | return .error "open-call field is not a scalar value"
-              names := names.push fieldName
-              args := args.push { name := fieldName, type := scalar, parts }
-              type := body
-            if !Evm.OpenCall.isIdent name then
-              return .error "open-call constructor name must be a Solidity identifier"
-            .ok (name, args)
-        | _ => .error "open-call payload has no enum metadata"
-    | _ => .error "open-call lost constructor"
-
-private def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedOpenCall :=
-  let e := unfoldUserHelpers env 8 (peelLets (strip e))
-  if !isAnyOpenCallApp e then .notOpenCall
-  else
-    let args := e.getAppArgs
-    let hasValue := isEvmOpenCallValueApp e
-    let payloadIdx : Nat := 0
-    let valueIdx : Nat := 1
-    let targetIdx : Nat := if hasValue then 2 else 1
-    match nthFromEnd args targetIdx, nthFromEnd args payloadIdx,
-        (if hasValue then nthFromEnd args valueIdx else none) with
-    | some targetE, some payloadE, valueE? =>
-      match decodeOpenCallArgs env payloadE with
-      | .error reason => .unsupported reason
-      | .ok (name, callArgs) =>
-        let (t0, t1, t2) := addr20Leaves env targetE
-        let target := #[t0, t1, t2]
-        let valueParts :=
-          match valueE? with
-          | some valueE =>
-            let (v0, v1, v2, v3) := uint256Leaves env valueE
-            #[v0, v1, v2, v3]
-          | none => #[]
-        match openStaticShapeOf e with
-        | some shape =>
-          let query := shape.query name (callArgs.map (·.type))
-          let operands := target ++ callArgs.flatMap (·.parts)
-          if query.wellFormed && operands.size == query.arity then
-            .query query operands
-          else .unsupported "malformed open-call query"
-        | none =>
-          let plan : Evm.OpenCall.Plan Ops.Val := {
-            name
-            args := callArgs
-            target
-            kind := .call
-            policy :=
-              if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
-              else .contractSuccess
-            valueParts
-          }
-          if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
-          else .unsupported "malformed open-call plan"
-    | _, _, _ => .unsupported "open-call lost target or payload"
 
 private def findOpenCallFailure (env : Environment) (e : Expr) : Option String :=
   let rec walk (fuel : Nat) (e : Expr) : Option String :=
@@ -3098,6 +3281,70 @@ private def findOpenCallFailure (env : Environment) (e : Expr) : Option String :
           | .app f a => walk fuel' f <|> walk fuel' a
           | _ => none
   walk 24 e
+
+/-- Where a CALL's `UInt64` may stand. `word` is the spine from the body to its result word:
+through `Except.ok`, the second component of the result pair, `Effect.thenTrue`, the branches
+of an `if`, a lambda body, and a `let` body. There the carrier is returned and never read.
+`operand` is every side position: an operator or comparison argument, an `if` condition, a call
+argument, a state field, and the value of a `let` whose binder is dropped. In an operand the
+carrier's constant would replace the callee's answer, or the effect would be sequenced as a
+statement the decoder does not keep (a dropped `let` above an `if` lost the `if` and its
+stores, and `if Effect.thenTrue effect then …` never ran the CALL). -/
+private inductive CarrierSlot where
+  | word
+  | operand
+
+private def carrierMisuseReason : String :=
+  "CALL carrier out of place: the `UInt64` from `OpenCall.call`, `callSuccess`, `callValue`, or \
+  `callMagic` is a sequencing carrier the call policy already decided, not the callee's word; it \
+  may stand \
+  only as the entry's result word, alone or under `Effect.thenTrue` (`Effect.abort`, \
+  `Effect.ensure`); computing with it, branching on it, or binding it with `let` and dropping \
+  it is refused; read the callee through a STATICCALL"
+
+/-- A CALL plan in an `operand` slot, or inside any open call's own arguments. `Effect.thenTrue`
+is matched by name before unfolding: unfolded it is `(effect ||| 1) != 0`, an operator over the
+carrier. A `let` whose binder is used is walked with the value in place of the binder, so the
+use sites decide; a `let` whose binder is dropped walks the value as an operand. `decodeBody`
+asks this once over the whole method body, so an `if` condition, a `let` value, and a branch are
+all covered before any decoder path substitutes or folds them. -/
+def findOpenCallCarrierMisuse (env : Environment) (e : Expr) : Option String :=
+  let rec walk (fuel : Nat) (slot : CarrierSlot) (e : Expr) : Option String :=
+    match fuel with
+    | 0 => none
+    | fuel' + 1 =>
+      let e := e.consumeMData
+      let operands (args : Array Expr) : Option String := args.findSome? (walk fuel' .operand)
+      let last (args : Array Expr) : Expr := args[args.size - 1]!
+      match decodeOpenCallCtor env e with
+      | .plan _ =>
+          match slot with
+          | .word => operands e.getAppArgs
+          | .operand => some carrierMisuseReason
+      | .query _ _ => operands e.getAppArgs
+      | .unsupported _ => none
+      | .notOpenCall =>
+        let args := e.getAppArgs
+        if (endsWith e ".Effect.thenTrue" || isExceptOkHead e) && args.size ≥ 1 then
+          walk fuel' slot (last args)
+        else if let some (_, unfolded) := unfoldUserHelper env e then
+          walk fuel' slot unfolded
+        else if (isConstNamed e ``ite || isConstNamed e ``dite) && args.size ≥ 5 then
+          walk fuel' .operand args[args.size - 4]! <|>
+            walk fuel' slot args[args.size - 2]! <|> walk fuel' slot (last args)
+        else if isConstNamed e ``Prod.mk && args.size ≥ 2 then
+          walk fuel' .operand args[args.size - 2]! <|> walk fuel' slot (last args)
+        else
+          match e with
+          | .letE _ _ value body _ =>
+              if body.hasLooseBVar 0 then walk fuel' slot (body.instantiate1 value)
+              else walk fuel' .operand value <|> walk fuel' slot body
+          | .lam _ _ body _ => walk fuel' slot body
+          | .app .. =>
+              if e.getAppFn.isLambda then walk fuel' slot e.headBeta else operands args
+          | .proj _ _ struct => walk fuel' .operand struct
+          | _ => none
+  walk 256 .word e
 
 private def findTypedSourceFailure (env : Environment) (e : Expr) : Option String :=
   findTypedEventFailure env e <|> findOpenCallFailure env e
@@ -3744,14 +3991,9 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmLogTyped ||
       endsWith app ".evmLogTyped" then
     match decodeEventCtor env app with
-    | .typed frame => some (.evmLogTyped frame)
+    | .typed frame tails => some (.evmLogTyped frame tails)
     | .unsupported _ | .notEvent => none
-  else if isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCall ||
-      endsWith app ".evmOpenCall" ||
-      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
-      endsWith app ".evmOpenCallSuccess" ||
-      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCallValue ||
-      endsWith app ".evmOpenCallValue" then
+  else if isOpenCallPlanApp app then
     match decodeOpenCallCtor env app with
     | .plan plan => some (.evmComponent (.openCall (.invoke plan)))
     | .unsupported _ | .notOpenCall | .query _ _ => none
@@ -3977,26 +4219,52 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
 
 /-- Collect EVM effect leaves by unfolding source facades into `ProofForge.Evm.Runtime`
 stubs. New closed recipes register in `opOfRuntimeApp`; this walker does not grow a name
-table. -/
-private def collectEvmEffectOps (env : Environment) (e : Expr) : Array Ops.Op :=
-  let rec walk (fuel : Nat) (e : Expr) (acc : Array Ops.Op) : Array Ops.Op :=
+table. An `if` whose branches carry effects becomes a structured `ite` so the effect runs only
+on its branch; `none` means a branch has effects but the condition has no `Cmp` or bit
+lowering, which the caller reports instead of flattening the effect into the straight line. -/
+private def collectEvmEffectOps (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
+  let rec walk (fuel : Nat) (e : Expr) (acc : Array Ops.Op) : Option (Array Ops.Op) :=
     match fuel with
-    | 0 => acc
+    | 0 => some acc
     | fuel' + 1 =>
       let e := e.consumeMData
       match opOfRuntimeApp env e with
-      | some op => acc.push op
+      | some op => some (acc.push op)
       | none =>
         if let some (_, unfolded) := unfoldUserHelper env e then
           walk fuel' unfolded acc
+        else if (isConstNamed e ``ite || isConstNamed e ``dite) && e.getAppArgs.size ≥ 5 then
+          let args := e.getAppArgs
+          let n := args.size
+          match walk fuel' args[n - 2]! #[], walk fuel' args[n - 1]! #[] with
+          | some #[], some #[] => some acc
+          | some thn, some els =>
+            match asCmp env args[n - 4]! with
+            | some (cmp, l, r) => some (acc.push (.ite cmp l r thn els))
+            | none =>
+              match asVal env 32 args[n - 4]! with
+              | some c => some (acc.push (.ite .ne c (.lit 0) thn els))
+              | none => none
+          | _, _ => none
         else
           match e with
-          | .letE _ _ value body _ =>
-            walk fuel' (body.instantiate1 value) (walk fuel' value acc)
+          | .letE _ _ value body _ => do
+            -- A `let` runs its effects once. Substituting an effectful value into the body
+            -- collected them again at every use, so NineLink spent an allowance twice.
+            let valueOps ← walk fuel' value #[]
+            let bound := if valueOps.isEmpty then value else mkConst ``Unit.unit
+            walk fuel' (body.instantiate1 bound) (acc ++ valueOps)
           | .lam _ _ body _ => walk fuel' body acc
-          | .app f a => walk fuel' a (walk fuel' f acc)
-          | _ => acc
+          | .app f a => do walk fuel' a (← walk fuel' f acc)
+          | _ => some acc
   walk 24 e #[]
+
+/-- The reason `collectEvmEffectOps` refused `e`, for the boundary error. -/
+private def conditionalEffectFailure (env : Environment) (e : Expr) : Option String :=
+  if (collectEvmEffectOps env e).isNone then
+    some "EVM effects under an `if` whose condition has no comparison or Bool lowering; \
+      branch at the `Except` result or spell the condition as a comparison"
+  else none
 
 /-- Statement-level EVM queries. 256-bit reads expand to four limb returns; scalar map
 gets remain as component Calls so the emitter does not grow a parallel family. New query
@@ -4225,6 +4493,11 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
         ]
   else none
 
+/-- The query a body *is*, reached through `let` bodies, lambdas, and inline facades. A query
+under an operator (`UInt256.ge (staticWord ..) amt`) or bound by a `let` the body computes with
+is not the body's result, so the walk answers `none` there and the value decoders own the
+expression; descending into argument positions returned the read's limbs and dropped the
+comparison around them. -/
 private def collectEvmQueryOps (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
   let rec walk (fuel : Nat) (e : Expr) : Option (Array Ops.Op) :=
     match fuel with
@@ -4238,11 +4511,29 @@ private def collectEvmQueryOps (env : Environment) (e : Expr) : Option (Array Op
           walk fuel' unfolded
         else
           match e with
-          | .letE _ _ value body _ =>
-            walk fuel' value <|> walk fuel' (body.instantiate1 value)
+          | .letE _ _ value body _ => walk fuel' (body.instantiate1 value)
           | .lam _ _ body _ => walk fuel' body
-          | .app f a => walk fuel' f <|> walk fuel' a
           | _ => none
+  walk 24 e
+
+/-- Whether `e` contains a runtime query anywhere, including under operators and inside `let`
+values. The effectful-`let` tests ask this, so a let-bound read stays one local instead of being
+substituted into every use and read again there. -/
+private def containsEvmQuery (env : Environment) (e : Expr) : Bool :=
+  let rec walk (fuel : Nat) (e : Expr) : Bool :=
+    match fuel with
+    | 0 => false
+    | fuel' + 1 =>
+      let e := e.consumeMData
+      (queryOfRuntimeApp env e).isSome ||
+        match unfoldUserHelper env e with
+        | some (_, unfolded) => walk fuel' unfolded
+        | none =>
+          match e with
+          | .letE _ _ value body _ => walk fuel' value || walk fuel' (body.instantiate1 value)
+          | .lam _ _ body _ => walk fuel' body
+          | .app f a => walk fuel' f || walk fuel' a
+          | _ => false
   walk 24 e
 
 private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
@@ -4254,7 +4545,7 @@ private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   | some (.evmLog _ v) => v
   | some (.evmLogTransfer256 _ _ _ _ _ _ a0 _ _ _) => a0
   | some (.evmLogApproval256 _ _ _ _ _ _ a0 _ _ _) => a0
-  | some (.evmLogTyped _) => .lit 0
+  | some (.evmLogTyped ..) => .lit 0
   | some (.evmRevertInsufficient h0 _ _ _ _ _ _ _) => h0
   | some (.evmRevertUnauthorized w0 _ _) => w0
   | some .evmRevertZeroAddress => .lit 0
@@ -4292,13 +4583,25 @@ private partial def isBoundedStringReturn (env : Environment) (fuel : Nat) (e : 
           isBoundedStringReturn env fuel' (body.instantiate1 value)
       | _ => false
 
+/-- `e` as an EVM statement: its effect writes followed by the result, or the query it is. -/
 private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
   if isBoundedStringReturn env 32 e then none else
-  let writes := collectEvmEffectOps env e
-  if writes.size ≥ 1 then
-    some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
-  else
-    collectEvmQueryOps env e
+  -- An `Except.error` head is a terminal the error decoder owns. Without this gate the query
+  -- scan claimed the map reads inside an error field, and a typed
+  -- `ERC1155InsufficientBalance(sender, balanceOf .., ..)` came back as four `returnU64` limbs.
+  if isExceptErrorHead (peelControl 8 e) then none else
+  match collectEvmEffectOps env e with
+  | none => none
+  | some writes =>
+    if writes.size ≥ 1 then
+      some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
+    else
+      collectEvmQueryOps env e
+
+/-- Whether `e` performs an effect or reads through a query anywhere. A `let` bound to such a
+value must stay a local: substituting it would repeat the call or read at every use. -/
+private def containsEvmEffect (env : Environment) (e : Expr) : Bool :=
+  (decodeEvmEffect env e).isSome || containsEvmQuery env e
 
 /-- Flatten one logical bounded byte value into `length, byte₀ … byteₙ₋₁`. Constructors already
 carry literal leaves; a parameter or local root is projected so the target input binder can later
@@ -4467,7 +4770,7 @@ def zetaPureHeadLets (env : Environment) (fuel : Nat) (e : Expr) : Expr :=
     match strip e with
     | .letE _ _ value body _ =>
         let effectful :=
-          (decodeEvmEffect env value).isSome || (findTypedSourceFailure env value).isSome ||
+          containsEvmEffect env value || (findTypedSourceFailure env value).isSome ||
             (findForIn env value).isSome || (findForBodyExpr env value).isSome
         -- A scalar captured before an effect must remain a local: substituting its state-field read
         -- through the call can move that read after a later state write.
@@ -5205,6 +5508,8 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
   -- 必须在 peelLets 之前找效应：剥掉 `have sent := …` 后调用就没了。
   if let some reason := findTypedSourceFailure env e then
     .error s!"extract/unsupported: {reason}"
+  else if let some reason := conditionalEffectFailure env e then
+    .error s!"extract/unsupported: {reason}"
   else if let some vs := asBoundedCtorFields env e then
     .ok (returnStatesOf vs)
   else if let some ops := decodeEvmEffect env e then
@@ -5567,7 +5872,7 @@ private def nestedSequencedScalarHelper? (env : Environment) (e : Expr) : Option
             match env.find? name with
             | some (.defnInfo info) =>
                 if (resultType 16 info.type).consumeMData.getAppFn.constName? == some ``UInt64 &&
-                    (decodeEvmEffect env unfolded).isNone &&
+                    !containsEvmEffect env unfolded &&
                     (findTypedSourceFailure env unfolded).isNone &&
                     ((findForIn env unfolded).isSome || (findForBodyExpr env unfolded).isSome) then
                   some candidate
@@ -5599,7 +5904,7 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
     match strip e with
     | .letE _ ty value body _ =>
       let effectful :=
-        (decodeEvmEffect env value).isSome || (findTypedSourceFailure env value).isSome ||
+        containsEvmEffect env value || (findTypedSourceFailure env value).isSome ||
           (findForIn env value).isSome || (findForBodyExpr env value).isSome
       let scalarControlProducer := isSequencedScalarProducer env ty value
       if scalarControlProducer then

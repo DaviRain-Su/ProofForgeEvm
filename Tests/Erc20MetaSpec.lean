@@ -59,7 +59,7 @@ private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     Array (ProofForge.Core.Ops.EventFrame ProofForge.Extract.IR.Val) :=
   ops.foldl (init := #[]) fun frames op =>
     let frames := match op with
-      | .ext (.evm (.component (.nativeFx (.logTyped frame)))) => frames.push frame
+      | .ext (.evm (.component (.nativeFx (.logTyped frame _)))) => frames.push frame
       | _ => frames
     match op with
     | .ite _ _ _ yes no => frames ++ sourceTypedFrames yes ++ sourceTypedFrames no
@@ -113,7 +113,7 @@ elab "#pf_erc20_meta_check" : command => do
     | .ok program => pure program
     | .error reason => throwError reason
   let digest := IR.digestHex program
-  unless digest == "b86fa0708b74fc2c" do
+  unless digest == "9e1221ef24a9c091" do
     throwError s!"Erc20Meta digest mismatch: {digest}"
   let want := #["allowance", "approve", "balanceOf", "decimals", "initialize",
     "mint", "name", "ownerOf", "symbol", "totalSupply", "transfer", "transferFrom"]

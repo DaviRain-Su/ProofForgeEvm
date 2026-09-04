@@ -27,10 +27,14 @@ open Lean Elab Command
 #guard Erc721.packAddress ⟨1, 2, 3⟩ == (⟨1, 2, 3, 0⟩ : UInt256)
 #guard Erc721.unpackAddress ⟨1, 2, 3, 9⟩ == (⟨1, 2, 3⟩ : Address)
 #guard Erc721.one == (⟨1, 0, 0, 0⟩ : UInt256)
+#guard Erc721.onReceivedSelector == (⟨0x027a0b15, 0, 0, 0⟩ : Bytes4)
 
 #guard Erc721.Log.transfer ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
 #guard Erc721.Log.approval ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
 #guard Erc721.Log.approvalForAll ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ true == 0
+-- The host stub has no code behind any address, so the receiver check is the skipped branch.
+#guard Erc721.checkOnReceived ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 8, 9⟩ ⟨7, 0, 0, 0⟩
+  { length := 0, values := Vector.replicate 32 0 } == 0
 
 #guard Examples.Evm.Collectible.owners.base == 0
 #guard Examples.Evm.Collectible.approvals.base == 1
@@ -42,8 +46,8 @@ open Lean Elab Command
 #guard Examples.Evm.Badge.balances.base == 3
 
 -- Closed ERC-20-shaped programs keep their digests; this slice only refreshes Collectible/Badge.
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
-#guard Registry.digestOf "Erc20Meta" == some "b86fa0708b74fc2c"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
+#guard Registry.digestOf "Erc20Meta" == some "9e1221ef24a9c091"
 
 private def transferAbi : String :=
   "{\"type\":\"event\",\"name\":\"Transfer\",\"inputs\":[" ++
@@ -63,6 +67,13 @@ private def approvalForAllAbi : String :=
     "{\"name\":\"operator\",\"type\":\"address\",\"indexed\":true}," ++
     "{\"name\":\"approved\",\"type\":\"bool\",\"indexed\":false}],\"anonymous\":false}"
 
+/-- `safeTransferFrom(address,address,uint256,bytes)` answering the `Effect.thenTrue` bool. -/
+private def safeTransferFromAbi : String :=
+  "{\"type\":\"function\",\"name\":\"safeTransferFrom\",\"stateMutability\":\"nonpayable\"," ++
+    "\"inputs\":[{\"name\":\"arg0\",\"type\":\"address\"},{\"name\":\"arg1\",\"type\":\"address\"}," ++
+    "{\"name\":\"arg2\",\"type\":\"uint256\"},{\"name\":\"arg3\",\"type\":\"bytes\"}]," ++
+    "\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}]}"
+
 private def transferTopic : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString "Transfer(address,address,uint256)"
 
@@ -76,12 +87,23 @@ private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     Array (ProofForge.Core.Ops.EventFrame ProofForge.Extract.IR.Val) :=
   ops.foldl (init := #[]) fun frames op =>
     let frames := match op with
-      | .ext (.evm (.component (.nativeFx (.logTyped frame)))) => frames.push frame
+      | .ext (.evm (.component (.nativeFx (.logTyped frame _)))) => frames.push frame
       | _ => frames
     match op with
     | .ite _ _ _ yes no => frames ++ sourceTypedFrames yes ++ sourceTypedFrames no
     | .forBody _ body => frames ++ sourceTypedFrames body
     | _ => frames
+
+private partial def sourceOpenCalls (ops : Array ProofForge.Extract.IR.Op) :
+    Array (OpenCall.Plan ProofForge.Extract.IR.Val) :=
+  ops.foldl (init := #[]) fun acc op =>
+    let acc := match op with
+      | .ext (.evm (.component (.openCall (.invoke plan)))) => acc.push plan
+      | _ => acc
+    match op with
+    | .ite _ _ _ yes no => acc ++ sourceOpenCalls yes ++ sourceOpenCalls no
+    | .forBody _ body => acc ++ sourceOpenCalls body
+    | _ => acc
 
 private def eventMatches (frame : ProofForge.Core.Ops.EventFrame V)
     (constructor : String) (fields : Array (String × Bool)) : Bool :=
@@ -136,12 +158,34 @@ private def expectCollectibleEvents : CommandElabM Unit := do
       eventMatches transferFrames[0]! "Transfer"
         #[("from", true), ("to", true), ("tokenId", true)] do
     throwError s!"Collectible.transferFrom Transfer frame diverged: {repr transferFrames}"
+  let safeOps ← methodOps source "safeTransferFrom"
+  let safeFrames := sourceTypedFrames safeOps
+  unless safeFrames.size == 1 &&
+      eventMatches safeFrames[0]! "Transfer"
+        #[("from", true), ("to", true), ("tokenId", true)] do
+    throwError s!"Collectible.safeTransferFrom Transfer frame diverged: {repr safeFrames}"
+  -- The receiver hook is one CALL plan whose magic is its own selector, four head words plus the
+  -- 32-byte bounded `data` tail (4 + 4 * 32 + 32 = 164 static calldata bytes).
+  let hookSelector := ProofForge.Evm.Keccak.selector "onERC721Received"
+    #["address", "address", "uint256", "bytes"]
+  unless hookSelector == "150b7a02" do
+    throwError s!"onERC721Received selector is {hookSelector}"
+  let hookPlans := sourceOpenCalls safeOps
+  unless hookPlans.size == 1 && hookPlans[0]!.name == "onERC721Received" &&
+      hookPlans[0]!.kind == .call && hookPlans[0]!.policy == .magicBytes4 hookSelector &&
+      hookPlans[0]!.args.size == 4 &&
+      hookPlans[0]!.args[0]!.name == "operator" && hookPlans[0]!.args[1]!.name == "from" &&
+      hookPlans[0]!.args[2]!.name == "tokenId" && hookPlans[0]!.args[3]!.name == "data" &&
+      hookPlans[0]!.args[3]!.type == .bytes 32 && hookPlans[0]!.inSize == 164 &&
+      hookPlans[0]!.abiTypes matches .ok #["address", "address", "uint256", "bytes"] do
+    throwError s!"Collectible.safeTransferFrom hook plan diverged: {repr hookPlans}"
   let evm ←
     match IR.fromExtracted source with
     | .ok program => pure program
     | .error reason => throwError reason
   expectMethodNames evm
-    #["mint", "approve", "transferFrom", "ownerOf", "getApproved", "balanceOf", "supportsInterface"]
+    #["mint", "approve", "transferFrom", "safeTransferFrom", "ownerOf", "getApproved", "balanceOf",
+      "supportsInterface"]
   let abi ←
     match Emit.emitAbiChecked evm with
     | .ok abi => pure abi
@@ -150,6 +194,8 @@ private def expectCollectibleEvents : CommandElabM Unit := do
       !abi.contains approvalForAllAbi &&
       !abi.contains "\"name\":\"value\"" do
     throwError s!"Collectible ABI lost ERC-721 Transfer/Approval:\n{abi}"
+  unless abi.contains safeTransferFromAbi do
+    throwError s!"Collectible ABI lost safeTransferFrom(address,address,uint256,bytes):\n{abi}"
   let yul ←
     match Emit.emitYul evm with
     | .ok yul => pure yul
@@ -159,6 +205,11 @@ private def expectCollectibleEvents : CommandElabM Unit := do
       !yul.contains "log3(" &&
       !yul.contains approvalForAllTopic do
     throwError "Collectible Yul omitted LOG4 Transfer/Approval"
+  -- OZ order: the recipient's code size decides whether the hook runs, and a hook answer other
+  -- than the left-aligned selector reverts.
+  unless yul.contains "extcodesize(" &&
+      yul.contains s!"shl(224, 0x{hookSelector}))) \{ revert(0, 0) }" do
+    throwError "Collectible Yul lost the receiver code-size guard or the magic equality gate"
 
 private def expectBadgeEvents : CommandElabM Unit := do
   let env ← getEnv
@@ -213,8 +264,8 @@ private def expectBadgeEvents : CommandElabM Unit := do
 private def expectErc721 : CommandElabM Unit := do
   expectCollectibleEvents
   expectBadgeEvents
-  expectDigest `Examples.Evm.Collectible "df29360114f22d5f"
-  expectDigest `Examples.Evm.Badge "ef61792f697edbd3"
+  expectDigest `Examples.Evm.Collectible "f20c52e156029cfc"
+  expectDigest `Examples.Evm.Badge "bdb4d1d1a4e9baa7"
 
 elab "#pf_guard_evm_erc721" : command => expectErc721
 

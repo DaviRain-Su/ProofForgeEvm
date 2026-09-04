@@ -13,7 +13,9 @@ This is an audit witness, not runtime interface discovery: unknown rows fail clo
 Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - tree SHA `641ba990cad2f7f70878e0d66be1bfbef95710e8`
 - 452 `contracts/` tree paths, 367 Solidity sources
-- 32 backlog coverage rows: 2 DONE, 20 PARTIAL, 10 ABSENT (10 blocked by non-goals)
+- 32 backlog coverage rows: 2 DONE, 21 PARTIAL, 9 ABSENT (all 9 blocked by non-goals; no
+  implementable gap since row 12, `interfaces/IERC1271.sol`, shipped as `Sdk.Ierc1271.checkSignature`
+  over `OpenCall.callMagic` with the 65-byte signature bound)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal
@@ -31,13 +33,13 @@ def coverageRows : UInt64 := 32
 def doneCount : UInt64 := 2
 
 /-- Rows marked PARTIAL (named restricted profile). -/
-def partialCount : UInt64 := 20
+def partialCount : UInt64 := 21
 
 /-- Rows marked ABSENT (no profile shipped). -/
-def absentCount : UInt64 := 10
+def absentCount : UInt64 := 9
 
 /-- Rows whose remaining gap is blocked by a documented permanent non-goal. -/
-def blockedCount : UInt64 := 10
+def blockedCount : UInt64 := 9
 
 /-- Rows marked ABSENT without a permanent non-goal blocker (implementable gap). -/
 def temporaryGapCount : UInt64 := 0
@@ -66,7 +68,10 @@ def nonGoalNone : UInt8 := 0
 /-- Proxies, delegatecall, CREATE/CREATE2/CREATE3, storage-slot escape hatches. -/
 def nonGoalProxyCreateSlot : UInt8 := 1
 
-/-- Raw/arbitrary calldata, low-level calls, multicall, ERC-2771, callback/receiver hooks. -/
+/-- Raw/arbitrary calldata, low-level calls, multicall, ERC-2771, and callback/receiver hooks
+that are not a closed ABI. Bounded ERC-721/1155 receiving hooks (`onERC*Received`, `data` at most
+32 bytes, batch at most 4) are in. An ERC-1271 wallet stays out. Calling a known hook with a
+fixed ABI through `OpenCall.callMagic` is in. -/
 def nonGoalArbitraryCall : UInt8 := 2
 
 /-- Account abstraction, ERC-4337/7579 execution, paymasters. -/
@@ -239,7 +244,7 @@ def statusOf (row : UInt64) : UInt8 :=
   else if row == 9 then statusPartial
   else if row == 10 then statusPartial
   else if row == 11 then statusDone
-  else if row == 12 then statusAbsent
+  else if row == 12 then statusPartial
   else if row == 13 then statusPartial
   else if row == 14 then statusAbsent
   else if row == 15 then statusPartial
@@ -270,7 +275,6 @@ def isBlocked (row : UInt64) : Bool :=
   if row == 3 then true
   else if row == 4 then true
   else if row == 6 then true
-  else if row == 12 then true
   else if row == 14 then true
   else if row == 17 then true
   else if row == 18 then true
@@ -292,7 +296,6 @@ def nonGoalTagOf (row : UInt64) : UInt8 :=
   if row == 3 then nonGoalAccountAbstraction
   else if row == 4 then nonGoalCrossChainRegistry
   else if row == 6 then nonGoalUnboundedGovernance
-  else if row == 12 then nonGoalArbitraryCall
   else if row == 14 then nonGoalCrossChainRegistry
   else if row == 17 then nonGoalArbitraryCall
   else if row == 18 then nonGoalProxyCreateSlot

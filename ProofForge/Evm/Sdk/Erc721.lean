@@ -18,7 +18,23 @@ interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, or Op/IR/Emit recipe. Canonical ERC-721 logs are
 reusable `Event.emit` wrappers (`Log.transfer` / `Log.approval` / `Log.approvalForAll`): LOG4
 `Transfer`/`Approval` with empty data, and LOG3 `ApprovalForAll` with a bool data word. Pause,
-zero-address policy, mint caps, receiver hooks, ERC-165, and metadata remain application-owned.
+zero-address policy, mint caps, ERC-165, and metadata remain application-owned.
+
+## Receiver hook
+
+`checkOnReceived` is OZ's `ERC721Utils.checkOnERC721Received` over `OpenCall.callMagic`: a
+recipient with code must answer `onERC721Received(address,address,uint256,bytes)` with exactly
+one word equal to that selector, left-aligned, or the transaction reverts (`revert(0, 0)`, so no
+partial state remains and the callee's reason is not bubbled); a recipient without code is not
+called. The result is a CALL carrier, so it stands only as the entry's result word under
+`Effect.thenTrue`, with the ledger movement and `Log.transfer` in the state word. The extractor
+orders the hashed-map stores, then the log, then the hook, so a receiver that reads `ownerOf`
+inside the hook sees itself as the owner, as under OZ `_safeTransfer`. Two bounds are the
+product boundary, not the standard's: `data` carries at most 32 bytes (`Hook` spells the literal
+because the open-call decoder wants one), and the three-argument `safeTransferFrom` overload has
+no home because one Lean name is one ABI name; callers pass `0x` for no data. A `pf` contract
+answers the hook by returning `onReceivedSelector` as `Bytes4`; `Examples.Evm.ReceiverLink` is
+that shape. Enumeration and the rest of IERC721 stay out.
 -/
 
 /-- UInt256 unit used only for application event amount limbs. -/
@@ -180,6 +196,27 @@ clears approval. Precondition: `canTransfer owners balances source to tokenId`. 
       owners.putOwner tokenId to |||
       balances.debit source |||
       balances.credit to
+
+/-- `onERC721Received` selector `0x150b7a02`, packed in the source fixed-bytes limb order.
+A receiving entry returns this as `Bytes4`. Same packing as `Erc165.erc721Receiver`. -/
+@[pf_inline] def onReceivedSelector : Bytes4 :=
+  ⟨0x027a0b15, 0, 0, 0⟩
+
+/-- The receiver hook a contract recipient must answer. Constructor and field names are the ABI
+surface: `onERC721Received(address operator, address from, uint256 tokenId, bytes data)`, magic
+`0x150b7a02`. `data` is bounded to 32 bytes. -/
+inductive Hook where
+  | onERC721Received (operator «from» : Address) (tokenId : UInt256)
+      (data : ProofForge.Core.Value.BoundedBytes 32)
+
+/-- OZ `checkOnERC721Received`: call the hook on a recipient with code and require its own
+selector back; skip a recipient without code. A CALL carrier for the entry's result word under
+`Effect.thenTrue`; see the module doc. -/
+@[pf_inline] def checkOnReceived (to operator source : Address) (tokenId : UInt256)
+    (data : ProofForge.Core.Value.BoundedBytes 32) : UInt64 :=
+  if Address.hasCode to then
+    OpenCall.callMagic to (Hook.onERC721Received operator source tokenId data)
+  else 0
 
 /-- Canonical ERC-721 events. Constructor names and field names are the ABI surface
 (`Transfer` / `Approval` / `ApprovalForAll`). Indexed flags produce LOG4 (empty data) for

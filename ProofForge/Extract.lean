@@ -14,8 +14,10 @@ namespace ProofForge.Extract
 
 def decodeBody (env : Environment) (e : Expr) (preserveLocals : Bool := false)
     (stateType? : Option Name := none) :
-    Except String (Array Ops.Op) :=
+    Except String (Array Ops.Op) := do
   let (_, body) := peelLams e
+  if let some reason := findOpenCallCarrierMisuse env body then
+    throw s!"extract/unsupported: {reason}"
   -- Canonicalize syntax-only aliases around control flow before shape decoding.
   -- A method with structured-State sequencing also retains adjacent scalar lets so `decodeExpr`
   -- can materialize bounded lookups instead of duplicating them through every later projection.
@@ -334,13 +336,15 @@ private def expandBoundedReturnOps (schema : Core.Codec.Schema) (ops : Array Ops
   | leaves, .boundedArray capacity element => do
       let limbs ← staticReturnLimbCount element
       unless leaves.length == 1 + capacity * limbs do
-        throw "extract/unsupported: constructed bounded result has the wrong fixed-frame size"
+        throw s!"extract/unsupported: constructed bounded result has the wrong fixed-frame size: \
+          {leaves.length} leaves for capacity {capacity} of {limbs}-limb elements"
       leaves.toArray.mapM fun
         | .returnU64 value | .returnState value => pure (.returnU64 value)
         | _ => throw "extract/unsupported: constructed bounded result must contain scalar leaves"
   | leaves, .boundedBytes capacity | leaves, .boundedString capacity => do
       unless leaves.length == capacity + 1 do
-        throw "extract/unsupported: constructed bounded result has the wrong fixed-frame size"
+        throw s!"extract/unsupported: constructed bounded result has the wrong fixed-frame size: \
+          {leaves.length} leaves for capacity {capacity} bytes"
       leaves.toArray.mapM fun
         | .returnU64 value | .returnState value => pure (.returnU64 value)
         | _ => throw "extract/unsupported: constructed bounded result must contain scalar leaves"
@@ -669,7 +673,8 @@ def extractMethod (env : Environment) (kind : Core.IR.MethodKind) (n : Name) :
           .evmLogApproval256 (flipVal fuel' a) (flipVal fuel' b) (flipVal fuel' c)
             (flipVal fuel' d) (flipVal fuel' e) (flipVal fuel' f)
             (flipVal fuel' g0) (flipVal fuel' g1) (flipVal fuel' g2) (flipVal fuel' g3)
-      | .evmLogTyped frame => .evmLogTyped (frame.mapValues (flipVal fuel'))
+      | .evmLogTyped frame tails =>
+          .evmLogTyped (frame.mapValues (flipVal fuel')) (tails.map (·.mapValues (flipVal fuel')))
       | .evmRevertInsufficient a b c d e f g h =>
           .evmRevertInsufficient (flipVal fuel' a) (flipVal fuel' b) (flipVal fuel' c)
             (flipVal fuel' d) (flipVal fuel' e) (flipVal fuel' f)
@@ -1116,7 +1121,7 @@ private def opFields : Ops.Op → Array FieldUse
   | .evmLogApproval256 a b c d e f g0 g1 g2 g3 =>
       valFields a ++ valFields b ++ valFields c ++ valFields d ++ valFields e ++
         valFields f ++ valFields g0 ++ valFields g1 ++ valFields g2 ++ valFields g3
-  | .evmLogTyped frame => frame.values.flatMap valFields
+  | .evmLogTyped frame tails => (frame.values ++ tails.flatMap (·.values)).flatMap valFields
   | .evmRevertInsufficient a b c d e f g h =>
       valFields a ++ valFields b ++ valFields c ++ valFields d ++
         valFields e ++ valFields f ++ valFields g ++ valFields h
@@ -1318,7 +1323,9 @@ private def resolveVectorLeaves (p : IR.Program) : Except String IR.Program := d
           return .evmLogApproval256 (← normalizeVal a) (← normalizeVal b) (← normalizeVal c)
             (← normalizeVal d) (← normalizeVal e) (← normalizeVal f)
             (← normalizeVal g0) (← normalizeVal g1) (← normalizeVal g2) (← normalizeVal g3)
-      | .evmLogTyped frame => return .evmLogTyped (← frame.mapValuesM normalizeVal)
+      | .evmLogTyped frame tails =>
+          return .evmLogTyped (← frame.mapValuesM normalizeVal)
+            (← tails.mapM (·.mapValuesM normalizeVal))
       | .evmRevertInsufficient a b c d e f g h =>
           return .evmRevertInsufficient (← normalizeVal a) (← normalizeVal b)
             (← normalizeVal c) (← normalizeVal d) (← normalizeVal e) (← normalizeVal f)
@@ -1484,7 +1491,8 @@ private partial def opEscapedArg (limit : Nat) : Ops.Op → Option Nat
       #[a, b, c, d, e, f, g, h, i, j].findSome? (valEscapedArg limit)
   | .evmLogApproval256 a b c d e f g h i j =>
       #[a, b, c, d, e, f, g, h, i, j].findSome? (valEscapedArg limit)
-  | .evmLogTyped frame => frame.values.findSome? (valEscapedArg limit)
+  | .evmLogTyped frame tails =>
+      (frame.values ++ tails.flatMap (·.values)).findSome? (valEscapedArg limit)
   | .evmRevertInsufficient a b c d e f g h =>
       #[a, b, c, d, e, f, g, h].findSome? (valEscapedArg limit)
   | .evmRevertUnauthorized a b c =>

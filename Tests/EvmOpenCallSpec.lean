@@ -4,6 +4,7 @@ import ProofForge.Evm.OpenCall.Emit
 import ProofForge.Evm.CallResult
 import ProofForge.Evm.CallResult.Emit
 import Examples.Evm.EvmOpenCall
+import Tests.EvmOpenCallMisuse
 import Examples.Evm.TipJar
 
 /-!
@@ -29,8 +30,8 @@ private def pingPlan : OpenCall.Plan Ops.Val := {
 private def transferPlan : OpenCall.Plan Ops.Val := {
   name := "transfer"
   args := #[
-    { name := "to", type := .address20, parts := #[.lit 1, .lit 2, .lit 3] },
-    { name := "amount", type := .uint256, parts := #[.lit 4, .lit 5, .lit 6, .lit 7] }
+    { name := "to", type := .scalar .address20, parts := #[.lit 1, .lit 2, .lit 3] },
+    { name := "amount", type := .scalar .uint256, parts := #[.lit 4, .lit 5, .lit 6, .lit 7] }
   ]
   target := #[lit, lit, lit]
   kind := .call
@@ -39,7 +40,7 @@ private def transferPlan : OpenCall.Plan Ops.Val := {
 
 private def echoPlan : OpenCall.Plan Ops.Val := {
   name := "echo"
-  args := #[{ name := "n", type := .uint256, parts := #[.lit 9, lit, lit, lit] }]
+  args := #[{ name := "n", type := .scalar .uint256, parts := #[.lit 9, lit, lit, lit] }]
   target := #[lit, lit, lit]
   kind := .staticcall
   policy := .exactWord
@@ -82,11 +83,105 @@ private def depositPlan : OpenCall.Plan Ops.Val := {
   | .ok sel => sel == Keccak.selector "transfer" #["address", "uint256"]
   | .error _ => false
 
+/-- `sink(uint256,bytes)`: one head word for `tag`, one offset word for `data`, then the tail
+(`length` limb followed by eight byte limbs). -/
+private def bytesArg (name : String) (capacity : Nat) : OpenCall.Arg Ops.Val :=
+  { name, type := .bytes capacity, parts := Array.replicate (1 + capacity) lit }
+
+private def sinkPlan : OpenCall.Plan Ops.Val := {
+  name := "sink"
+  args := #[
+    { name := "tag", type := .scalar .uint256, parts := #[.lit 7, lit, lit, lit] },
+    bytesArg "data" 8
+  ]
+  target := #[lit, lit, lit]
+  kind := .call
+  policy := .contractSuccess
+}
+
+#guard OpenCall.maxBytesArgs == 1
+#guard OpenCall.maxArrayArgs == 2
+#guard OpenCall.maxDynamicArgs == 3
+#guard (OpenCall.ArgType.bytes 8).limbCount == 9
+#guard (OpenCall.ArgType.bytes 8).abiType matches .ok "bytes"
+#guard (OpenCall.ArgType.bytes 8).canonical == "bytes8"
+#guard (OpenCall.ArgType.bytes 65).supported
+#guard !(OpenCall.ArgType.bytes 66).supported
+#guard OpenCall.ArgType.supported (.bytes Codec.maxPackedBytesCapacity)
+#guard (OpenCall.ArgType.array 4 .uint256).limbCount == 17
+#guard (OpenCall.ArgType.array 4 .uint256).abiType matches .ok "uint256[]"
+#guard (OpenCall.ArgType.array 4 .uint256).supported
+#guard !(OpenCall.ArgType.array 16 .uint256).supported
+#guard sinkPlan.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard sinkPlan.headBytes == 68
+#guard sinkPlan.inSize == 100
+#guard sinkPlan.abiTypes matches .ok #["uint256", "bytes"]
+#guard
+  match sinkPlan.selectorHex (·.wellFormed Ops.ValKind.arity) with
+  | .ok sel => sel == Keccak.selector "sink" #["uint256", "bytes"]
+  | .error _ => false
+#guard (sinkPlan.canonical fun _ => "x").startsWith
+  "ocall.call.ok.sink(x,x,x;tag:"
+#guard (sinkPlan.canonical fun _ => "x").endsWith ",data:bytes8(x,x,x,x,x,x,x,x,x))"
+-- A scalar-only plan spells its canonical string as before the bytes tail existed.
+#guard (transferPlan.canonical fun _ => "x") ==
+  s!"ocall.call.erc20.transfer(x,x,x;to:{repr ProofForge.Core.Codec.Scalar.address20}(x,x,x),amount:{repr ProofForge.Core.Codec.Scalar.uint256}(x,x,x,x))"
+
+private def twoTails : OpenCall.Plan Ops.Val :=
+  { sinkPlan with args := #[bytesArg "a" 4, bytesArg "b" 4] }
+private def wideTail : OpenCall.Plan Ops.Val :=
+  { sinkPlan with args := #[bytesArg "data" 66] }
+private def shortTail : OpenCall.Plan Ops.Val :=
+  { sinkPlan with args := #[{ bytesArg "data" 8 with parts := Array.replicate 8 lit }] }
+private def edgeTail : OpenCall.Plan Ops.Val :=
+  { sinkPlan with args := #[bytesArg "data" 65] }
+
+#guard !twoTails.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard !wideTail.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard !shortTail.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard edgeTail.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard edgeTail.inSize == 68
+
+private def arrayArg (name : String) (capacity : Nat) : OpenCall.Arg Ops.Val :=
+  { name, type := .array capacity .uint256,
+    parts := Array.replicate (1 + capacity * 4) lit }
+
+private def batchHookPlan : OpenCall.Plan Ops.Val := {
+  name := "onERC1155BatchReceived"
+  args := #[
+    { name := "operator", type := .scalar .address20, parts := #[lit, lit, lit] },
+    { name := "from", type := .scalar .address20, parts := #[lit, lit, lit] },
+    arrayArg "ids" 4,
+    arrayArg "values" 4,
+    bytesArg "data" 32
+  ]
+  target := #[lit, lit, lit]
+  kind := .call
+  policy := .magicBytes4 "bc197c81"
+}
+
+#guard batchHookPlan.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard batchHookPlan.usesCursor
+#guard batchHookPlan.headBytes == 164
+#guard batchHookPlan.inSize == 164
+#guard batchHookPlan.abiTypes matches
+  .ok #["address", "address", "uint256[]", "uint256[]", "bytes"]
+#guard
+  match batchHookPlan.selectorHex (·.wellFormed Ops.ValKind.arity) with
+  | .ok sel => sel == "bc197c81" &&
+      sel == Keccak.selector "onERC1155BatchReceived"
+        #["address", "address", "uint256[]", "uint256[]", "bytes"]
+  | .error _ => false
+
+private def threeArrays : OpenCall.Plan Ops.Val :=
+  { batchHookPlan with args := #[arrayArg "a" 1, arrayArg "b" 1, arrayArg "c" 1] }
+#guard !threeArrays.wellFormed (·.wellFormed Ops.ValKind.arity)
+
 private def badName : OpenCall.Plan Ops.Val := { pingPlan with name := "" }
 private def nineArgs : OpenCall.Plan Ops.Val :=
   { pingPlan with
     args := (List.range 9).toArray.map fun i =>
-      { name := s!"a{i}", type := .uint64, parts := #[lit] } }
+      { name := s!"a{i}", type := .scalar .uint64, parts := #[lit] } }
 private def staticValue : OpenCall.Plan Ops.Val :=
   { echoPlan with valueParts := #[lit, lit, lit, lit] }
 
@@ -96,7 +191,7 @@ private def staticValue : OpenCall.Plan Ops.Val :=
 
 private def echoQuery : OpenCall.Query := {
   name := "echo"
-  argTypes := #[.uint256]
+  argTypes := #[.scalar .uint256]
   kind := .staticcall
   policy := .exactWord
   word := 0
@@ -117,10 +212,27 @@ private def pairQuery : OpenCall.Query := {
 #guard echoQuery.arity == 7
 #guard pairQuery.arity == 3
 
+/-- `calldataHash(bytes)` read: target limbs, then the tail's length and eight byte limbs. -/
+private def hashQuery : OpenCall.Query :=
+  OpenCall.StaticShape.word.query "calldataHash" #[.bytes 8]
+private def hashOperands : Array Ops.Val := #[lit, lit, lit] ++ Array.replicate 9 lit
+
+#guard hashQuery.wellFormed
+#guard hashQuery.arity == 12
+#guard !(OpenCall.StaticShape.word.query "two" #[.bytes 4, .bytes 4]).wellFormed
+#guard !(OpenCall.StaticShape.word.query "wide" #[.bytes 66]).wellFormed
+#guard
+  match hashQuery.toPlan hashOperands with
+  | some plan =>
+      plan.args.size == 1 && plan.args[0]!.type == .bytes 8 &&
+        plan.args[0]!.parts.size == 9 && plan.inSize == 68
+  | none => false
+#guard (hashQuery.toPlan (hashOperands.pop)).isNone
+
 -- Every STATICCALL read shape is a well-formed query whose limbs fit one ABI word.
 #guard OpenCall.StaticShape.all.size == 6
 #guard OpenCall.StaticShape.all.all fun shape =>
-  (shape.query "read" #[.address20]).wellFormed &&
+  (shape.query "read" #[.scalar .address20]).wellFormed &&
     1 ≤ shape.limbCount && shape.limbCount ≤ 4 &&
     shape.policy.copiedWordCount ≤ CallResult.maxResultWords
 #guard OpenCall.StaticShape.word.policy == .exactWord
@@ -132,7 +244,7 @@ private def pairQuery : OpenCall.Query := {
 #guard OpenCall.StaticShape.words4.limbCount == 4
 #guard OpenCall.StaticShape.bool.limbCount == 1
 #guard OpenCall.StaticShape.address.limbCount == 3
-#guard (OpenCall.StaticShape.word.query "echo" #[.uint256]) == echoQuery
+#guard (OpenCall.StaticShape.word.query "echo" #[.scalar .uint256]) == echoQuery
 #guard (OpenCall.StaticShape.words2.query "getPair" #[]) == pairQuery
 
 private def onQuery : OpenCall.Query := OpenCall.StaticShape.bool.query "isOn" #[]
@@ -252,6 +364,113 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
         txt.contains "if iszero(eq(returndatasize(), 128)) { revert(0, 0) }"
   | _, _ => false
 
+-- A `bytes` argument: the head holds its offset (64 = two head words), the tail holds the
+-- runtime length then only the first `length` bytes over a zeroed region, and the call sends
+-- the static 100 bytes plus the padded payload. Fresh names: tok v0, length v1, padded v2, ok v3.
+#guard
+  match OpenCall.Emit.emitCall mockOpenCtx (.invoke sinkPlan) 0 with
+  | .ok (txt, _, 4) =>
+      txt.contains s!"mstore(0, shl(224, 0x{Keccak.selector "sink" #["uint256", "bytes"]}))" &&
+        txt.contains "  mstore(36, 64)\n" &&
+        txt.contains "  let v1 := 0\n  if gt(v1, 8) { revert(0, 0) }\n  mstore(68, v1)\n  mstore(100, 0)\n" &&
+        txt.contains "  if gt(v1, 0) { mstore8(100, 0) }\n" &&
+        txt.contains "  if gt(v1, 7) { mstore8(107, 0) }\n" &&
+        !txt.contains "mstore8(108," &&
+        txt.contains "  let v2 := and(add(v1, 31), not(31))\n" &&
+        txt.contains "let v3 := call(gas(), v0, 0, 0, add(100, v2), 0, 0)\n" &&
+        txt.contains "if and(iszero(returndatasize()), iszero(extcodesize(v0)))"
+  | _ => false
+
+-- A 63-byte capacity zeroes two payload words; the head offset is one word when `bytes` is the
+-- only argument.
+#guard
+  match OpenCall.Emit.emitCall mockOpenCtx (.invoke edgeTail) 0 with
+  | .ok (txt, _, _) =>
+      txt.contains "  mstore(4, 32)\n" && txt.contains "  mstore(36, v1)\n" &&
+        txt.contains "  mstore(68, 0)\n  mstore(100, 0)\n" &&
+        txt.contains "  if gt(v1, 62) { mstore8(130, 0) }\n" &&
+        txt.contains "call(gas(), v0, 0, 0, add(68, v2), 0, 0)"
+  | .error _ => false
+
+-- A `bytes` argument whose limbs are exactly one packed-bytes entry parameter (the length word
+-- then its capacity byte words, here words 2..10) is copied from calldata in one
+-- `calldatacopy` of the padded length; the context names the payload offset. Any other limb
+-- shape (a literal above, a computed byte) keeps the per-byte stores.
+private def frameTail : OpenCall.Plan Ops.Val :=
+  { sinkPlan with args := #[
+      { name := "tag", type := .scalar .uint256, parts := #[.lit 7, lit, lit, lit] },
+      { name := "data", type := .bytes 8, parts := (Array.range 9).map fun i => .arg (2 + i) }
+    ] }
+private def frameCtx : OpenCall.Emit.Context Nat :=
+  { mockOpenCtx with
+    calldataBytes := fun parts =>
+      if parts == frameTail.args[1]!.parts then some "abi_bytes2"
+      else none }
+#guard
+  match OpenCall.Emit.emitCall frameCtx (.invoke frameTail) 0 with
+  | .ok (txt, _, 4) =>
+      txt.contains "  mstore(36, 64)\n" &&
+        txt.contains "  let v1 := 0\n  if gt(v1, 8) { revert(0, 0) }\n  mstore(68, v1)\n" &&
+        txt.contains "  let v2 := and(add(v1, 31), not(31))\n  calldatacopy(100, abi_bytes2, v2)\n" &&
+        !txt.contains "mstore8(" && !txt.contains "mstore(100, 0)" &&
+        txt.contains "let v3 := call(gas(), v0, 0, 0, add(100, v2), 0, 0)\n"
+  | _ => false
+-- The same limbs under a context that does not know them stay on the per-byte path.
+#guard
+  match OpenCall.Emit.emitCall mockOpenCtx (.invoke frameTail) 0 with
+  | .ok (txt, _, _) => txt.contains "  if gt(v1, 7) { mstore8(107, 0) }\n" && !txt.contains "calldatacopy("
+  | .error _ => false
+
+-- Every operand is materialized before the first calldata store. An operand whose prelude runs
+-- its own call through scratch memory (a read passed as an argument) lands ahead of the target
+-- check, the selector, and every head word, so it cannot overwrite them. Here `.lit 9` stands
+-- for such an operand: echoPlan's first limb and depositPlan's first value limb.
+private def preludeCtx : OpenCall.Emit.Context Nat :=
+  { mockOpenCtx with
+    materialize := fun value st =>
+      match value with
+      | .lit 9 => .ok (s!"  let p{st} := mload(0)\n", s!"p{st}", st + 1)
+      | _ => .ok ("", "0", st) }
+#guard
+  match OpenCall.Emit.emitCall preludeCtx (.invoke echoPlan) 0 with
+  | .ok (txt, _, _) =>
+      txt.startsWith "  let p0 := mload(0)\n  if shr(32, 0) { revert(0, 0) }\n" &&
+        txt.contains "  mstore(4, or(or(p0, shl(64, 0)), or(shl(128, 0), shl(192, 0))))\n" &&
+        txt.contains "staticcall(gas(), v1, 0, 36, 0, 32)"
+  | .error _ => false
+#guard
+  match OpenCall.Emit.emitCall preludeCtx
+      (.invoke { depositPlan with valueParts := #[.lit 9, lit, lit, lit] }) 0 with
+  | .ok (txt, _, _) =>
+      txt.startsWith "  let p0 := mload(0)\n  if shr(32, 0) { revert(0, 0) }\n" &&
+        txt.contains "  let v2 := or(or(p0, shl(64, 0)), or(shl(128, 0), shl(192, 0)))\n" &&
+        txt.contains "call(gas(), v1, v2, 0, 4, 0, 0)"
+  | .error _ => false
+
+-- A STATICCALL read with a `bytes` argument rebuilds the same tail from flattened operands and
+-- still binds the exact-one-word result.
+#guard
+  match OpenCall.Emit.emitQuery mockOpenCtx hashQuery hashOperands 0 with
+  | .ok (txt, name, _) =>
+      txt.contains s!"mstore(0, shl(224, 0x{Keccak.selector "calldataHash" #["bytes"]}))" &&
+        txt.contains "  mstore(4, 32)\n" &&
+        txt.contains "  mstore(36, v1)\n" &&
+        txt.contains "let v3 := staticcall(gas(), v0, 0, add(68, v2), 0, 32)\n" &&
+        txt.contains "if iszero(eq(returndatasize(), 32)) { revert(0, 0) }" &&
+        txt.contains "let v4 := mload(0)\n" &&
+        name == "v5"
+  | .error _ => false
+
+-- Plans without a tail keep the literal calldata size.
+#guard
+  match CallResult.Emit.emitBound mockCallResultCtx (.successOnly 4) "tok" none 0 with
+  | .ok (txt, _, _) => txt.contains "call(gas(), tok, 0, 0, 4, 0, 0)"
+  | .error _ => false
+#guard
+  match CallResult.Emit.emitBound mockCallResultCtx (.successOnly 36) "tok" none 0 (some "pad") with
+  | .ok (txt, _, _) => txt.contains "call(gas(), tok, 0, 0, add(36, pad), 0, 0)"
+  | .error _ => false
+
 -- CALL value rides the shared success-only interpreter; NativeFx.sendEth is not this path.
 #guard
   match CallResult.Emit.emit mockCallResultCtx (.successOnly 4 true) "v0" (some "v1") 2,
@@ -278,10 +497,10 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
         txt.contains "if and(iszero(returndatasize()), iszero(extcodesize("
 
 -- Existing ClosedCall / TipJar sendEth stay on their own interpreters.
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "5223289d34513e5e"
+#guard Registry.digestOf "EvmOpenCall" == some "1ad6b5bb1eea81d4"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -320,15 +539,20 @@ private partial def sourceOpenCalls (ops : Array ProofForge.Extract.IR.Op) :
     | .forBody _ body => acc ++ sourceOpenCalls body
     | _ => acc
 
+private def extractInferred (env : Environment) (name : Name) :
+    Except String ProofForge.Extract.IR.Method := do
+  ProofForge.Extract.extractMethod env (← ProofForge.Extract.inferKind env name) name
+
 private def expectUnsupported (env : Environment) (name : Name) (fragment : String) :
     CommandElabM Unit := do
-  match ProofForge.Extract.extractMethod env .get name with
+  match extractInferred env name with
   | .ok _ => throwError s!"{name}: unsupported open-call unexpectedly extracted"
   | .error reason =>
       unless reason.contains fragment do
         throwError s!"{name}: wrong fail-closed reason: {reason}"
 
 namespace Unsupported
+open ProofForge.Core.Value (BoundedBytes BoundedString)
 
 structure Payload where
   to : Address
@@ -355,7 +579,60 @@ inductive TooMany where
 def nineArgs (target : Address) (v : UInt64) : UInt64 :=
   OpenCall.call target (TooMany.many v v v v v v v v v)
 
+inductive TwoTails where
+  | pair (a : BoundedBytes 4) (b : BoundedBytes 4)
+
+def twoBytesArgs (target : Address) (a b : BoundedBytes 4) : UInt64 :=
+  OpenCall.call target (TwoTails.pair a b)
+
+inductive WideTail where
+  | wide (data : BoundedBytes 66)
+
+def wideBytesArg (target : Address) (data : BoundedBytes 66) : UInt64 :=
+  OpenCall.call target (WideTail.wide data)
+
+inductive StringTail where
+  | text (data : BoundedString 4)
+
+def stringArg (target : Address) (data : BoundedString 4) : UInt64 :=
+  OpenCall.call target (StringTail.text data)
+
 end Unsupported
+
+/-! The carrier's homes stay compiled, each with its CALL plan kept: the entry's result word,
+the `effect` of `Effect.thenTrue` (and so of `Effect.abort` and `Effect.ensure`), and a `let`
+whose binder reaches the result word. -/
+namespace CarrierWord
+
+def asBool (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ s with dummy := 0 }, Effect.thenTrue (OpenCall.callSuccess target Remote.ping))
+  else
+    .error .overflow
+
+def ensured (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  Effect.ensure (s.flag == 0) s (OpenCall.callSuccess target Remote.ping)
+    (fun _ => .ok ({ s with flag := 1 }, true))
+
+def named (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  let sent := Effect.thenTrue (OpenCall.callSuccess target Remote.ping)
+  if s.flag == 0 then
+    .ok ({ s with flag := 1 }, sent)
+  else
+    .error .overflow
+
+end CarrierWord
+
+private def expectCallKept (env : Environment) (name : Name) : CommandElabM Unit := do
+  match extractInferred env name with
+  | .error reason => throwError s!"{name}: carrier word unexpectedly refused: {reason}"
+  | .ok method =>
+      let plans := sourceOpenCalls method.ops
+      unless plans.size == 1 && plans[0]!.name == "ping" && plans[0]!.kind == .call do
+        throwError s!"{name} lost its ping CALL: {repr plans}"
 
 elab "#pf_guard_evm_open_call_source" : command => do
   let env ← getEnv
@@ -377,11 +654,18 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost payTarget"
   let some mark := source.methods.find? (·.ixName == "markThenPing")
     | throwError "open-call example lost markThenPing"
+  let some sink := source.methods.find? (·.ixName == "sinkBytes")
+    | throwError "open-call example lost sinkBytes"
+  let some hook := source.methods.find? (·.ixName == "notifyReceiver")
+    | throwError "open-call example lost notifyReceiver"
+  let some batchHook := source.methods.find? (·.ixName == "notifyBatchReceiver")
+    | throwError "open-call example lost notifyBatchReceiver"
   let pingPlans := sourceOpenCalls ping.ops
   let storedPlans := sourceOpenCalls stored.ops
   let xferPlans := sourceOpenCalls xfer.ops
   let payPlans := sourceOpenCalls pay.ops
   let markPlans := sourceOpenCalls mark.ops
+  let sinkPlans := sourceOpenCalls sink.ops
   unless pingPlans.size == 1 && pingPlans[0]!.name == "ping" &&
       pingPlans[0]!.kind == .call &&
       pingPlans[0]!.policy == .contractSuccess &&
@@ -398,6 +682,42 @@ elab "#pf_guard_evm_open_call_source" : command => do
     throwError s!"payTarget plan diverged: {repr payPlans}"
   unless markPlans.size == 1 && markPlans[0]!.name == "ping" do
     throwError s!"markThenPing plan diverged: {repr markPlans}"
+  -- The bytes field decodes as the one tail: an offset head word, then length plus eight
+  -- byte limbs, with the static calldata size counting the length word.
+  unless sinkPlans.size == 1 && sinkPlans[0]!.name == "sink" &&
+      sinkPlans[0]!.kind == .call && sinkPlans[0]!.policy == .contractSuccess &&
+      sinkPlans[0]!.args.size == 2 &&
+      sinkPlans[0]!.args[0]!.type == .scalar .uint256 &&
+      sinkPlans[0]!.args[1]!.name == "data" && sinkPlans[0]!.args[1]!.type == .bytes 8 &&
+      sinkPlans[0]!.args[1]!.parts.size == 9 &&
+      sinkPlans[0]!.inSize == 100 && sinkPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
+    throwError s!"sinkBytes plan diverged: {repr sinkPlans}"
+  -- The hook's magic is the plan's own selector, computed from the constructor, never written
+  -- by the author.
+  let hookPlans := sourceOpenCalls hook.ops
+  let hookSelector := ProofForge.Evm.Keccak.selector "onERC721Received"
+    #["address", "address", "uint256", "bytes"]
+  unless hookSelector == "150b7a02" do
+    throwError s!"onERC721Received selector is {hookSelector}"
+  unless hookPlans.size == 1 && hookPlans[0]!.name == "onERC721Received" &&
+      hookPlans[0]!.kind == .call && hookPlans[0]!.policy == .magicBytes4 hookSelector &&
+      hookPlans[0]!.args.size == 4 && hookPlans[0]!.args[3]!.type == .bytes 8 &&
+      hookPlans[0]!.policy.copiedWordCount == 1 &&
+      hookPlans[0]!.policy.wordKinds == #[.bytes4] do
+    throwError s!"notifyReceiver plan diverged: {repr hookPlans}"
+  let batchPlans := sourceOpenCalls batchHook.ops
+  let batchSelector := ProofForge.Evm.Keccak.selector "onERC1155BatchReceived"
+    #["address", "address", "uint256[]", "uint256[]", "bytes"]
+  unless batchSelector == "bc197c81" do
+    throwError s!"onERC1155BatchReceived selector is {batchSelector}"
+  unless batchPlans.size == 1 && batchPlans[0]!.name == "onERC1155BatchReceived" &&
+      batchPlans[0]!.kind == .call && batchPlans[0]!.policy == .magicBytes4 batchSelector &&
+      batchPlans[0]!.args.size == 5 &&
+      batchPlans[0]!.args[2]!.type == .array 4 .uint256 &&
+      batchPlans[0]!.args[3]!.type == .array 4 .uint256 &&
+      batchPlans[0]!.args[4]!.type == .bytes 8 &&
+      batchPlans[0]!.usesCursor && batchPlans[0]!.inSize == 164 do
+    throwError s!"notifyBatchReceiver plan diverged: {repr batchPlans}"
 
   let evm ←
     match ProofForge.Evm.IR.fromExtracted source with
@@ -420,6 +740,10 @@ elab "#pf_guard_evm_open_call_source" : command => do
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "echo" #["uint256"]})" &&
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "getPair" #[]})" do
     throwError s!"open-call Yul omitted CALL/STATICCALL gates or selectors"
+  unless yul.contains s!"shl(224, 0x{hookSelector}))) \{ revert(0, 0) }" do
+    throwError "notifyReceiver Yul lost the magic equality gate"
+  unless yul.contains s!"shl(224, 0x{batchSelector}))) \{ revert(0, 0) }" do
+    throwError "notifyBatchReceiver Yul lost the magic equality gate"
 
   -- Queries lower through Component.Query.openCall, not Call.invoke. Each read binds exactly
   -- the limbs its source carrier needs: four for `UInt256`, three for `Address`, one for `Bool`.
@@ -447,6 +771,14 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectLimbs "readOwner" .address
   expectLimbs "readBalance" .word
   expectLimbs "readSupports" .bool
+  expectLimbs "hashBytes" .word
+  -- Both bytes paths send the canonical size: the static head plus the padded runtime length.
+  unless yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "sink" #["uint256", "bytes"]})" &&
+      yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "calldataHash" #["bytes"]})" &&
+      yul.contains "mstore(36, 64)" && yul.contains ", 0, 0, add(100, " &&
+      yul.contains "mstore(4, 32)" && yul.contains "staticcall(gas(), v0, 0, add(68, " &&
+      yul.contains ":= and(add(" && yul.contains ", 31), not(31))" do
+    throwError "open-call Yul omitted the bytes tail offset, size, or selector"
   unless yul.contains "if iszero(eq(returndatasize(), 96))" &&
       yul.contains "if iszero(eq(returndatasize(), 128))" &&
       yul.contains ", 1) { revert(0, 0) }" &&
@@ -464,6 +796,67 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectUnsupported env ``Unsupported.optionField "closed EVM scalar"
   expectUnsupported env ``Unsupported.anonymous "explicitly named"
   expectUnsupported env ``Unsupported.nineArgs "at most eight"
+  expectUnsupported env ``Unsupported.twoBytesArgs "at most one bytes argument"
+  expectUnsupported env ``Unsupported.wideBytesArg "exceeds the bounded bytes capacity"
+  expectUnsupported env ``Unsupported.stringArg "closed EVM scalar"
+
+  -- A read in value position keeps the computation around it: the Bool read is the `ite`
+  -- condition, the UInt256 read an operand of `ge256`, the Address read an operand of `eq20`,
+  -- the inner read the outer read's argument. With the query scan descending into operator
+  -- arguments, `covers` and `ownedBy` returned the read's limbs without the comparison.
+  -- The canonical form is `evm|name|slots|ctor|entry/entry/…`; an indexed op prints a `/` of its
+  -- own, so a split piece that does not open a new entry belongs to the previous one.
+  let entryList := ((ProofForge.Evm.IR.canonical evm).splitOn "|").getLast?.getD ""
+  let entries := (entryList.splitOn "/").foldl (init := (#[] : Array String)) fun acc piece =>
+    if acc.isEmpty || ["view:", "mut:", "pay:"].any (fun tag => piece.startsWith tag) then
+      acc.push piece
+    else acc.modify (acc.size - 1) (· ++ "/" ++ piece)
+  let expectCanon (ixName : String) (fragments : List String) : CommandElabM Unit := do
+    let some entry := entries.find? fun segment => (segment.splitOn ":")[1]? == some ixName
+      | throwError s!"EVM open-call example lost {ixName}"
+    for fragment in fragments do
+      unless entry.contains fragment do
+        throwError s!"{ixName} canonical IR lost `{fragment}`:\n{entry}"
+  let target := "f.w0(a0),f.w1(a0),f.w2(a0)"
+  let isOn := s!"ocallq.0.0.ocall.static.bool.isOn({target};)"
+  let balanceOfLimb (limb : Nat) : String :=
+    s!"ocallq.0.{limb}.ocall.static.word1.balanceOf({target};a0:ProofForge.Core.Codec.Scalar.address 20(f.w0(a1),f.w1(a1),f.w2(a1)))"
+  let ownerOfLimb (limb : Nat) : String :=
+    s!"ocallq.0.{limb}.ocall.static.typed[a20].ownerOf({target};)"
+  expectCanon "pingIfOn" [s!"ite.eq({isOn},l1,[ocall.call.ok.ping({target};)],[])"]
+  expectCanon "echoIfOn"
+    [s!"ite.eq({isOn},l1,[retu(ocallq.0.0.ocall.static.word1.echo({target};",
+     "],[retu(l0);retu(l0);retu(l0);retu(l0)])"]
+  expectCanon "covers"
+    [":r1:1:[retu(ext.ProofForge.Evm.Ops.ValKind.ge256(" ++ balanceOfLimb 0 ++ "," ++
+      balanceOfLimb 1 ++ "," ++ balanceOfLimb 2 ++ "," ++ balanceOfLimb 3 ++
+      ",f.w0(a2),f.w1(a2),f.w2(a2),f.w3(a2)))]"]
+  expectCanon "ownedBy"
+    [":r1:1:[retu(ext.ProofForge.Evm.Ops.ValKind.eq20(" ++ ownerOfLimb 0 ++ "," ++
+      ownerOfLimb 1 ++ "," ++ ownerOfLimb 2 ++ ",f.w0(a1),f.w1(a1),f.w2(a1)))]"]
+  expectCanon "echoBalance"
+    [s!"retu(ocallq.0.0.ocall.static.word1.echo({target};a0:ProofForge.Core.Codec.Scalar.uint 256(" ++
+      balanceOfLimb 0 ++ "," ++ balanceOfLimb 1 ++ "," ++ balanceOfLimb 2 ++ "," ++
+      balanceOfLimb 3 ++ ")))",
+     s!"retu(ocallq.0.3.ocall.static.word1.echo({target};"]
+  -- A CALL carrier anywhere but the result word is refused; the carrier in its homes keeps
+  -- its plan.
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.compared "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.isZero "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.plusOne "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.stored "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.gated "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.readArg "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.callArg "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.valueCompared "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.thenTrueGated "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.thenTrueCompared "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.letDropped "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.letGuarded "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.magicCompared "CALL carrier"
+  expectCallKept env ``CarrierWord.asBool
+  expectCallKept env ``CarrierWord.ensured
+  expectCallKept env ``CarrierWord.named
 
   logInfo s!"EvmOpenCall digest: {ProofForge.Evm.IR.digestHex evm}"
 

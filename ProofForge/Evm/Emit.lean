@@ -73,17 +73,7 @@ private def yulLit (n : UInt64) : String :=
 
 /-- Addr20 小端三叶：word i 收 `src` 的字节 0..19 中第 8i ..。`src` 是 `caller()` / `address()`。 -/
 private def packAddrWord (src : String) (word : Nat) : String :=
-  let rec orBytes (i : Nat) (n : Nat) (acc : String) : String :=
-    match n with
-    | 0 => acc
-    | n' + 1 =>
-      let b := "byte(" ++ toString (12 + 8 * word + i) ++ ", " ++ src ++ ")"
-      let next :=
-        if i == 0 then b
-        else "or(" ++ acc ++ ", shl(" ++ toString (8 * i) ++ ", " ++ b ++ "))"
-      orBytes (i + 1) n' next
-  let count := if word == 2 then 4 else 8
-  orBytes 0 count "0"
+  Codec.Emit.packAddrWord src word
 
 /-- 调用 runtime helper，把三叶小端 Addr20 写成 memory[0..31] 的 ABI address word。 -/
 private def packAddrMstore8 (indent w0 w1 w2 : String) : String :=
@@ -126,6 +116,43 @@ private def renderFixedBytesHelper : String :=
   "        }" ++ nl ++
   "      }" ++ nl
 
+/-- Load one address-pair map payload. The seven-word key hash and tagged sload ran at every
+keyed read, and solc does not share that sequence across CFG cases; the helper body is the
+one copy. `pf_load_pair256` returns the full storage word. `pf_load_pair_u64` also rejects a
+payload above `2^64-1`, matching the UInt64 map. -/
+private def renderPairMapLoadHelpers : String :=
+  "      function pf_load_pair256(a0, a1, a2, b0, b1, b2, tag) -> pay {" ++ nl ++
+  "        mstore(0, a0)" ++ nl ++
+  "        mstore(32, a1)" ++ nl ++
+  "        mstore(64, a2)" ++ nl ++
+  "        mstore(96, b0)" ++ nl ++
+  "        mstore(128, b1)" ++ nl ++
+  "        mstore(160, b2)" ++ nl ++
+  "        mstore(192, tag)" ++ nl ++
+  "        let slot := keccak256(0, 224)" ++ nl ++
+  "        let t := sload(slot)" ++ nl ++
+  "        if gt(t, 0xffffffffffffffff) { revert(0, 0) }" ++ nl ++
+  "        pay := 0" ++ nl ++
+  "        if t { pay := sload(add(slot, 1)) }" ++ nl ++
+  "      }" ++ nl ++
+  "      function pf_load_pair_u64(a0, a1, a2, b0, b1, b2, tag) -> pay {" ++ nl ++
+  "        mstore(0, a0)" ++ nl ++
+  "        mstore(32, a1)" ++ nl ++
+  "        mstore(64, a2)" ++ nl ++
+  "        mstore(96, b0)" ++ nl ++
+  "        mstore(128, b1)" ++ nl ++
+  "        mstore(160, b2)" ++ nl ++
+  "        mstore(192, tag)" ++ nl ++
+  "        let slot := keccak256(0, 224)" ++ nl ++
+  "        let t := sload(slot)" ++ nl ++
+  "        if gt(t, 0xffffffffffffffff) { revert(0, 0) }" ++ nl ++
+  "        pay := 0" ++ nl ++
+  "        if t {" ++ nl ++
+  "          pay := sload(add(slot, 1))" ++ nl ++
+  "          if gt(pay, 0xffffffffffffffff) { revert(0, 0) }" ++ nl ++
+  "        }" ++ nl ++
+  "      }" ++ nl
+
 private def widthMask (width : Nat) : String :=
   if width == 8 then u64MaxYul else Codec.byteMask width
 
@@ -157,10 +184,10 @@ private def packFixedBytesLimb (src : String) (bytes limb : Nat) : String :=
 
 /-- Little-endian 64-bit limb `word` of a 256-bit ABI/storage word. -/
 private def packU256Word (src : String) (word : Nat) : String :=
-  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), " ++ u64MaxYul ++ ")"
+  Codec.Emit.packU256Word src word
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 private def maskExpr (width : Nat) (value : String) : String :=
   if width == 8 then value else "and(" ++ value ++ ", " ++ widthMask width ++ ")"
@@ -174,13 +201,47 @@ private def cmpYul (c : Ops.Cmp) (l r : String) : String :=
   | .gt => s!"gt({l}, {r})"
   | .ge => s!"iszero(lt({l}, {r}))"
 
-private def loadVal (p : IR.Program) (paramPrefix : String) (paramCount : Nat)
+/-- How a method's parameter words reach Yul. A static word is the local `{prefix}{i}` the
+entry decoder binds. A byte word of a packed `bytes` parameter has no local: it reads calldata
+through its `Codec.Emit.PackedBytesFrame`, and an open call forwarding the whole frame copies
+it from calldata (`calldataBytes`). -/
+structure ParamFrame where
+  stem : String
+  bytes : Array Codec.Emit.PackedBytesFrame := #[]
+
+namespace ParamFrame
+
+def word (frame : ParamFrame) (i : Nat) : String :=
+  match frame.bytes.find? (·.holdsByte i) with
+  | some bytes => bytes.byteExpr i
+  | none => s!"{frame.stem}{i}"
+
+/-- The payload offset local of the frame these limbs spell exactly: its length word followed
+by every byte word in order. Any other limb shape is not one calldata region. -/
+def calldataBytes (frame : ParamFrame) (parts : Array Ops.Val) : Option String :=
+  match parts[0]? with
+  | some v =>
+      match v with
+      | .arg lengthWord =>
+          match frame.bytes.find? (fun b => b.lengthWord == lengthWord) with
+          | some bytes =>
+              let expected : Array Ops.Val :=
+                (Array.range (1 + bytes.capacity)).map fun k =>
+                  .arg (lengthWord + k)
+              if parts == expected then some bytes.dataName else none
+          | none => none
+      | _ => none
+  | none => none
+
+end ParamFrame
+
+private def loadVal (p : IR.Program) (paramPrefix : ParamFrame) (paramCount : Nat)
     (paramWidths : Array Core.Codec.Scalar) (v : Ops.Val) : Except String String :=
   match v with
   | .lit n => .ok (yulLit n)
   | .arg i =>
       if i < paramCount then
-        .ok s!"{paramPrefix}{i}"
+        .ok (paramPrefix.word i)
       else
         .error "extract/unsupported: evm arg is implicit state"
   | .local i => .ok s!"l{i}"
@@ -191,19 +252,19 @@ private def loadVal (p : IR.Program) (paramPrefix : String) (paramCount : Nat)
             if Codec.isWideIntegerCarrier type then
               match uint256LeafOff name with
               | some off =>
-                  if off < Codec.limbCount type then .ok (packU256Word s!"{paramPrefix}{i}" off)
+                  if off < Codec.limbCount type then .ok (packU256Word (paramPrefix.word i) off)
                   else .error s!"evm/codec: out-of-range integer projection {name}"
               | none => .error s!"evm/codec: invalid wide-integer projection {name}"
             else if Codec.isFixedBytesCarrier type then
               match type, uint256LeafOff name with
               | .fixedBytes bytes, some off =>
                   if off < Codec.limbCount type then
-                    .ok (packFixedBytesLimb s!"{paramPrefix}{i}" bytes off)
+                    .ok (packFixedBytesLimb (paramPrefix.word i) bytes off)
                   else .error s!"evm/codec: out-of-range fixed-bytes projection {name}"
               | _, _ => .error s!"evm/codec: invalid fixed-bytes projection {name}"
             else if Codec.isAddressCarrier type then
               match addrLeafOff name with
-              | some off => .ok (packAddrWord s!"{paramPrefix}{i}" off)
+              | some off => .ok (packAddrWord (paramPrefix.word i) off)
               | none => .error s!"evm/codec: invalid address projection {name}"
             else do
               let slot ← slotOf p name
@@ -404,7 +465,7 @@ private def bindChecked (indent name expr : String) : String :=
     indent ++ "if gt(" ++ name ++ ", " ++ u64MaxYul ++ ") { " ++ revert0 ++ " }" ++ nl
 
 /-- 环境 opcode / 移位 / 下标必须先检查再当值用。 -/
-private partial def materializeVal (p : IR.Program) (indent paramPrefix : String)
+private partial def materializeVal (p : IR.Program) (indent : String) (paramPrefix : ParamFrame)
     (paramCount : Nat) (paramWidths : Array Core.Codec.Scalar) (v : Ops.Val) (st : Render) :
     Except String (String × String × Render) := do
   let checked? : Option String :=
@@ -456,15 +517,33 @@ private partial def materializeVal (p : IR.Program) (indent paramPrefix : String
         let (preR, rv, st2) ← materializeVal p indent paramPrefix paramCount paramWidths r st1
         let (nm, st3) := fresh st2
         let (preT, tv, st4) ← materializeVal p (indent ++ "  ") paramPrefix paramCount paramWidths t st3
-        let (preF, fv, st5) ← materializeVal p (indent ++ "  ") paramPrefix paramCount paramWidths f st4
+        -- A value first materialized inside a branch block is out of scope after it; forget it.
+        let (preF, fv, st5) ←
+          materializeVal p (indent ++ "  ") paramPrefix paramCount paramWidths f
+            { st4 with wide := st3.wide }
+        let st5 := { st5 with wide := st3.wide }
         let cond := cmpYul c lv rv
-        let txt := preL ++ preR ++
-          indent ++ "let " ++ nm ++ " := 0" ++ nl ++
-          indent ++ "if " ++ cond ++ " {" ++ nl ++ preT ++
-          indent ++ "  " ++ nm ++ " := " ++ tv ++ nl ++ indent ++ "}" ++ nl ++
-          indent ++ "if iszero(" ++ cond ++ ") {" ++ nl ++ preF ++
-          indent ++ "  " ++ nm ++ " := " ++ fv ++ nl ++ indent ++ "}" ++ nl
-        return (txt, nm, { st5 with last := some nm })
+        -- A branch with no prelude is a leaf expression, valid and effect-free in the
+        -- enclosing scope, so it can be the default and its `if` disappears. A comparison is
+        -- already 0 or 1, so selecting 1/0 on it is the comparison itself.
+        let guarded (default : String) (test : String) (pre : String) (value : String) :=
+          indent ++ "let " ++ nm ++ " := " ++ default ++ nl ++
+          indent ++ "if " ++ test ++ " {" ++ nl ++ pre ++
+          indent ++ "  " ++ nm ++ " := " ++ value ++ nl ++ indent ++ "}" ++ nl
+        let body :=
+          if preT.isEmpty && preF.isEmpty && tv == "0x1" && fv == "0" then
+            indent ++ "let " ++ nm ++ " := " ++ cond ++ nl
+          else if preT.isEmpty && preF.isEmpty && tv == "0" && fv == "0x1" then
+            indent ++ "let " ++ nm ++ " := iszero(" ++ cond ++ ")" ++ nl
+          else if preF.isEmpty then guarded fv cond preT tv
+          else if preT.isEmpty then guarded tv s!"iszero({cond})" preF fv
+          else
+            indent ++ "let " ++ nm ++ " := 0" ++ nl ++
+            indent ++ "if " ++ cond ++ " {" ++ nl ++ preT ++
+            indent ++ "  " ++ nm ++ " := " ++ tv ++ nl ++ indent ++ "}" ++ nl ++
+            indent ++ "if iszero(" ++ cond ++ ") {" ++ nl ++ preF ++
+            indent ++ "  " ++ nm ++ " := " ++ fv ++ nl ++ indent ++ "}" ++ nl
+        return (preL ++ preR ++ body, nm, { st5 with last := some nm })
     | .indexGet _ name idx len off =>
         let (pre, iv, st1) ←
           match idx with
@@ -554,6 +633,7 @@ private partial def materializeVal (p : IR.Program) (indent paramPrefix : String
           lookupWide := lookupWide
           valKey := valKey
           resolveStaticU64Slot := staticU64SlotOf p
+          calldataBytes := paramPrefix.calldataBytes
           indent
         }
         Component.Emit.emitQuery context query operands st
@@ -561,8 +641,10 @@ private partial def materializeVal (p : IR.Program) (indent paramPrefix : String
         let e ← loadVal p paramPrefix paramCount paramWidths v
         return ("", e, st)
 
-/-- Validate the first generic source-error surface. Each named field is one ABI `uint64`
-word; wider and structured fields stay closed until their source codec contract is explicit. -/
+/-- Validate a typed source error against the closed EVM scalar vocabulary shared with typed
+events: each named field packs into exactly one ABI word from its little-endian limbs, so
+`ERC1155InvalidArrayLength(uint256,uint256)` and address-bearing OZ errors keep their
+selectors. Structured and dynamic fields stay closed. -/
 private def typedErrorAbiTypes (frame : Core.Ops.ErrorFrame Ops.Val) : Except String (Array String) := do
   unless frame.wellFormed (·.wellFormed Ops.ValKind.arity) do
     throw "extract/unsupported: malformed typed error frame"
@@ -570,24 +652,30 @@ private def typedErrorAbiTypes (frame : Core.Ops.ErrorFrame Ops.Val) : Except St
     throw "extract/unsupported: typed error requires one to four fields"
   let mut types := #[]
   for arg in frame.args do
-    unless arg.type == .uint 64 && arg.parts.size == 1 do
-      throw "extract/unsupported: typed error fields must be named UInt64 values"
+    unless NativeFx.eventScalarSupported arg.type &&
+        arg.parts.size == Codec.limbCount arg.type do
+      throw "extract/unsupported: typed error field type has no EVM word carrier"
     types := types.push (← Codec.abiType arg.type)
   return types
 
 /-- Materialize one validated source error frame and hand its ABI geometry to the existing
 target-local custom-error interpreter. Selector, argument order, and ABI metadata all consume
-the same typed frame. -/
-private def emitTypedError (p : IR.Program) (indent paramPrefix : String)
+the same typed frame; each field is packed by the same word packer typed events use. -/
+private def emitTypedError (p : IR.Program) (indent : String) (paramPrefix : ParamFrame)
     (paramCount : Nat) (paramWidths : Array Core.Codec.Scalar)
     (frame : Core.Ops.ErrorFrame Ops.Val) (st : Render) : Except String (String × Render) := do
   let abiTypes ← typedErrorAbiTypes frame
+  let context : NativeFx.Emit.Context Render := {
+    materialize := fun value st =>
+      materializeVal p indent paramPrefix paramCount paramWidths value st
+    fresh := fresh
+    indent
+  }
   let mut prelude := ""
   let mut words := #[]
   let mut st := st
   for arg in frame.args do
-    let (pre, word, st') ←
-      materializeVal p indent paramPrefix paramCount paramWidths arg.parts[0]! st
+    let (pre, word, st') ← NativeFx.Emit.packAbiWord context arg.type arg.parts st
     prelude := prelude ++ pre
     words := words.push word
     st := st'
@@ -600,7 +688,7 @@ private def emitTypedError (p : IR.Program) (indent paramPrefix : String)
 private def brace (inner : String) : String :=
   "{" ++ nl ++ inner ++ "}"
 
-private partial def emitOps (p : IR.Program) (indent paramPrefix : String)
+private partial def emitOps (p : IR.Program) (indent : String) (paramPrefix : ParamFrame)
     (paramCount : Nat) (paramWidths : Array Core.Codec.Scalar) (ops : Array IR.Op) (st : Render) :
     Except String (String × Render) := do
   let destSlot0 ← slotOf p (destHint p ops)
@@ -738,6 +826,7 @@ private partial def emitOps (p : IR.Program) (indent paramPrefix : String)
           lookupWide := lookupWide
           valKey := valKey
           resolveStaticU64Slot := staticU64SlotOf p
+          calldataBytes := paramPrefix.calldataBytes
           indent
         }
         let (txt, last, st') ← Component.Emit.emitCall context call st
@@ -936,7 +1025,7 @@ private def cfgDefinedLocals (graph : Core.CFG.Graph Ops.ValKind Ops.OpExt) : Ar
         | _ => #[]
   ids.toList.eraseDups.toArray
 
-private def emitCFGOkState (p : IR.Program) (indent paramPrefix : String)
+private def emitCFGOkState (p : IR.Program) (indent : String) (paramPrefix : ParamFrame)
     (paramCount : Nat) (paramWidths : Array Core.Codec.Scalar) (value : Ops.Val) (last : Option String)
     (hint : CFGResultHint) (st : Render) : Except String (String × Render) := do
   let mut body := ""
@@ -990,7 +1079,7 @@ private def emitCFGOkState (p : IR.Program) (indent paramPrefix : String)
     body := body ++ storeSlot indent slot (maskExpr width result) ++ returnWord indent result
   return (body, st)
 
-private def emitCFGChecked (p : IR.Program) (indent paramPrefix : String)
+private def emitCFGChecked (p : IR.Program) (indent : String) (paramPrefix : ParamFrame)
     (paramCount : Nat) (paramWidths : Array Core.Codec.Scalar) (operation : Core.CFG.Checked Ops.ValKind)
     (success overflow : Nat) (st : Render) : Except String (String × Render) := do
   match operation with
@@ -1052,7 +1141,8 @@ private def schemaIsStaticAggregate : Core.Codec.Schema → Bool
 Every scalar leaf owns one word; wide integers, addresses, and fixed bytes consume several source
 limbs but never extra ABI words. -/
 private def emitStaticReturnWords (p : IR.Program) (method : IR.Method) (indent : String)
-    (paramTypes retTypes : Array Core.Codec.Scalar) (values : Array Ops.Val) (st : Render) :
+    (paramFrame : ParamFrame) (paramTypes retTypes : Array Core.Codec.Scalar)
+    (values : Array Ops.Val) (st : Render) :
     Except String (String × Render) := do
   let expected := retTypes.foldl (init := 0) fun count type => count + Codec.limbCount type
   unless values.size == expected do
@@ -1066,7 +1156,7 @@ private def emitStaticReturnWords (p : IR.Program) (method : IR.Method) (indent 
     let mut parts : Array String := #[]
     for _ in [0:partCount] do
       let (pre, expression, next) ←
-        materializeVal p indent "arg" method.paramCount paramTypes values[valueIndex]! st
+        materializeVal p indent paramFrame method.paramCount paramTypes values[valueIndex]! st
       out := out ++ pre
       parts := parts.push expression
       st := next
@@ -1089,6 +1179,14 @@ private def emitStaticReturnWords (p : IR.Program) (method : IR.Method) (indent 
       out := out ++ indent ++ "mstore(" ++ toString offset ++ ", " ++ parts[0]! ++ ")" ++ nl
   return (out ++ indent ++ "return(0, " ++ toString (retTypes.size * 32) ++ ")" ++ nl, st)
 
+/-- The entry's parameter frame: `arg{i}` locals, with every packed `bytes` parameter read from
+calldata. Constructors never carry dynamic inputs, so theirs is the bare `ctor_arg` prefix. -/
+private def entryParamFrame (method : IR.Method) : Except String ParamFrame := do
+  let plans ←
+    if method.paramSchemas.isEmpty then pure #[]
+    else method.paramSchemas.mapM Codec.inputPlan
+  return { stem := "arg", bytes := Codec.Emit.packedBytesFrames plans }
+
 private def emitCFGCase (p : IR.Program) (method : IR.Method)
     (hints : Array (Core.CFG.BlockId × CFGResultHint))
     (block : Core.CFG.Block Ops.ValKind Ops.OpExt) (st : Render) :
@@ -1096,6 +1194,7 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
   unless block.params.isEmpty do
     throw s!"evm/cfg: block parameters are not lowered in block {block.id}"
   let paramTypes ← method.resolvedParamTypes
+  let paramFrame ← entryParamFrame method
   let retTypes ← method.resolvedRetTypes
   let indent := "            "
   let incoming := (hints.find? (·.1 == block.id)).map (·.2) |>.getD .plain
@@ -1110,7 +1209,7 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
   for sourceInstruction in block.instructions do
     let instruction ← IR.ofSourceOps #[sourceInstruction]
     let (text, next) ←
-      emitOps p indent "arg" method.paramCount paramTypes instruction afterInstructions
+      emitOps p indent paramFrame method.paramCount paramTypes instruction afterInstructions
     instructionText := instructionText ++ text
     if cfgInstructionProducesEffectResult sourceInstruction then
       let some expression := next.last
@@ -1128,9 +1227,9 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
       unless thenEdge.args.isEmpty && elseEdge.args.isEmpty do
         throw s!"evm/cfg: branch arguments remain at block {block.id}"
       let (preL, left, st1) ←
-        materializeVal p indent "arg" method.paramCount paramTypes lhs finalState
+        materializeVal p indent paramFrame method.paramCount paramTypes lhs finalState
       let (preR, right, st2) ←
-        materializeVal p indent "arg" method.paramCount paramTypes rhs st1
+        materializeVal p indent paramFrame method.paramCount paramTypes rhs st1
       let (condition, st3) := fresh st2
       finalState := st3
       body := body ++ preL ++ preR ++ indent ++ "let " ++ condition ++ " := " ++
@@ -1141,7 +1240,7 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
   | .checked operation success overflow =>
       unless success.args.isEmpty && overflow.args.isEmpty do
         throw s!"evm/cfg: checked arguments remain at block {block.id}"
-      let (checkedText, next) ← emitCFGChecked p indent "arg" method.paramCount paramTypes
+      let (checkedText, next) ← emitCFGChecked p indent paramFrame method.paramCount paramTypes
         operation success.target overflow.target finalState
       body := body ++ checkedText
       finalState := { next with last := none }
@@ -1149,15 +1248,15 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
       match result with
       | .initialize _ => throw "evm/cfg: initializer reached runtime entry"
       | .okState value =>
-          let (exitText, next) ← emitCFGOkState p indent "arg" method.paramCount paramTypes
+          let (exitText, next) ← emitCFGOkState p indent paramFrame method.paramCount paramTypes
             value none afterHint finalState
           body := body ++ exitText
           finalState := next
       | .errorOverflow => body := body ++ indent ++ revert0 ++ nl
       | .errorNamed name => body := body ++ revertNamed indent name
-      | .errorTyped frame =>
+      | .errorTyped err =>
           let (text, next) ←
-            emitTypedError p indent "arg" method.paramCount paramTypes frame finalState
+            emitTypedError p indent paramFrame method.paramCount paramTypes err finalState
           body := body ++ text
           finalState := next
       | .returnU64 value =>
@@ -1166,7 +1265,7 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
           -- Legacy statement-shaped scalar map reads are the sole query carrier kept in `pf_last`.
           let (pre, expression, next) ←
             if cfgHintReturnsLast afterHint then pure ("", "pf_last", finalState)
-            else materializeVal p indent "arg" method.paramCount paramTypes value finalState
+            else materializeVal p indent paramFrame method.paramCount paramTypes value finalState
           body := body ++ pre
           match retTypes.toList with
           | [.fixedBytes bytes] =>
@@ -1181,7 +1280,7 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
             let context : Codec.Emit.ReturnContext Ops.Val Render := {
               indent
               materialize := fun valueIndent value state =>
-                materializeVal p valueIndent "arg" method.paramCount paramTypes value state
+                materializeVal p valueIndent paramFrame method.paramCount paramTypes value state
             }
             let (text, next) ←
               Codec.Emit.renderReturn context plan values finalState
@@ -1189,7 +1288,8 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
             finalState := next
           else if schemaIsStaticAggregate method.retSchema then
             let (text, next) ←
-              emitStaticReturnWords p method indent paramTypes retTypes values finalState
+              emitStaticReturnWords p method indent paramFrame paramTypes retTypes
+                values finalState
             body := body ++ text
             finalState := next
           else if retTypes.size == 1 && Codec.isWideIntegerCarrier retTypes[0]! &&
@@ -1198,7 +1298,7 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
             let mut limbs := #[]
             for value in values do
               let (text, expression, next) ←
-                materializeVal p indent "arg" method.paramCount paramTypes value finalState
+                materializeVal p indent paramFrame method.paramCount paramTypes value finalState
               finalState := next
               pre := pre ++ text
               limbs := limbs.push expression
@@ -1210,12 +1310,15 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
               indent ++ "mstore(0, " ++ packU256 a0 a1 a2 a3 ++ ")" ++ nl ++
               indent ++ "return(0, 32)" ++ nl
           else if retTypes.size == 1 && Codec.isFixedBytesCarrier retTypes[0]! &&
-              values.size == Codec.limbCount retTypes[0]! then
+              values.size ≥ Codec.limbCount retTypes[0]! then
+            -- FixedBytes constructors always have four UInt64 fields. bytes4 has
+            -- limbCount 1, so requiring equality published four numeric words and
+            -- magicBytes4 refused the 128-byte frame.
             let mut pre := ""
             let mut limbs := #[]
             for value in values do
               let (text, expression, next) ←
-                materializeVal p indent "arg" method.paramCount paramTypes value finalState
+                materializeVal p indent paramFrame method.paramCount paramTypes value finalState
               finalState := next
               pre := pre ++ text
               limbs := limbs.push expression
@@ -1226,11 +1329,11 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
               toString bytes ++ ")" ++ nl ++ indent ++ "return(0, 32)" ++ nl
           else if retTypes.size == 1 && Codec.isAddressCarrier retTypes[0]! && values.size == 3 then
             let (p0, a0, s0) ←
-              materializeVal p indent "arg" method.paramCount paramTypes values[0]! finalState
+              materializeVal p indent paramFrame method.paramCount paramTypes values[0]! finalState
             let (p1, a1, s1) ←
-              materializeVal p indent "arg" method.paramCount paramTypes values[1]! s0
+              materializeVal p indent paramFrame method.paramCount paramTypes values[1]! s0
             let (p2, a2, s2) ←
-              materializeVal p indent "arg" method.paramCount paramTypes values[2]! s1
+              materializeVal p indent paramFrame method.paramCount paramTypes values[2]! s1
             finalState := s2
             body := body ++ p0 ++ p1 ++ p2 ++
               indent ++ "mstore(0, 0)" ++ nl ++
@@ -1239,14 +1342,14 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
           else
             for i in [0:values.size] do
               let (pre, expression, next) ←
-                materializeVal p indent "arg" method.paramCount paramTypes values[i]! finalState
+                materializeVal p indent paramFrame method.paramCount paramTypes values[i]! finalState
               finalState := next
               body := body ++ pre ++ indent ++ "mstore(" ++ toString (i * 32) ++ ", " ++
                 expression ++ ")" ++ nl
             body := body ++ indent ++ "return(0, " ++ toString (values.size * 32) ++ ")" ++ nl
       | .returnState value =>
           let (pre, expression, next) ←
-            materializeVal p indent "arg" method.paramCount paramTypes value finalState
+            materializeVal p indent paramFrame method.paramCount paramTypes value finalState
           finalState := next
           let destination := (p.slots[0]?.map (·.name)).getD "slot0"
           let slot ← slotOf p destination
@@ -1302,7 +1405,7 @@ private def emitConstructorStores (p : IR.Program) : Except String String := do
   let paramTypes ← p.constructor.resolvedParamTypes
   for s in p.slots do
     if h : i < vs.size then
-      let v ← loadVal p "ctor_arg" p.constructor.paramCount paramTypes vs[i]
+      let v ← loadVal p { stem := "ctor_arg" } p.constructor.paramCount paramTypes vs[i]
       unless v == "0" do
         body := body ++ storeSlot "    " s.index (maskExpr s.width v)
     i := i + 1
@@ -1438,6 +1541,7 @@ def emitYul (p : IR.Program) : Except String String := do
     "// digest=" ++ IR.digestHex p ++ nl ++
     "object " ++ q p.name ++ " {" ++ nl ++
     "  code {" ++ nl ++
+    Codec.Emit.renderAddrLimbHelpers "    " ++
     ctorHead ++ ctorStores ++
     "    datacopy(0, dataoffset(" ++ q runtimeName ++ "), datasize(" ++ q runtimeName ++ "))" ++ nl ++
     ctorImm ++
@@ -1446,8 +1550,10 @@ def emitYul (p : IR.Program) : Except String String := do
     "  object " ++ q runtimeName ++ " {" ++ nl ++
     "    code {" ++ nl ++
     "      mstore(64, memoryguard(" ++ toString memoryGuardBytes ++ "))" ++ nl ++
+    Codec.Emit.renderAddrLimbHelpers "      " ++
     renderAddr20Helper ++
     renderFixedBytesHelper ++
+    renderPairMapLoadHelpers ++
     globalGuard ++
     receiveTxt ++
     selectorHead ++
@@ -1611,18 +1717,20 @@ private def eventAbi (name : String) : String :=
     "{\"type\":\"event\",\"name\":\"" ++ escapeJson name ++
       "\",\"inputs\":[{\"name\":\"amt\",\"type\":\"uint64\",\"indexed\":false}],\"anonymous\":false}"
 
-/-- ABI types of one validated typed event frame; the same owner the Yul emitter uses for
-topic0, so ABI JSON and LOG geometry cannot drift apart. Existing Transfer256/Approval256 JSON
-is not rewritten here. -/
-private def typedEventAbiTypes (frame : Core.Ops.EventFrame Ops.Val) :
-    Except String (Array String) :=
-  NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame
+/-- One typed event as the emitter sees it: the scalar frame plus its bounded dynamic tails. -/
+private abbrev TypedEvent := Core.Ops.EventFrame Ops.Val × Array (NativeFx.LogTail Ops.Val)
+
+/-- ABI types of one validated typed event; the same owner the Yul emitter uses for topic0, so
+ABI JSON and LOG geometry cannot drift apart. Existing Transfer256/Approval256 JSON is not
+rewritten here. -/
+private def typedEventAbiTypes (event : TypedEvent) : Except String (Array String) :=
+  NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) event.1 event.2
 
 /-- Canonical event identity is the topic0 signature `Name(type,...)`. Two frames sharing it must
 agree on names and indexed flags, since receipts cannot distinguish them. -/
-private def typedEventIdentity (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
-  let types ← typedEventAbiTypes frame
-  return Keccak.signature frame.constructor types
+private def typedEventIdentity (event : TypedEvent) : Except String String := do
+  let types ← typedEventAbiTypes event
+  return Keccak.signature event.1.constructor types
 
 /-- Topic0 signature of a closed `NativeFx.logName` event, mirroring `eventAbi`. -/
 private def closedEventIdentity (name : String) : String :=
@@ -1630,12 +1738,15 @@ private def closedEventIdentity (name : String) : String :=
   else if name == "Approval256" then "Approval(address,address,uint256)"
   else name ++ "(uint64)"
 
-private def eventAbiTyped (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
-  let types ← typedEventAbiTypes frame
+private def eventAbiTyped (event : TypedEvent) : Except String String := do
+  let (frame, tails) := event
+  let types ← typedEventAbiTypes event
+  let names := frame.args.map (fun arg => (arg.name, arg.indexed)) ++
+    tails.map (fun tail => (tail.name, false))
   let mut inputs := #[]
-  for i in [0:frame.args.size] do
-    let indexed := if frame.args[i]!.indexed then "true" else "false"
-    inputs := inputs.push ("{\"name\":\"" ++ escapeJson frame.args[i]!.name ++
+  for i in [0:names.size] do
+    let indexed := if names[i]!.2 then "true" else "false"
+    inputs := inputs.push ("{\"name\":\"" ++ escapeJson names[i]!.1 ++
       "\",\"type\":\"" ++ types[i]! ++ "\",\"indexed\":" ++ indexed ++ "}")
   return "{\"type\":\"event\",\"name\":\"" ++ escapeJson frame.constructor ++
     "\",\"inputs\":[" ++ String.intercalate "," inputs.toList ++ "],\"anonymous\":false}"
@@ -1719,13 +1830,12 @@ private partial def collectTypedErrorFrames (ops : Array IR.Op) :
     | .forBody _ body => acc ++ collectTypedErrorFrames body
     | _ => acc
 
-/-- Collect typed event frames through the same structured control-flow tree as emission. -/
-private partial def collectTypedEventFrames (ops : Array IR.Op) :
-    Array (Core.Ops.EventFrame Ops.Val) :=
+/-- Collect typed events through the same structured control-flow tree as emission. -/
+private partial def collectTypedEventFrames (ops : Array IR.Op) : Array TypedEvent :=
   ops.foldl (init := #[]) fun acc op =>
     let acc :=
       match op with
-      | .component (.nativeFx (.logTyped frame)) => acc.push frame
+      | .component (.nativeFx (.logTyped frame tails)) => acc.push (frame, tails)
       | _ => acc
     match op with
     | .ite _ _ _ t f => acc ++ collectTypedEventFrames t ++ collectTypedEventFrames f

@@ -55,8 +55,9 @@ private def evmLeaf (kind : Evm.Ops.ValKind) : Val :=
 @[match_pattern] def Op.evmLogApproval256
     (o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 : Val) : Op :=
   .ext (.evm (.component (.nativeFx (.logApproval256 o0 o1 o2 s0 s1 s2 a0 a1 a2 a3))))
-@[match_pattern] def Op.evmLogTyped (frame : Core.Ops.EventFrame Val) : Op :=
-  .ext (.evm (.component (.nativeFx (.logTyped frame))))
+@[match_pattern] def Op.evmLogTyped (frame : Core.Ops.EventFrame Val)
+    (tails : Array (Evm.NativeFx.LogTail Val)) : Op :=
+  .ext (.evm (.component (.nativeFx (.logTyped frame tails))))
 @[match_pattern] def Op.evmRevertInsufficient
     (h0 h1 h2 h3 w0 w1 w2 w3 : Val) : Op :=
   .ext (.evm (.component (.nativeFx (.revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3))))

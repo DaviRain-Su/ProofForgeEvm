@@ -3,6 +3,7 @@ import ProofForge.Evm.LogError.Emit
 import ProofForge.Evm.Payable.Emit
 import ProofForge.Evm.Ops
 import ProofForge.Evm.Codec
+import ProofForge.Evm.Codec.Emit
 import ProofForge.Core.Ops
 import ProofForge.Crypto.Keccak
 
@@ -14,7 +15,7 @@ private def nl : String := "\n"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 /-- Call the shared runtime helper that packs three little-endian Addr20 limbs into an
 ABI address word at `memory[0..31]`. -/
@@ -128,62 +129,77 @@ private def emitLogTransfer256 (context : Context σ)
   let logTxt ← LogError.Emit.emitLog context.logError
     { data := #[amt], topics := #[sigTopic, fromT, toT] }
   let txt := p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++ r0 ++ r1 ++ r2 ++ r3 ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent x0 x1 x2 ++
-    indent ++ "let " ++ fromT ++ " := mload(0)" ++ nl ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent y0 y1 y2 ++
-    indent ++ "let " ++ toT ++ " := mload(0)" ++ nl ++
+    Codec.Emit.bindAddrWord indent fromT x0 x1 x2 ++
+    Codec.Emit.bindAddrWord indent toT y0 y1 y2 ++
     indent ++ "let " ++ amt ++ " := " ++ packU256 z0 z1 z2 z3 ++ nl ++
     logTxt
   return (txt, z0, s12)
 
-/-- Pack one event field into a single ABI word. Addresses and fixed bytes go through the
-shared memory helpers; wide integers use the little-endian `packU256` spelling; narrow
-integers and booleans are already one word. Any other carrier fails closed. -/
-private def packEventWord (context : Context σ) (arg : Core.Ops.EventArg Ops.Val) (st : σ) :
-    Except String (String × String × σ) := do
+/-- Pack one typed event or typed error field into a single ABI word. Addresses and fixed bytes
+go through the shared memory helpers; wide integers use the little-endian `packU256` spelling;
+narrow integers and booleans are already one word. Any other carrier fails closed. -/
+def packAbiWord (context : Context σ) (type : Core.Codec.Scalar) (limbs : Array Ops.Val)
+    (st : σ) : Except String (String × String × σ) := do
   let indent := context.indent
   let mut prelude := ""
   let mut parts : Array String := #[]
   let mut st := st
-  for part in arg.parts do
+  for part in limbs do
     let (pre, expr, st') ← context.materialize part st
     prelude := prelude ++ pre
     parts := parts.push expr
     st := st'
   if parts.isEmpty then
-    throw "extract/unsupported: typed event field has no limbs"
-  if Codec.isAddressCarrier arg.type then
+    throw "extract/unsupported: typed field has no limbs"
+  if Codec.isAddressCarrier type then
     let (word, st') := context.fresh st
-    let txt := prelude ++
-      indent ++ "mstore(0, 0)" ++ nl ++
-      packAddrMstore8 indent (parts[0]!) ((parts[1]?).getD "0") ((parts[2]?).getD "0") ++
-      indent ++ "let " ++ word ++ " := mload(0)" ++ nl
+    let txt := prelude ++ Codec.Emit.bindAddrWord indent word (parts[0]!)
+      ((parts[1]?).getD "0") ((parts[2]?).getD "0")
     return (txt, word, st')
-  else if Codec.isFixedBytesCarrier arg.type then
+  else if Codec.isFixedBytesCarrier type then
     let (word, st') := context.fresh st
     let txt := prelude ++
       indent ++ "mstore(0, 0)" ++ nl ++
       indent ++ "pf_store_fixed_bytes(0, " ++ (parts[0]?).getD "0" ++ ", " ++
         (parts[1]?).getD "0" ++ ", " ++ (parts[2]?).getD "0" ++ ", " ++
-        (parts[3]?).getD "0" ++ ", " ++ toString arg.type.byteWidth ++ ")" ++ nl ++
+        (parts[3]?).getD "0" ++ ", " ++ toString type.byteWidth ++ ")" ++ nl ++
       indent ++ "let " ++ word ++ " := mload(0)" ++ nl
     return (txt, word, st')
-  else if Codec.isWideIntegerCarrier arg.type then
+  else if Codec.isWideIntegerCarrier type then
     let (word, st') := context.fresh st
     let packed := packU256 (parts[0]!) ((parts[1]?).getD "0") ((parts[2]?).getD "0")
       ((parts[3]?).getD "0")
     let txt := prelude ++ indent ++ "let " ++ word ++ " := " ++ packed ++ nl
     return (txt, word, st')
-  else if Codec.isNarrowIntegerCarrier arg.type && parts.size == 1 then
+  else if Codec.isNarrowIntegerCarrier type && parts.size == 1 then
     return (prelude, parts[0]!, st)
   else
-    throw "extract/unsupported: typed event field type has no EVM word carrier"
+    throw "extract/unsupported: typed field type has no EVM word carrier"
 
-private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops.Val) (st : σ) :
+/-- Pack one bounded dynamic-array field into a tail plan: the runtime length bound to a fresh
+word (the plan reads it once per slot), then every slot packed by the same word packer the
+scalar fields use. Slots past the runtime length are packed but never stored. -/
+private def packLogTail (context : Context σ) (tail : NativeFx.LogTail Ops.Val) (st : σ) :
+    Except String (String × LogError.LogTailPlan × σ) := do
+  let indent := context.indent
+  let (lengthPre, lengthExpr, st0) ← context.materialize tail.length st
+  let (length, st1) := context.fresh st0
+  let mut prelude := lengthPre ++ indent ++ "let " ++ length ++ " := " ++ lengthExpr ++ nl
+  let mut elements : Array String := #[]
+  let mut st := st1
+  let limbs := Codec.limbCount tail.elementType
+  for slot in [0:tail.capacity] do
+    let (pre, word, st') ←
+      packAbiWord context tail.elementType (tail.elements.extract (slot * limbs) ((slot + 1) * limbs)) st
+    prelude := prelude ++ pre
+    elements := elements.push word
+    st := st'
+  return (prelude, { length, elements }, st)
+
+private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops.Val)
+    (tails : Array (NativeFx.LogTail Ops.Val)) (st : σ) :
     Except String (String × String × σ) := do
-  let abiTypes ← NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame
+  let abiTypes ← NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame tails
   let mut prelude := ""
   let mut topics : Array String :=
     #["0x" ++ Keccak.keccak256HexOfString (Keccak.signature frame.constructor abiTypes)]
@@ -191,7 +207,7 @@ private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops
   let mut st := st
   let mut last : String := "0"
   for arg in frame.args do
-    let (pre, word, st') ← packEventWord context arg st
+    let (pre, word, st') ← packAbiWord context arg.type arg.parts st
     prelude := prelude ++ pre
     st := st'
     last := word
@@ -199,7 +215,13 @@ private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops
       topics := topics.push word
     else
       data := data.push word
-  let logTxt ← LogError.Emit.emitLog context.logError { data, topics }
+  let mut tailPlans : Array LogError.LogTailPlan := #[]
+  for tail in tails do
+    let (pre, plan, st') ← packLogTail context tail st
+    prelude := prelude ++ pre
+    tailPlans := tailPlans.push plan
+    st := st'
+  let logTxt ← LogError.Emit.emitLog context.logError { data, topics, tails := tailPlans }
   return (prelude ++ logTxt, last, st)
 
 private def emitLogApproval256 (context : Context σ)
@@ -223,12 +245,8 @@ private def emitLogApproval256 (context : Context σ)
   let logTxt ← LogError.Emit.emitLog context.logError
     { data := #[amt], topics := #[sigTopic, ownT, spdT] }
   let txt := p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++ r0 ++ r1 ++ r2 ++ r3 ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent x0 x1 x2 ++
-    indent ++ "let " ++ ownT ++ " := mload(0)" ++ nl ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent y0 y1 y2 ++
-    indent ++ "let " ++ spdT ++ " := mload(0)" ++ nl ++
+    Codec.Emit.bindAddrWord indent ownT x0 x1 x2 ++
+    Codec.Emit.bindAddrWord indent spdT y0 y1 y2 ++
     indent ++ "let " ++ amt ++ " := " ++ packU256 z0 z1 z2 z3 ++ nl ++
     logTxt
   return (txt, z0, s12)
@@ -258,11 +276,7 @@ private def emitRevertUnauthorized (context : Context σ)
   let (p2, a2, s2) ← context.materialize w2 s1
   let errTxt ← LogError.Emit.emitRevert context.logError
     { selector := Keccak.selector "Unauthorized" #["address"], args := #["pf_who"] }
-  let txt := p0 ++ p1 ++ p2 ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent a0 a1 a2 ++
-    indent ++ "let pf_who := mload(0)" ++ nl ++
-    errTxt
+  let txt := p0 ++ p1 ++ p2 ++ Codec.Emit.bindAddrWord indent "pf_who" a0 a1 a2 ++ errTxt
   return (txt, a0, s2)
 
 private def emitRevertZeroAddress (context : Context σ) (st : σ) :
@@ -301,7 +315,7 @@ def emitCall (context : Context σ) (call : NativeFx.Call Ops.Val) (st : σ) :
       emitLogTransfer256 context f0 f1 f2 t0 t1 t2 a0 a1 a2 a3 st
   | .logApproval256 o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 =>
       emitLogApproval256 context o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 st
-  | .logTyped frame => emitLogTyped context frame st
+  | .logTyped frame tails => emitLogTyped context frame tails st
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       emitRevertInsufficient context h0 h1 h2 h3 w0 w1 w2 w3 st
   | .revertUnauthorized w0 w1 w2 => emitRevertUnauthorized context w0 w1 w2 st

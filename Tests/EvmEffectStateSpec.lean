@@ -85,6 +85,71 @@ def replaceAndLog (_s : State) (next : Address) (amount : UInt64) :
 
 end WideFixture
 
+namespace GuardedFixture
+
+/-! An effect under a value-level `if` runs only on its branch. The straight-line flattening this
+guards against applied the write on both branches and kept only the `if` for the result word. -/
+
+structure State where
+  count : UInt64
+  deriving Repr, DecidableEq, Inhabited
+
+inductive Error where
+  | malformed
+  deriving Repr, DecidableEq, Inhabited, BEq
+
+@[pf_inline] def positions : Storage.U64Map := Storage.Layout.root.u64Map.handle
+
+@[pf_entry]
+def init (_seed : UInt64) : State :=
+  { count := 0 }
+
+@[pf_entry]
+def countOf (s : State) : UInt64 :=
+  s.count
+
+@[pf_entry]
+def putWhen (s : State) (flag key value : UInt64) : Except Error (State × Bool) :=
+  if s.count < 1000 then
+    .ok ({ count := s.count + 1 },
+      Effect.thenTrue (if flag != 0 then positions.put key value else 0))
+  else
+    .error .malformed
+
+end GuardedFixture
+
+namespace OpaqueGuardFixture
+
+/-! The same shape behind a condition with no comparison or Bool lowering must fail closed. -/
+
+structure State where
+  count : UInt64
+  deriving Repr, DecidableEq, Inhabited
+
+inductive Error where
+  | malformed
+  deriving Repr, DecidableEq, Inhabited, BEq
+
+@[pf_inline] def positions : Storage.U64Map := Storage.Layout.root.u64Map.handle
+
+@[pf_entry]
+def init (_seed : UInt64) : State :=
+  { count := 0 }
+
+@[pf_entry]
+def countOf (s : State) : UInt64 :=
+  s.count
+
+@[pf_entry]
+def putWhen (s : State) (flag key value : UInt64) : Except Error (State × Bool) :=
+  if s.count < 1000 then
+    .ok ({ count := s.count + 1 },
+      Effect.thenTrue (if flag.toBitVec.getLsbD 3 then positions.put key value else 0))
+  else
+    .error .malformed
+
+end OpaqueGuardFixture
+
 private abbrev Op := ProofForge.Extract.IR.Op
 
 private def isMapSet : Op → Bool
@@ -212,6 +277,33 @@ private def expectEffectStateMerge : CommandElabM Unit := do
     | throwError "wide effect/state sequence lost its return"
   unless effectIndex < firstStoreIndex && firstStoreIndex < returnIndex do
     throwError "wide effect/state ordering drifted"
+
+  let guarded ←
+    match ProofForge.Extract.extractModuleIR env `Tests.EvmEffectStateSpec.GuardedFixture with
+    | .ok program => pure program
+    | .error reason => throwError reason
+  let some method := guarded.methods.find? (·.ixName == "putWhen")
+    | throwError "guarded effect fixture omitted putWhen"
+  let some sequence := findSequence 16 method.ops fun ops =>
+      storeNames ops == #["count"] && ops.any fun | .ite .. => true | _ => false
+    | throwError "guarded effect sequence was not preserved"
+  unless sequence.countP isMapSet == 0 do
+    throwError "guarded map effect leaked onto the straight line"
+  let guards := sequence.filterMap fun
+    | .ite cmp lhs rhs thn els => some (cmp, lhs, rhs, thn, els)
+    | _ => none
+  let some (cmp, lhs, rhs, thn, els) := guards[0]?
+    | throwError "guarded effect lost its branch"
+  unless guards.size == 1 && cmp == .eq && rhs == .lit 1 &&
+      lhs == .select .ne (.arg 0) (.lit 0) (.lit 1) (.lit 0) do
+    throwError s!"guarded effect condition drifted: {repr cmp} {repr lhs} {repr rhs}"
+  unless thn.countP isMapSet == 1 && thn.size == 1 && els.isEmpty do
+    throwError "guarded effect branches drifted from one write on the flag branch"
+  match ProofForge.Extract.extractModuleIR env `Tests.EvmEffectStateSpec.OpaqueGuardFixture with
+  | .ok _ => throwError "an effect behind an opaque condition extracted"
+  | .error reason =>
+      unless reason.contains "no comparison or Bool lowering" do
+        throwError s!"opaque guard failed for the wrong reason: {reason}"
 
 elab "#pf_guard_evm_effect_state" : command => expectEffectStateMerge
 

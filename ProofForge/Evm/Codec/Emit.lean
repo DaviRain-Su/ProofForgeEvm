@@ -5,6 +5,83 @@ namespace ProofForge.Evm.Codec.Emit
 private def nl : String := "\n"
 private def revert0 : String := "revert(0, 0)"
 
+/-- Limb `word` of an ABI address word `src` as the inline byte shuffle: Addr20 is three
+little-endian limbs over address bytes `8*word ..`, which sit at bytes 12..31 of the word. -/
+def addrLimbChain (src : String) (word : Nat) : String :=
+  let rec orBytes (i : Nat) (n : Nat) (acc : String) : String :=
+    match n with
+    | 0 => acc
+    | n' + 1 =>
+      let b := "byte(" ++ toString (12 + 8 * word + i) ++ ", " ++ src ++ ")"
+      let next :=
+        if i == 0 then b
+        else "or(" ++ acc ++ ", shl(" ++ toString (8 * i) ++ ", " ++ b ++ "))"
+      orBytes (i + 1) n' next
+  let count := if word == 2 then 4 else 8
+  orBytes 0 count "0"
+
+/-- Limb `word` of the address word `src`, as a call to the runtime helper. Every keyed map
+read, topic and comparison re-derives the limbs of the same few words, and the inline shuffle
+is twenty-two nested opcodes solc neither shares across dispatcher cases nor keeps shallow on
+the stack; the helper body is the one copy. -/
+def packAddrWord (src : String) (word : Nat) : String :=
+  s!"pf_addr_w{word}({src})"
+
+/-- The word three address limbs came from, when they are `packAddrWord` of one source word
+(or all zero). Packing such limbs back into an ABI word is the identity on that word. -/
+def addrWordOfLimbs (w0 w1 w2 : String) : Option String :=
+  if w0 == "0" && w1 == "0" && w2 == "0" then some "0"
+  else
+    let head := "pf_addr_w0("
+    if w0.startsWith head && w0.endsWith ")" then
+      let src := ((w0.drop head.length).dropEnd 1).toString
+      if w1 == packAddrWord src 1 && w2 == packAddrWord src 2 then some src else none
+    else none
+
+/-- Runtime limb helpers, one per limb, each the shuffle `addrLimbChain` spells. -/
+def renderAddrLimbHelpers (indent : String) : String :=
+  String.join <| (List.range 3).map fun word =>
+    indent ++ s!"function pf_addr_w{word}(x) -> r \{" ++ nl ++
+    indent ++ "  r := " ++ addrLimbChain "x" word ++ nl ++
+    indent ++ "}" ++ nl
+
+/-- Bind `word` to the ABI address word of three limbs: the source word itself when the limbs
+were taken from one, otherwise the runtime byte shuffle through scratch memory. -/
+def bindAddrWord (indent word w0 w1 w2 : String) : String :=
+  match addrWordOfLimbs w0 w1 w2 with
+  | some src => indent ++ "let " ++ word ++ " := " ++ src ++ nl
+  | none =>
+      indent ++ "mstore(0, 0)" ++ nl ++
+      indent ++ "pf_store_addr20(0, " ++ w0 ++ ", " ++ w1 ++ ", " ++ w2 ++ ")" ++ nl ++
+      indent ++ "let " ++ word ++ " := mload(0)" ++ nl
+
+/-- Little-endian 64-bit limb `word` of a 256-bit ABI/storage word. -/
+def packU256Word (src : String) (word : Nat) : String :=
+  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), 0xffffffffffffffff)"
+
+/-- The word four limbs came from, when they are `packU256Word` 0..3 of one source word (or
+all zero), so packing them back is the identity on that word. -/
+def u256WordOfLimbs (w0 w1 w2 w3 : String) : Option String :=
+  if w0 == "0" && w1 == "0" && w2 == "0" && w3 == "0" then some "0"
+  else
+    let head := "and(shr(0, "
+    let tail := "), 0xffffffffffffffff)"
+    if w0.startsWith head && w0.endsWith tail && w0.length > head.length + tail.length then
+      let src := ((w0.drop head.length).dropEnd tail.length).toString
+      if w1 == packU256Word src 1 && w2 == packU256Word src 2 && w3 == packU256Word src 3
+      then some src else none
+    else none
+
+/-- A 256-bit word from four little-endian limbs. Limbs that were just split from one word
+name that word again instead of rebuilding it (seven nested opcodes solc keeps on the stack
+next to every live argument of the method). -/
+def packU256 (w0 w1 w2 w3 : String) : String :=
+  match u256WordOfLimbs w0 w1 w2 w3 with
+  | some src => src
+  | none =>
+      "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++
+        w3 ++ ")))"
+
 /-- Render canonical padding/range checks for one standard-ABI word. -/
 def renderWordGuard (indent name : String) (type : Core.Codec.Scalar) :
     Except String String := do
@@ -99,9 +176,48 @@ private def renderUtf8Guard (namePrefix indent lengthName : String)
   indent ++ "}" ++ nl ++
   indent ++ "if " ++ need ++ " { " ++ revert0 ++ " }" ++ nl
 
+/-- A packed `bytes` / `string` entry parameter stays in calldata. The decoder binds its length
+to the local `arg{lengthWord}` and its payload offset to `abi_bytes{lengthWord}`; the
+`capacity` byte words that follow the length in the local frame are never bound. Binding them
+cost one local plus one guarded load per byte at the entry and one guarded store per byte at
+every forward, about 3.5 KB of runtime code for a 65-byte signature. -/
+structure PackedBytesFrame where
+  lengthWord : Nat
+  capacity : Nat
+  deriving Repr, BEq
+
+namespace PackedBytesFrame
+
+def dataName (frame : PackedBytesFrame) : String :=
+  "abi_bytes" ++ toString frame.lengthWord
+
+def holdsByte (frame : PackedBytesFrame) (word : Nat) : Bool :=
+  frame.lengthWord < word && word ≤ frame.lengthWord + frame.capacity
+
+/-- Byte word `word` read in place. The decoder proved the padding zero, but another dynamic
+tail may follow the padded payload, so a slot at or past the length reads as zero by the guard
+rather than by position. -/
+def byteExpr (frame : PackedBytesFrame) (word : Nat) : String :=
+  let slot := toString (word - frame.lengthWord - 1)
+  "mul(lt(" ++ slot ++ ", arg" ++ toString frame.lengthWord ++ "), byte(0, calldataload(add(" ++
+    frame.dataName ++ ", " ++ slot ++ "))))"
+
+end PackedBytesFrame
+
+/-- The packed-bytes frames of an entry, in plan order over the local frame. -/
+def packedBytesFrames (plans : Array Codec.AbiInputPlan) : Array PackedBytesFrame := Id.run do
+  let mut frames : Array PackedBytesFrame := #[]
+  let mut localWord := 0
+  for plan in plans do
+    if let some bytes := plan.packedBytes then
+      frames := frames.push { lengthWord := localWord, capacity := bytes.capacity }
+    localWord := localWord + plan.wordCount
+  return frames
+
 /-- Interpret EVM input plans into one fixed local frame. Static values load from the top-level
 head. Dynamic plans require canonical contiguous tails, cap their runtime length, zero inactive
-locals, and validate packed bytes or every active array word before contract CFG execution. -/
+array locals, and validate packed bytes or every active array word before contract CFG
+execution. Packed bytes bind only their length and payload offset (`PackedBytesFrame`). -/
 def renderEntryArgs (plans : Array Codec.AbiInputPlan)
     (paramTypes : Array Core.Codec.Scalar) : Except String String := do
   let localWords := plans.foldl (init := 0) fun count plan => count + plan.wordCount
@@ -183,6 +299,7 @@ def renderEntryArgs (plans : Array Codec.AbiInputPlan)
           throw "evm/codec: malformed packed bytes v1 input plan"
         let dataName := "abi_data" ++ toString dynamicIndex
         let lengthName := "arg" ++ toString localWord
+        let payloadName := PackedBytesFrame.dataName { lengthWord := localWord, capacity := bytes.capacity }
         let paddedName := "abi_padded" ++ toString dynamicIndex
         let paddingIndex := "abi_padding_i" ++ toString dynamicIndex
         out := out ++
@@ -192,10 +309,8 @@ def renderEntryArgs (plans : Array Codec.AbiInputPlan)
           "        if gt(add(" ++ dataName ++ ", 32), abi_size) { " ++ revert0 ++ " }" ++ nl ++
           "        let " ++ lengthName ++ " := calldataload(add(4, " ++ dataName ++ "))" ++ nl ++
           "        if gt(" ++ lengthName ++ ", " ++ toString bytes.capacity ++ ") { " ++
-            revert0 ++ " }" ++ nl
-        for i in [1:plan.wordCount] do
-          out := out ++ "        let arg" ++ toString (localWord + i) ++ " := 0" ++ nl
-        out := out ++
+            revert0 ++ " }" ++ nl ++
+          "        let " ++ payloadName ++ " := add(add(4, " ++ dataName ++ "), 32)" ++ nl ++
           "        let " ++ paddedName ++ " := and(add(" ++ lengthName ++
             ", 31), not(31))" ++ nl ++
           "        abi_tail := add(abi_tail, add(32, " ++ paddedName ++ "))" ++ nl ++
@@ -203,19 +318,13 @@ def renderEntryArgs (plans : Array Codec.AbiInputPlan)
           "        for { let " ++ paddingIndex ++ " := " ++ lengthName ++ " } lt(" ++
             paddingIndex ++ ", " ++ paddedName ++ ") { " ++ paddingIndex ++ " := add(" ++
             paddingIndex ++ ", 1) } {" ++ nl ++
-          "          if byte(0, calldataload(add(add(add(4, " ++ dataName ++ "), 32), " ++
-            paddingIndex ++ "))) { " ++ revert0 ++ " }" ++ nl ++
+          "          if byte(0, calldataload(add(" ++ payloadName ++ ", " ++ paddingIndex ++
+            "))) { " ++ revert0 ++ " }" ++ nl ++
           "        }" ++ nl
         if bytes.validateUtf8 then
           out := out ++ renderUtf8Guard "abi_utf8_" "        " lengthName (fun i =>
-            "byte(0, calldataload(add(add(add(4, " ++ dataName ++ "), 32), " ++ i ++ ")))"
+            "byte(0, calldataload(add(" ++ payloadName ++ ", " ++ i ++ ")))"
           ) dynamicIndex
-        for i in [0:bytes.capacity] do
-          out := out ++ "        if gt(" ++ lengthName ++ ", " ++ toString i ++ ") {" ++ nl ++
-            "          arg" ++ toString (localWord + 1 + i) ++
-              " := byte(0, calldataload(add(add(add(4, " ++ dataName ++ "), 32), " ++
-              toString i ++ ")))" ++ nl ++
-            "        }" ++ nl
         headWord := headWord + 1
         localWord := localWord + plan.wordCount
         dynamicIndex := dynamicIndex + 1
@@ -270,7 +379,8 @@ def renderDynamicReturn [Inhabited Value] (context : ReturnContext Value State)
     throw s!"evm/codec: dynamic result has {values.size} source parts, expected {plan.sourceWords.size}"
   let (lengthPre, length, state0) ← context.materialize indent values[0]! state
   let mut state := state0
-  let mut out := lengthPre ++
+  let mut out := lengthPre
+  let header :=
     indent ++ "mstore(0, 32)" ++ nl ++
     indent ++ "mstore(32, " ++ length ++ ")" ++ nl
   match plan with
@@ -281,34 +391,49 @@ def renderDynamicReturn [Inhabited Value] (context : ReturnContext Value State)
       let sourceLimbsPerElement := elementSourceLimbCount array.elementWords
       out := out ++ indent ++ "if gt(" ++ length ++ ", " ++ toString array.capacity ++
         ") { " ++ revert0 ++ " }" ++ nl
+      -- Every element is computed into a local before the first frame word is stored. Element
+      -- code may use low memory as scratch (a hashed-map key hash), which the frame would share.
+      let mut stores : Array String := #[]
       for i in [0:array.capacity] do
-        out := out ++ indent ++ "if gt(" ++ length ++ ", " ++ toString i ++ ") {" ++ nl
+        let mut block := ""
         let base := 1 + i * sourceLimbsPerElement
         let mut limbOffset := 0
         for wordIndex in [0:abiWordsPerElement] do
           let type := array.elementWords[wordIndex]!
           let nLimbs := limbCount type
+          let slot := s!"abi_ret_{i}_{wordIndex}"
+          let memOffset := 64 + (i * abiWordsPerElement + wordIndex) * 32
+          let guard := indent ++ "if gt(" ++ length ++ ", " ++ toString i ++ ") { "
           let mut limbExprs : Array String := #[]
           for _ in [0:nLimbs] do
             let (pre, value, next) ←
               context.materialize (indent ++ "  ") values[base + limbOffset]! state
             state := next
             limbOffset := limbOffset + 1
-            out := out ++ pre
+            block := block ++ pre
             limbExprs := limbExprs.push value
-          let packed ← packElementWord type limbExprs
-          let memOffset := 64 + (i * abiWordsPerElement + wordIndex) * 32
           if isAddressCarrier type && nLimbs == 3 then
-            out := out ++ indent ++ "  pf_store_addr20(" ++ toString memOffset ++ ", " ++
-              limbExprs[0]! ++ ", " ++ limbExprs[1]! ++ ", " ++ limbExprs[2]! ++ ")" ++ nl
+            for limb in [0:3] do
+              out := out ++ indent ++ "let " ++ slot ++ "_" ++ toString limb ++ " := 0" ++ nl
+              block := block ++ indent ++ "  " ++ slot ++ "_" ++ toString limb ++ " := " ++
+                limbExprs[limb]! ++ nl
+            stores := stores.push (guard ++ "pf_store_addr20(" ++ toString memOffset ++ ", " ++
+              slot ++ "_0, " ++ slot ++ "_1, " ++ slot ++ "_2) }" ++ nl)
           else
-            out := out ++ indent ++ "  mstore(" ++ toString memOffset ++ ", " ++ packed ++
-              ")" ++ nl
-        out := out ++ indent ++ "}" ++ nl
+            let packed ← packElementWord type limbExprs
+            out := out ++ indent ++ "let " ++ slot ++ " := 0" ++ nl
+            block := block ++ indent ++ "  " ++ slot ++ " := " ++ packed ++ nl
+            stores := stores.push (guard ++ "mstore(" ++ toString memOffset ++ ", " ++ slot ++
+              ") }" ++ nl)
+        out := out ++ indent ++ "if gt(" ++ length ++ ", " ++ toString i ++ ") {" ++ nl ++
+          block ++ indent ++ "}" ++ nl
+      out := out ++ header
+      for store in stores do
+        out := out ++ store
       out := out ++ indent ++ "return(0, add(64, mul(" ++ length ++ ", " ++
         toString (abiWordsPerElement * 32) ++ ")))" ++ nl
   | .packedBytes bytes =>
-      out := out ++ indent ++ "if gt(" ++ length ++ ", " ++ toString bytes.capacity ++
+      out := out ++ header ++ indent ++ "if gt(" ++ length ++ ", " ++ toString bytes.capacity ++
         ") { " ++ revert0 ++ " }" ++ nl
       for word in [0:(bytes.capacity + 31) / 32] do
         out := out ++ indent ++ "mstore(" ++ toString (64 + word * 32) ++ ", 0)" ++ nl

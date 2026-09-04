@@ -138,7 +138,7 @@ private def mockNativeCtx : NativeFx.Emit.Context Nat :=
   match NativeFx.Emit.emitCall mockNativeCtx (.deposit256 lit lit lit lit) 0 with
   | .error _ => false
   | .ok (txt, ret, st) =>
-      txt == "  let v0 := or(or(0, shl(64, 0)), or(shl(128, 0), shl(192, 0)))\n" ++
+      txt == "  let v0 := 0\n" ++
           "  if iszero(eq(callvalue(), v0)) { revert(0, 0) }\n" &&
         ret == "0" && st == 1
 
