@@ -125,11 +125,11 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 private def twoTails : OpenCall.Plan Ops.Val :=
   { sinkPlan with args := #[bytesArg "a" 4, bytesArg "b" 4] }
 private def wideTail : OpenCall.Plan Ops.Val :=
-  { sinkPlan with args := #[bytesArg "data" 64] }
+  { sinkPlan with args := #[bytesArg "data" 66] }
 private def shortTail : OpenCall.Plan Ops.Val :=
   { sinkPlan with args := #[{ bytesArg "data" 8 with parts := Array.replicate 8 lit }] }
 private def edgeTail : OpenCall.Plan Ops.Val :=
-  { sinkPlan with args := #[bytesArg "data" 63] }
+  { sinkPlan with args := #[bytesArg "data" 65] }
 
 #guard !twoTails.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard !wideTail.wellFormed (·.wellFormed Ops.ValKind.arity)
