@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# OpenCall S3: parameter- and state-supplied targets, two-word STATICCALL, CALL value,
-# EOA rejection, malformed returndata, and CALL-before-sstore effect order.
+# OpenCall S3: parameter- and state-supplied targets, one- to four-word, bool, and address
+# STATICCALL reads with their fail-closed frames, CALL value, EOA rejection, malformed
+# returndata, and CALL-before-sstore effect order.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -69,6 +70,51 @@ fi
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'readPair(address)(uint256)' \
   "$target")" 1 "getPair first word"
 
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'readTriple(address)(uint256)' \
+  "$target")" 1 "getTriple first word (exact three words)"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'readQuad(address)(uint256)' \
+  "$target")" 1 "getQuad first word (exact four words)"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setTripleWords(uint256)' 2 >/dev/null
+if "$cast" call --rpc-url "$rpc" "$addr" 'readTriple(address)(uint256)' "$target" >/dev/null 2>&1; then
+  echo "FAIL: two-word frame passed the exact-three-word gate" >&2
+  exit 1
+fi
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setQuadWords(uint256)' 5 >/dev/null
+if "$cast" call --rpc-url "$rpc" "$addr" 'readQuad(address)(uint256)' "$target" >/dev/null 2>&1; then
+  echo "FAIL: five-word frame passed the exact-four-word gate" >&2
+  exit 1
+fi
+
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'readOn(address)(bool)' "$target")" \
+  true "strict bool reads canonical true"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setOnWord(uint256)' 0 >/dev/null
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'readOn(address)(bool)' "$target")" \
+  false "strict bool reads canonical false"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setOnWord(uint256)' 2 >/dev/null
+if "$cast" call --rpc-url "$rpc" "$addr" 'readOn(address)(bool)' "$target" >/dev/null 2>&1; then
+  echo "FAIL: bool word 2 passed the strict-bool gate" >&2
+  exit 1
+fi
+
+owner="$("$cast" call --rpc-url "$rpc" "$addr" 'readOwner(address)(address)' "$target")"
+pf_evm_require_equal "$(tr 'A-F' 'a-f' <<<"$owner")" "$(tr 'A-F' 'a-f' <<<"$target")" \
+  "canonical address read through STATICCALL"
+dirty="$("$python" -I -S -c "print(hex((1 << 160) | int('$target', 16)))")"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$target" 'setOwnerWord(uint256)' "$dirty" >/dev/null
+if "$cast" call --rpc-url "$rpc" "$addr" 'readOwner(address)(address)' "$target" >/dev/null 2>&1; then
+  echo "FAIL: dirty high bytes passed the canonical-address gate" >&2
+  exit 1
+fi
+if "$cast" call --rpc-url "$rpc" "$addr" 'readOwner(address)(address)' "$eoa" >/dev/null 2>&1; then
+  echo "FAIL: empty EOA returndata passed the canonical-address gate" >&2
+  exit 1
+fi
+
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'openTransfer(address,address,uint256)' "$target" "$eoa" 1 >/dev/null
 
@@ -86,4 +132,4 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'flagOf()(uint64)')
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'seenFlag()(uint256)')" 0 \
   "CALL observed pre-store flag (effect before sstore)"
 
-echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + value + EOA + malformed + effect-order; engineering only)"
+echo "evm-anvil-opencall: ok (typed CALL/STATICCALL + bool/address/3-4-word reads + value + EOA + malformed + effect-order; engineering only)"

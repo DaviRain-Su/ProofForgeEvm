@@ -320,6 +320,26 @@ separately accept `msg.value` (`Ether.accept`) when the method is payable. -/
 @[pf_inline] def staticWords2 {α : Type} (target : Address) (payload : α) : UInt256 :=
   Runtime.evmOpenStaticWords2 target payload
 
+/-- Typed STATICCALL with the exact-three-word policy. The source carrier is the first
+`UInt256`; all three words are still size-gated. -/
+@[pf_inline] def staticWords3 {α : Type} (target : Address) (payload : α) : UInt256 :=
+  Runtime.evmOpenStaticWords3 target payload
+
+/-- Typed STATICCALL with the exact-four-word policy. The source carrier is the first
+`UInt256`; all four words are still size-gated. -/
+@[pf_inline] def staticWords4 {α : Type} (target : Address) (payload : α) : UInt256 :=
+  Runtime.evmOpenStaticWords4 target payload
+
+/-- Typed STATICCALL with the strict-bool policy: the callee must return exactly one word equal
+to `0` or `1`. Any other frame reverts. -/
+@[pf_inline] def staticBool {α : Type} (target : Address) (payload : α) : Bool :=
+  Runtime.evmOpenStaticBool target payload
+
+/-- Typed STATICCALL with the canonical-address policy: the callee must return exactly one word
+whose high 12 bytes are zero. Any other frame reverts. -/
+@[pf_inline] def staticAddress {α : Type} (target : Address) (payload : α) : Address :=
+  Runtime.evmOpenStaticAddress target payload
+
 end OpenCall
 
 namespace Event

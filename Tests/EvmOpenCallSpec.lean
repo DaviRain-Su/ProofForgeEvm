@@ -117,6 +117,29 @@ private def pairQuery : OpenCall.Query := {
 #guard echoQuery.arity == 7
 #guard pairQuery.arity == 3
 
+-- Every STATICCALL read shape is a well-formed query whose limbs fit one ABI word.
+#guard OpenCall.StaticShape.all.size == 6
+#guard OpenCall.StaticShape.all.all fun shape =>
+  (shape.query "read" #[.address20]).wellFormed &&
+    1 ≤ shape.limbCount && shape.limbCount ≤ 4 &&
+    shape.policy.copiedWordCount ≤ CallResult.maxResultWords
+#guard OpenCall.StaticShape.word.policy == .exactWord
+#guard OpenCall.StaticShape.words2.policy == .exactWords 2
+#guard OpenCall.StaticShape.words3.policy == .exactWords 3
+#guard OpenCall.StaticShape.words4.policy == .exactWords 4
+#guard OpenCall.StaticShape.bool.policy == .strictBool
+#guard OpenCall.StaticShape.address.policy == .words #[.address20]
+#guard OpenCall.StaticShape.words4.limbCount == 4
+#guard OpenCall.StaticShape.bool.limbCount == 1
+#guard OpenCall.StaticShape.address.limbCount == 3
+#guard (OpenCall.StaticShape.word.query "echo" #[.uint256]) == echoQuery
+#guard (OpenCall.StaticShape.words2.query "getPair" #[]) == pairQuery
+
+private def onQuery : OpenCall.Query := OpenCall.StaticShape.bool.query "isOn" #[]
+private def ownerQuery : OpenCall.Query := OpenCall.StaticShape.address.query "ownerOf" #[]
+private def tripleQuery : OpenCall.Query := OpenCall.StaticShape.words3.query "getTriple" #[]
+private def quadQuery : OpenCall.Query := OpenCall.StaticShape.words4.query "getQuad" #[]
+
 private def mockOpenCtx : OpenCall.Emit.Context Nat :=
   { materialize := fun _ st => .ok ("", "0", st)
     fresh := fun st => (s!"v{st}", st + 1)
@@ -170,6 +193,65 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
         txt.contains "if iszero(eq(returndatasize(), 64)) { revert(0, 0) }"
   | _, _ => false
 
+-- Strict-bool STATICCALL: exact one word, then the canonical `0 | 1` gate.
+#guard
+  match CallResult.Emit.emit mockCallResultCtx (.staticBool 4) "v0" none 1,
+        OpenCall.Emit.emitQuery mockOpenCtx onQuery #[lit, lit, lit] 0 with
+  | .ok (fragment, _, _), .ok (txt, _, _) =>
+      txt.contains fragment &&
+        txt.contains "if iszero(eq(returndatasize(), 32)) { revert(0, 0) }" &&
+        txt.contains ", 1) { revert(0, 0) }" &&
+        txt.contains "if gt("
+  | _, _ => false
+
+-- Canonical-address STATICCALL: exact one word, high 12 bytes zero. The three source limbs are
+-- Addr20's little-endian byte limbs (the layout `pf_store_addr20` writes), not numeric words.
+#guard
+  match CallResult.Emit.emit mockCallResultCtx (.staticTyped 4 #[.address20]) "v0" none 1,
+        OpenCall.Emit.emitQuery mockOpenCtx ownerQuery #[lit, lit, lit] 0 with
+  | .ok (fragment, _, _), .ok (txt, _, _) =>
+      txt.contains fragment &&
+        txt.contains "if shr(160, " &&
+        txt.contains "byte(12, " && txt.contains "shl(56, byte(19, " &&
+        !txt.contains "and(shr("
+  | _, _ => false
+#guard
+  match OpenCall.Emit.emitQuery mockOpenCtx { ownerQuery with limb := 2 } #[lit, lit, lit] 0 with
+  | .ok (txt, _, _) => txt.contains "byte(28, " && txt.contains "shl(24, byte(31, "
+  | .error _ => false
+#guard CallResult.Emit.wordLimb .address20 "w" 1 ==
+  "or(or(or(or(or(or(or(byte(20, w), shl(8, byte(21, w))), shl(16, byte(22, w))), shl(24, byte(23, w))), shl(32, byte(24, w))), shl(40, byte(25, w))), shl(48, byte(26, w))), shl(56, byte(27, w)))"
+#guard CallResult.Emit.wordLimb .uint256 "w" 3 == "and(shr(192, w), 0xffffffffffffffff)"
+#guard CallResult.Emit.wordLimb .boolean "w" 0 == "and(shr(0, w), 0xffffffffffffffff)"
+
+-- Limb indices are bounded by the bound word's kind, so a fourth address limb or a second
+-- bool limb never reaches the emitter.
+#guard CallResult.WordKind.address20.limbCount == 3
+#guard CallResult.WordKind.boolean.limbCount == 1
+#guard CallResult.WordKind.uint256.limbCount == 4
+#guard ownerQuery.limbCount == 3 && onQuery.limbCount == 1 && quadQuery.limbCount == 4
+#guard ({ ownerQuery with limb := 2 } : OpenCall.Query).wellFormed
+#guard !({ ownerQuery with limb := 3 } : OpenCall.Query).wellFormed
+#guard !({ onQuery with limb := 1 } : OpenCall.Query).wellFormed
+#guard ({ quadQuery with limb := 3 } : OpenCall.Query).wellFormed
+#guard !({ quadQuery with limb := 4 } : OpenCall.Query).wellFormed
+
+-- Three- and four-word STATICCALL reads gate the full static frame.
+#guard
+  match CallResult.Emit.emit mockCallResultCtx (.staticWords 4 3) "v0" none 1,
+        OpenCall.Emit.emitQuery mockOpenCtx tripleQuery #[lit, lit, lit] 0 with
+  | .ok (fragment, _, _), .ok (txt, _, _) =>
+      txt.contains fragment &&
+        txt.contains "if iszero(eq(returndatasize(), 96)) { revert(0, 0) }"
+  | _, _ => false
+#guard
+  match CallResult.Emit.emit mockCallResultCtx (.staticWords 4 4) "v0" none 1,
+        OpenCall.Emit.emitQuery mockOpenCtx quadQuery #[lit, lit, lit] 0 with
+  | .ok (fragment, _, _), .ok (txt, _, _) =>
+      txt.contains fragment &&
+        txt.contains "if iszero(eq(returndatasize(), 128)) { revert(0, 0) }"
+  | _, _ => false
+
 -- CALL value rides the shared success-only interpreter; NativeFx.sendEth is not this path.
 #guard
   match CallResult.Emit.emit mockCallResultCtx (.successOnly 4 true) "v0" (some "v1") 2,
@@ -199,7 +281,7 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "a300130619c177c"
+#guard Registry.digestOf "EvmOpenCall" == some "5223289d34513e5e"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -220,6 +302,10 @@ open Examples.Evm.EvmOpenCall
 
 #guard OpenCall.call (⟨0, 0, 0⟩ : Address) Remote.ping == 0
 #guard OpenCall.staticWord (⟨0, 0, 0⟩ : Address) (Remote.echo ⟨7, 0, 0, 0⟩) == ⟨0, 0, 0, 0⟩
+#guard OpenCall.staticWords3 (⟨0, 0, 0⟩ : Address) Remote.getTriple == ⟨0, 0, 0, 0⟩
+#guard OpenCall.staticWords4 (⟨0, 0, 0⟩ : Address) Remote.getQuad == ⟨0, 0, 0, 0⟩
+#guard OpenCall.staticBool (⟨0, 0, 0⟩ : Address) Remote.isOn == false
+#guard OpenCall.staticAddress (⟨0, 0, 0⟩ : Address) Remote.ownerOf == ⟨0, 0, 0⟩
 
 #pf_evm_build Examples.Evm.EvmOpenCall
 
@@ -335,22 +421,44 @@ elab "#pf_guard_evm_open_call_source" : command => do
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "getPair" #[]})" do
     throwError s!"open-call Yul omitted CALL/STATICCALL gates or selectors"
 
-  -- Queries lower through Component.Query.openCall, not Call.invoke.
-  let rec hasOpenQuery (fuel : Nat) (ops : Array ProofForge.Evm.IR.Op) : Bool :=
+  -- Queries lower through Component.Query.openCall, not Call.invoke. Each read binds exactly
+  -- the limbs its source carrier needs: four for `UInt256`, three for `Address`, one for `Bool`.
+  let rec openQueryLimbs (fuel : Nat) (ops : Array ProofForge.Evm.IR.Op) : Nat :=
     match fuel with
-    | 0 => false
+    | 0 => 0
     | fuel' + 1 =>
-      ops.any fun
-        | .returnU64 (.ext (.component (.openCall _)) _) => true
-        | .ite _ _ _ yes no => hasOpenQuery fuel' yes || hasOpenQuery fuel' no
-        | .forBody _ body => hasOpenQuery fuel' body
-        | _ => false
-  let some echoEntry := evm.entries.find? (·.ixName == "readEcho")
-    | throwError "EVM open-call example lost readEcho"
-  let some pairEntry := evm.entries.find? (·.ixName == "readPair")
-    | throwError "EVM open-call example lost readPair"
-  unless hasOpenQuery 32 echoEntry.ops && hasOpenQuery 32 pairEntry.ops do
-    throwError "readEcho/readPair lost OpenCall queries"
+      ops.foldl (init := 0) fun acc op =>
+        acc + match op with
+          | .returnU64 (.ext (.component (.openCall _)) _) => 1
+          | .ite _ _ _ yes no => openQueryLimbs fuel' yes + openQueryLimbs fuel' no
+          | .forBody _ body => openQueryLimbs fuel' body
+          | _ => 0
+  let expectLimbs (ixName : String) (shape : OpenCall.StaticShape) : CommandElabM Unit := do
+    let some entry := evm.entries.find? (·.ixName == ixName)
+      | throwError s!"EVM open-call example lost {ixName}"
+    let limbs := openQueryLimbs 32 entry.ops
+    unless limbs == shape.limbCount do
+      throwError s!"{ixName} binds {limbs} open-call limbs, expected {shape.limbCount}"
+  expectLimbs "readEcho" .word
+  expectLimbs "readPair" .words2
+  expectLimbs "readTriple" .words3
+  expectLimbs "readQuad" .words4
+  expectLimbs "readOn" .bool
+  expectLimbs "readOwner" .address
+  expectLimbs "readBalance" .word
+  expectLimbs "readSupports" .bool
+  unless yul.contains "if iszero(eq(returndatasize(), 96))" &&
+      yul.contains "if iszero(eq(returndatasize(), 128))" &&
+      yul.contains ", 1) { revert(0, 0) }" &&
+      yul.contains "if shr(160, " &&
+      yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "isOn" #[]})" &&
+      yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "ownerOf" #[]})" &&
+      yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "getTriple" #[]})" &&
+      yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "getQuad" #[]})" &&
+      yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "balanceOf" #["address"]})" &&
+      yul.contains
+        s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "supportsInterface" #["bytes4"]})" do
+    throwError "open-call Yul omitted a typed STATICCALL read gate or selector"
 
   expectUnsupported env ``Unsupported.structCall "inductive constructor"
   expectUnsupported env ``Unsupported.optionField "closed EVM scalar"

@@ -5,12 +5,14 @@ Owner-minted bounded ERC-1155 consumer. The SDK owns the token-id key envelope, 
 (owner, id) balance and (owner, operator) operator maps, and checked mint/burn/transfer
 movement. This contract owns the immutable minter gate, zero-address policy, error ordering
 (`Unauthorized`/`ZeroAddress`/`Insufficient`) and canonical ERC-1155 `TransferSingle` /
-`ApprovalForAll` logs (`Erc1155.Log`). There is no `TransferBatch` or safe callback;
-`supportsInterface` exposes IERC165 only, not the incomplete IERC1155 interface.
+`ApprovalForAll` logs (`Erc1155.Log`). `balanceOfBatch` is bounded to four pairs. There is no
+`safeBatchTransferFrom`, `TransferBatch`, or safe callback; `supportsInterface` exposes IERC165
+only, not the incomplete IERC1155 interface.
 -/
 
 namespace Examples.Evm.MultiToken
 open ProofForge.Evm.Sdk
+open ProofForge.Core.Value (BoundedVec)
 
 structure State where
   dummy : UInt64
@@ -91,6 +93,15 @@ def balanceOf (_s : State) (owner : Address) (tokenId : UInt256) : UInt256 :=
 @[pf_entry]
 def isApprovedForAll (_s : State) (owner operator : Address) : Bool :=
   Erc1155.Operators.isApprovedForAll operators owner operator
+
+/-- Bounded `balanceOfBatch(address[],uint256[])` over at most `Erc1155.batchCapacity` pairs.
+Unequal lengths answer an empty array; longer inputs are rejected by the ABI decoder. The
+signature spells `BoundedVec _ 4` because the profile accepts only a literal capacity in an entry
+type; the SDK helper's `Erc1155.Batch` parameters refuse any other literal. -/
+@[pf_entry]
+def balanceOfBatch (_s : State) (owners : BoundedVec Address 4) (ids : BoundedVec UInt256 4) :
+    BoundedVec UInt256 4 :=
+  Erc1155.Balances.balanceOfBatch balances owners ids
 
 /-- This partial ERC-1155-shaped profile implements only IERC165. It deliberately does not
 advertise the IERC1155 identifier until every required ERC-1155 method is implemented. -/

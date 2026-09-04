@@ -222,13 +222,17 @@ def Query.toPlan (query : Query) (operands : Array V) : Option (Plan V) := Id.ru
     valueParts
   }
 
+/-- Source limbs the bound word `word` yields; zero when the policy binds no such word. -/
+def Query.limbCount (query : Query) : Nat :=
+  ((query.policy.wordKinds[query.word]?).map (·.limbCount)).getD 0
+
 def Query.wellFormed (query : Query) : Bool :=
   isIdent query.name && query.argTypes.size ≤ maxArgWords &&
     query.argTypes.all argScalarSupported &&
     query.policy.wellFormed &&
     query.copiedWordCount ≥ 1 &&
     query.word < query.copiedWordCount &&
-    query.limb ≤ 3 &&
+    query.limb < query.limbCount &&
     (!query.hasValue || query.kind == .call)
 
 def Query.canonical (renderValue : V → String) (operands : Array V) (query : Query) : String :=
@@ -237,5 +241,39 @@ def Query.canonical (renderValue : V → String) (operands : Array V) (query : Q
       s!"ocallq.{query.word}.{query.limb}." ++ plan.canonical renderValue
   | none =>
       s!"invalid-ocallq-{query.word}-{query.limb}-{operands.size}"
+
+/-- Result shape of one typed STATICCALL read as the source language sees it. Each shape names
+the `CallResult.Policy` that gates the returndata frame and how many `UInt64` limbs of word 0
+the extractor binds. Multiword shapes hand the source the first word; every word is still
+size-gated. -/
+inductive StaticShape where
+  | word
+  | words2
+  | words3
+  | words4
+  | bool
+  | address
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+def StaticShape.all : Array StaticShape :=
+  #[.word, .words2, .words3, .words4, .bool, .address]
+
+def StaticShape.policy : StaticShape → CallResult.Policy
+  | .word => .exactWord
+  | .words2 => .exactWords 2
+  | .words3 => .exactWords 3
+  | .words4 => .exactWords 4
+  | .bool => .strictBool
+  | .address => .words #[.address20]
+
+/-- Limbs of word 0 handed to the source carrier: four for `UInt256`, three for `Addr20`, one
+for `Bool`. -/
+def StaticShape.limbCount (shape : StaticShape) : Nat :=
+  ((shape.policy.wordKinds[0]?).map (·.limbCount)).getD 0
+
+/-- Query for limb 0 of word 0 under this shape; the extractor rebinds `limb` per carrier limb. -/
+def StaticShape.query (shape : StaticShape) (name : String)
+    (argTypes : Array Core.Codec.Scalar) : Query :=
+  { name, argTypes, kind := .staticcall, policy := shape.policy }
 
 end ProofForge.Evm.OpenCall

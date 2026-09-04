@@ -144,6 +144,25 @@ def emitBound (context : Context σ) (request : CallResult.Request) (target : St
       let (tail, bound, st2) := emitExactWords context indent st1 kinds
       return (head ++ tail, bound, st2)
 
+/-- Yul for source limb `limb` of the bound word `src`. A canonical address word yields the
+little-endian byte limbs `pf_store_addr20` consumes (bytes 12..19, 20..27, 28..31 of the word);
+any other word yields numeric 64-bit limbs from bit `64 * limb`. -/
+def wordLimb (kind : CallResult.WordKind) (src : String) (limb : Nat) : String :=
+  match kind with
+  | .address20 =>
+      let rec orBytes (index remaining : Nat) (acc : String) : String :=
+        match remaining with
+        | 0 => acc
+        | count + 1 =>
+            let byteExpr := "byte(" ++ toString (12 + 8 * limb + index) ++ ", " ++ src ++ ")"
+            let next :=
+              if index == 0 then byteExpr
+              else "or(" ++ acc ++ ", shl(" ++ toString (8 * index) ++ ", " ++ byteExpr ++ "))"
+            orBytes (index + 1) count next
+      orBytes 0 (if limb == 2 then 4 else 8) "0"
+  | .uint256 | .boolean | .bytes4 =>
+      "and(shr(" ++ toString (64 * limb) ++ ", " ++ src ++ "), 0xffffffffffffffff)"
+
 /-- Compatibility wrapper: same Yul and fresh-name order as `emitBound`, projecting the
 historical first-word `Option String` carrier for ClosedCall / Precompile consumers. -/
 def emit (context : Context σ) (request : CallResult.Request) (target : String)

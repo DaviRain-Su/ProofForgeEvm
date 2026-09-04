@@ -42,7 +42,7 @@ def entries : Array Entry := #[
   { name := "MetaGateLink", digest := "b7a3eb3bad62bb7" },
   { name := "Auth3009Link", digest := "c0188e81405c51f5" },
   { name := "AuditLink", digest := "d5cb688dcc4d25ae" },
-  { name := "Vault4626Link", digest := "b67fcd513855d1d" },
+  { name := "Vault4626Link", digest := "bfdf7768e0161aad" },
   { name := "NineLink", digest := "2aed9bb07eb36ab9" },
   { name := "Collectible", digest := "df29360114f22d5f" },
   { name := "Badge", digest := "ef61792f697edbd3" },
@@ -55,7 +55,7 @@ def entries : Array Entry := #[
   { name := "SafePay", digest := "3971d7ce6eb18141" },
   { name := "RoyaltyArt", digest := "89fe67825f5f9c28" },
   { name := "Capped", digest := "b0b0b7244ebb8aed" },
-  { name := "MultiToken", digest := "22ffde18b95a2030" },
+  { name := "MultiToken", digest := "59c2390d6728455a" },
   { name := "CraftToken", digest := "2252ee4200d2bedc" },
   { name := "TwoStepCounter", digest := "9e20eb417583ce6e" },
   { name := "Credits", digest := "c2ceddddbf415d40" },
@@ -77,7 +77,7 @@ def entries : Array Entry := #[
   { name := "EvmTypedErrors", digest := "499001a31fb4d9e7" },
   { name := "EvmTypedEvents", digest := "90bd573ddf9e2e49" },
   { name := "EvmChainGuard", digest := "ebef98a36a4b1cc5" },
-  { name := "EvmOpenCall", digest := "a300130619c177c" }
+  { name := "EvmOpenCall", digest := "5223289d34513e5e" }
 ]
 
 def names : Array String := entries.map (·.name)

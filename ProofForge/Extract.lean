@@ -334,13 +334,15 @@ private def expandBoundedReturnOps (schema : Core.Codec.Schema) (ops : Array Ops
   | leaves, .boundedArray capacity element => do
       let limbs ← staticReturnLimbCount element
       unless leaves.length == 1 + capacity * limbs do
-        throw "extract/unsupported: constructed bounded result has the wrong fixed-frame size"
+        throw s!"extract/unsupported: constructed bounded result has the wrong fixed-frame size: \
+          {leaves.length} leaves for capacity {capacity} of {limbs}-limb elements"
       leaves.toArray.mapM fun
         | .returnU64 value | .returnState value => pure (.returnU64 value)
         | _ => throw "extract/unsupported: constructed bounded result must contain scalar leaves"
   | leaves, .boundedBytes capacity | leaves, .boundedString capacity => do
       unless leaves.length == capacity + 1 do
-        throw "extract/unsupported: constructed bounded result has the wrong fixed-frame size"
+        throw s!"extract/unsupported: constructed bounded result has the wrong fixed-frame size: \
+          {leaves.length} leaves for capacity {capacity} bytes"
       leaves.toArray.mapM fun
         | .returnU64 value | .returnState value => pure (.returnU64 value)
         | _ => throw "extract/unsupported: constructed bounded result must contain scalar leaves"

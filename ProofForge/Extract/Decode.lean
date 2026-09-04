@@ -1070,6 +1070,17 @@ private def uint256Leaves (env : Environment) (e : Expr) :
     | _ => ``ProofForge.Core.Value.UInt256.w3
   let proj (name : String) : Ops.Val :=
     (val env (mkApp (mkConst (projConst name)) e)).getD (flattenField (.arg 0) name)
+  -- A wide `if c then a else b` selects each limb: `wN (ite c a b)` is `ite c (wN a) (wN b)`,
+  -- which `asVal` already lowers to one `.select`.
+  if isConstNamed e ``ite && e.getAppArgs.size ≥ 5 then
+    let args := e.getAppArgs
+    let n := args.size
+    let limb (name : String) : Ops.Val :=
+      let ite := mkAppN (mkConst ``ite [Level.one]) #[mkConst ``UInt64, args[n - 4]!, args[n - 3]!,
+        mkApp (mkConst (projConst name)) args[n - 2]!, mkApp (mkConst (projConst name)) args[n - 1]!]
+      (val env ite).getD (flattenField (.arg 0) name)
+    (limb "w0", limb "w1", limb "w2", limb "w3")
+  else
   match uint256CtorFields env e with
   | some fields =>
     let leaf (i : Nat) : Ops.Val := (val env fields[i]!).getD (proj s!"w{i}")
@@ -1714,67 +1725,6 @@ private def asConstructedOptionResult (env : Environment) : Nat → Expr →
         asConstructedOptionResult env fuel' e.getAppArgs[e.getAppArgs.size - 1]!
       else
         asOptionStorage env e
-
-/-- Flatten one `#v[…]` / `List.cons` element into ABI leaves. Static `Prod.mk` trees become
-ordered scalar limbs so a constructed `BoundedVec (α × β) n` publishes the same
-`length ‖ leaf₀ ‖ …` frame codecs already pack for `(α,β)[]`. -/
-private partial def flattenListElementVals (env : Environment) (fuel : Nat) (e : Expr) :
-    Array Ops.Val :=
-  match fuel with
-  | 0 => #[]
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``Prod.mk && e.getAppArgs.size ≥ 2 then
-      let args := e.getAppArgs
-      flattenListElementVals env fuel' args[args.size - 2]! ++
-        flattenListElementVals env fuel' args[args.size - 1]!
-    else
-      match val env e with
-      | some v => #[v]
-      | none => #[]
-
-/-- `#v[a, b, …]` = `Vector.mk (List.toArray (a :: b :: []))`。 -/
-private def collectListVals (env : Environment) (fuel : Nat) (e : Expr) : Array Ops.Val :=
-  match fuel with
-  | 0 => #[]
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``List.nil || endsWith e ".nil" then
-      #[]
-    else if isConstNamed e ``List.cons || endsWith e ".cons" then
-      let args := e.getAppArgs
-      if args.size ≥ 2 then
-        let head := args[args.size - 2]!
-        let tail := args[args.size - 1]!
-        let headVals := flattenListElementVals env 8 head
-        if headVals.isEmpty then collectListVals env fuel' tail
-        else headVals ++ collectListVals env fuel' tail
-      else #[]
-    else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
-      let args := e.getAppArgs
-      if args.size ≥ 1 then collectListVals env fuel' args[args.size - 1]! else #[]
-    else
-      flattenListElementVals env 8 e
-
-private def findListVals (env : Environment) (fuel : Nat) (e : Expr) : Option (Array Ops.Val) :=
-  match fuel with
-  | 0 => none
-  | fuel' + 1 =>
-    let e := strip e
-    if isConstNamed e ``List.cons || endsWith e ".cons" then
-      -- Recognition may traverse the largest internal raw-storage key literal. Acceptance remains
-      -- owned by each consumer's capacity predicate after this syntax-only flattening step.
-      some (collectListVals env 80 e)
-    else
-      e.getAppArgs.findSome? (findListVals env fuel')
-
-private def asVectorLits (env : Environment) (e : Expr) : Option (Array Ops.Val) :=
-  let e := strip e
-  if isConstNamed e ``Vector.mk || endsWith e "Vector.mk" then
-    match findListVals env 16 e with
-    | some vs => if vs.isEmpty then none else some vs
-    | none => none
-  else none
 
 /-- Compiler-owned fixed-width scalar constructors are boundary values, not persistent State.
 Expose their ordered limbs directly so target codecs see the same frame as projected wide values. -/
@@ -2508,6 +2458,84 @@ private def boundedLengthVal (env : Environment) (e : Expr) : Option Ops.Val :=
       | some #[v] => some v
       | _ => none
 
+/-- Limbs of one constructed element whose type is `elem`. A wide element (`UInt256`, `Addr20`)
+publishes every limb, as the echo path does for an argument; any other element is one scalar. -/
+private def constructedElementVals (env : Environment) (elem : Option Expr) (e : Expr) :
+    Array Ops.Val :=
+  match elem with
+  | some t =>
+    if isUInt256Type t then
+      let (w0, w1, w2, w3) := uint256Leaves env e
+      #[w0, w1, w2, w3]
+    else if isAddr20Type t || endsWith t ".Address" then
+      let (a0, a1, a2) := addr20Leaves env e
+      #[a0, a1, a2]
+    else
+      ((val env e).map (#[·])).getD #[]
+  | none => ((val env e).map (#[·])).getD #[]
+
+/-- Flatten one `#v[…]` / `List.cons` element into ABI leaves. Static `Prod.mk` trees become
+ordered scalar limbs so a constructed `BoundedVec (α × β) n` publishes the same
+`length ‖ leaf₀ ‖ …` frame codecs already pack for `(α,β)[]`. -/
+private partial def flattenListElementVals (env : Environment) (elem : Option Expr) (fuel : Nat)
+    (e : Expr) : Array Ops.Val :=
+  match fuel with
+  | 0 => #[]
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``Prod.mk && e.getAppArgs.size ≥ 2 then
+      let args := e.getAppArgs
+      flattenListElementVals env none fuel' args[args.size - 2]! ++
+        flattenListElementVals env none fuel' args[args.size - 1]!
+    else
+      constructedElementVals env elem e
+
+/-- `#v[a, b, …]` = `Vector.mk (List.toArray (a :: b :: []))`。 -/
+private def collectListVals (env : Environment) (elem : Option Expr) (fuel : Nat) (e : Expr) :
+    Array Ops.Val :=
+  match fuel with
+  | 0 => #[]
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``List.nil || endsWith e ".nil" then
+      #[]
+    else if isConstNamed e ``List.cons || endsWith e ".cons" then
+      let args := e.getAppArgs
+      if args.size ≥ 2 then
+        let head := args[args.size - 2]!
+        let tail := args[args.size - 1]!
+        let headVals := flattenListElementVals env elem 8 head
+        if headVals.isEmpty then collectListVals env elem fuel' tail
+        else headVals ++ collectListVals env elem fuel' tail
+      else #[]
+    else if isConstNamed e ``List.toArray || endsWith e ".toArray" then
+      let args := e.getAppArgs
+      if args.size ≥ 1 then collectListVals env elem fuel' args[args.size - 1]! else #[]
+    else
+      flattenListElementVals env elem 8 e
+
+private def findListVals (env : Environment) (elem : Option Expr) (fuel : Nat) (e : Expr) :
+    Option (Array Ops.Val) :=
+  match fuel with
+  | 0 => none
+  | fuel' + 1 =>
+    let e := strip e
+    if isConstNamed e ``List.cons || endsWith e ".cons" then
+      -- Recognition may traverse the largest internal raw-storage key literal. Acceptance remains
+      -- owned by each consumer's capacity predicate after this syntax-only flattening step.
+      some (collectListVals env elem 80 e)
+    else
+      e.getAppArgs.findSome? (findListVals env elem fuel')
+
+private def asVectorLits (env : Environment) (elem : Option Expr) (e : Expr) :
+    Option (Array Ops.Val) :=
+  let e := strip e
+  if isConstNamed e ``Vector.mk || endsWith e "Vector.mk" then
+    match findListVals env elem 16 e with
+    | some vs => if vs.isEmpty then none else some vs
+    | none => none
+  else none
+
 private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array Ops.Val) := do
   let e := substLets 32 (strip e)
   let ctor ← e.getAppFn.constName?
@@ -2516,8 +2544,10 @@ private def asBoundedCtorFields (env : Environment) (e : Expr) : Option (Array O
       info.induct == boundedStringName do none
   let args := e.getAppArgs
   unless args.size ≥ 2 do none
+  -- `BoundedVec.mk α capacity length values` names its element type; bytes and strings do not.
+  let elem := if info.induct == boundedVecName && args.size ≥ 4 then some (strip args[0]!) else none
   let length ← boundedLengthVal env args[args.size - 2]!
-  let values ← asVectorLits env args[args.size - 1]!
+  let values ← asVectorLits env elem args[args.size - 1]!
   return #[length] ++ values
 
 /-- Keep the historical scalar `okState` shorthand, but spell multi-leaf effectful results as the
@@ -2961,17 +2991,23 @@ private def isEvmOpenCallValueApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
     endsWith e ".evmOpenCallValue"
 
-private def isEvmOpenStaticWordApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenStaticWord ||
-    endsWith e ".evmOpenStaticWord"
+/-- Runtime stub behind each typed STATICCALL read shape. -/
+private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
+  (``ProofForge.Evm.Runtime.evmOpenStaticWord, .word),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords2, .words2),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords3, .words3),
+  (``ProofForge.Evm.Runtime.evmOpenStaticWords4, .words4),
+  (``ProofForge.Evm.Runtime.evmOpenStaticBool, .bool),
+  (``ProofForge.Evm.Runtime.evmOpenStaticAddress, .address)
+]
 
-private def isEvmOpenStaticWords2App (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenStaticWords2 ||
-    endsWith e ".evmOpenStaticWords2"
+private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
+  (openStaticStubs.find? fun (stub, _) =>
+    isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
 
 private def isAnyOpenCallApp (e : Expr) : Bool :=
   isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
-    isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e
+    (openStaticShapeOf e).isSome
 
 /-- Preserve a typed open-call constructor as one ABI plan. Names and closed scalar types stay
 structured; unsupported shapes must not degrade to raw calldata. -/
@@ -3050,35 +3086,22 @@ private def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedOpenCall 
             let (v0, v1, v2, v3) := uint256Leaves env valueE
             #[v0, v1, v2, v3]
           | none => #[]
-        let kind : Evm.CallResult.Kind :=
-          if isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e then .staticcall
-          else .call
-        let policy : Evm.CallResult.Policy :=
-          if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
-          else if isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e then .contractSuccess
-          else if isEvmOpenStaticWords2App e then .exactWords 2
-          else .exactWord
-        if isEvmOpenStaticWordApp e || isEvmOpenStaticWords2App e then
-          let query : Evm.OpenCall.Query := {
-            name
-            argTypes := callArgs.map (·.type)
-            kind
-            policy
-            hasValue := false
-            word := 0
-            limb := 0
-          }
+        match openStaticShapeOf e with
+        | some shape =>
+          let query := shape.query name (callArgs.map (·.type))
           let operands := target ++ callArgs.flatMap (·.parts)
           if query.wellFormed && operands.size == query.arity then
             .query query operands
           else .unsupported "malformed open-call query"
-        else
+        | none =>
           let plan : Evm.OpenCall.Plan Ops.Val := {
             name
             args := callArgs
             target
-            kind
-            policy
+            kind := .call
+            policy :=
+              if isEvmOpenCallApp e then .canonicalTrueOrCodeBackedEmpty
+              else .contractSuccess
             valueParts
           }
           if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
@@ -4094,18 +4117,11 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
       .returnU64 (.ext (.evm (.component (.closedCall (.allowance256 3))))
         #[t0, t1, t2, o0, o1, o2, s0, s1, s2])
     ]
-  else if isConstNamed app ``ProofForge.Evm.Runtime.evmOpenStaticWord ||
-      endsWith app ".evmOpenStaticWord" ||
-      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenStaticWords2 ||
-      endsWith app ".evmOpenStaticWords2" then
+  else if let some shape := openStaticShapeOf app then
     match decodeOpenCallCtor env app with
     | .query query operands =>
-      some #[
-        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 0 }))) operands),
-        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 1 }))) operands),
-        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 2 }))) operands),
-        .returnU64 (.ext (.evm (.component (.openCall { query with limb := 3 }))) operands)
-      ]
+      some ((Array.range shape.limbCount).map fun limb =>
+        .returnU64 (.ext (.evm (.component (.openCall { query with limb }))) operands))
     | _ => none
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmCallValue256 ||
       endsWith app ".evmCallValue256" then
