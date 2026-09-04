@@ -2,7 +2,9 @@
 # Composition without a proxy: one ProofForge contract (EvmOpenCall) CALLs another
 # ProofForge contract (Erc20Meta) through typed OpenCall. Balances move, the callee's
 # Transfer log lands in the caller's transaction, and a callee revert fails the whole
-# transaction with no partial state. No Solidity mock, no delegatecall, no proxy.
+# transaction with no partial state. It then reads the token's balance and owner and a
+# pf-compiled Badge's ERC-165 answer through typed STATICCALL. No Solidity mock, no
+# delegatecall, no proxy.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,8 +15,10 @@ pf_evm_evm_init evm-anvil-compose
 caller_bin="$root/build/evm/EvmOpenCall.bin"
 token_bin="$root/build/evm/Erc20Meta.bin"
 token_abi="$root/build/evm/Erc20Meta.abi.json"
+badge_bin="$root/build/evm/Badge.bin"
 pf_evm_ensure_bin "$caller_bin"
 pf_evm_ensure_bin "$token_bin"
+pf_evm_ensure_bin "$badge_bin"
 [[ -f "$token_abi" ]] || { echo "FAIL: missing $token_abi" >&2; exit 1; }
 pf_evm_start_anvil "${PF_EVM_PORT:-18717}" "$root/build/evm/anvil-compose.log"
 
@@ -61,4 +65,28 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   exit 1
 fi
 
-echo "evm-anvil-compose: ok (ProofForge -> ProofForge typed CALL: balances, callee log, revert, EOA; no proxy; engineering only)"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$caller" \
+  'readBalance(address,address)(uint256)' "$token" "$caller")" 40 \
+  "balanceOf read through STATICCALL matches the token's own view"
+owner="$("$cast" call --rpc-url "$rpc" "$caller" 'readOwner(address)(address)' "$token")"
+pf_evm_require_equal "$(tr 'A-F' 'a-f' <<<"$owner")" "$(tr 'A-F' 'a-f' <<<"$sender")" \
+  "ownerOf read through STATICCALL as a typed Address"
+
+badge="$(pf_evm_deploy_ctor_address "$(tr -d '\n\r ' < "$badge_bin")" "$sender")"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$caller" \
+  'readSupports(address,bytes4)(bool)' "$badge" 0x01ffc9a7)" true \
+  "IERC165 detected on a pf-compiled Badge through strict-bool STATICCALL"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$caller" \
+  'readSupports(address,bytes4)(bool)' "$badge" 0x80ac58cd)" false \
+  "partial IERC721 surface reports false through strict-bool STATICCALL"
+
+if "$cast" call --rpc-url "$rpc" "$caller" 'readOn(address)(bool)' "$token" >/dev/null 2>&1; then
+  echo "FAIL: bool read of a selector the token does not implement unexpectedly succeeded" >&2
+  exit 1
+fi
+if "$cast" call --rpc-url "$rpc" "$caller" 'readOwner(address)(address)' "$dest" >/dev/null 2>&1; then
+  echo "FAIL: address read from an EOA unexpectedly succeeded" >&2
+  exit 1
+fi
+
+echo "evm-anvil-compose: ok (ProofForge -> ProofForge typed CALL and STATICCALL: balances, callee log, revert, EOA, uint256/address/bool reads; no proxy; engineering only)"

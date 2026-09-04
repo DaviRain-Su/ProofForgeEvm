@@ -392,6 +392,6 @@ elab "#pf_guard_evm_token_bool_results" : command => do
 #guard IR.digestHex ProofForge.Evm.Golden.extractedVault == "a3ea1b5b2a69c0e3"
 #guard IR.digestHex ProofForge.Evm.Golden.extractedToken == "59f8696f9b0e06db"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 
 end Tests.EvmCallResultSpec

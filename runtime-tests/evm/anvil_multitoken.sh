@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # MultiToken: owner-minted bounded ERC-1155 core consumer. Darwin + Linux.
-# Receipts are ABI-decoded: TransferSingle LOG4 (id+value data) and ApprovalForAll LOG3.
+# Receipts are ABI-decoded: TransferSingle LOG4 (id+value data), TransferBatch LOG4 (two
+# uint256[] tails), and ApprovalForAll LOG3. The single transfer is safeTransferFrom with
+# the outbound onERC1155Received check against ReceiverMock.sol. safeBatchTransferFrom runs
+# the outbound onERC1155BatchReceived check against the same mock.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,8 +15,8 @@ bin="$root/build/evm/MultiToken.bin"
 abi="$root/build/evm/MultiToken.abi.json"
 if [[ ! -f "$bin" || ! -f "$abi" ]]; then
   echo "building registered MultiToken.bin" >&2
-  lake build Examples.MultiToken >/dev/null \
-    || { echo "FAIL: lake build Examples.MultiToken failed" >&2; exit 1; }
+  lake build Examples.Evm.MultiToken >/dev/null \
+    || { echo "FAIL: lake build Examples.Evm.MultiToken failed" >&2; exit 1; }
   lake exe pf -- build --target evm --out "$root/build/evm" MultiToken >/dev/null \
     || { echo "FAIL: build registered MultiToken failed" >&2; exit 1; }
 fi
@@ -31,6 +34,7 @@ other="$("$cast" wallet address --private-key "$other_key")"
 token_id=7
 alias_id="$("$python" -I -S -c "print($token_id + (1 << 192))")"
 zero="0x0000000000000000000000000000000000000000"
+safe_sig='safeTransferFrom(address,address,uint256,uint256,bytes)'
 
 supports_interface() { # interface id
   "$cast" call --rpc-url "$rpc" "$addr" 'supportsInterface(bytes4)(bool)' "$1"
@@ -42,13 +46,20 @@ pf_evm_require_equal "$(supports_interface 0xffffffff)" false "ERC-165 invalid i
 pf_evm_require_equal "$(supports_interface 0xdeadbeef)" false "unknown interface id"
 
 sig_xfer="$(pf_evm_typed_event_sig "$abi" TransferSingle)"
+sig_batch="$(pf_evm_typed_event_sig "$abi" TransferBatch)"
 sig_op="$(pf_evm_typed_event_sig "$abi" ApprovalForAll)"
 pf_evm_require_equal "$sig_xfer" 'TransferSingle(address,address,address,uint256,uint256)' \
   "ABI TransferSingle signature"
+pf_evm_require_equal "$sig_batch" 'TransferBatch(address,address,address,uint256[],uint256[])' \
+  "ABI TransferBatch signature"
 pf_evm_require_equal "$sig_op" 'ApprovalForAll(address,address,bool)' \
   "ABI ApprovalForAll signature"
 topic_xfer="$("$cast" keccak "$sig_xfer")"
+topic_batch="$("$cast" keccak "$sig_batch")"
 topic_op="$("$cast" keccak "$sig_op")"
+# The ERC-1155 TransferBatch topic0 every indexer matches on.
+pf_evm_require_equal "$topic_batch" \
+  0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb "TransferBatch topic0"
 
 balance_of() { # owner id
   pf_evm_to_dec "$("$cast" call --rpc-url "$rpc" "$addr" \
@@ -114,47 +125,47 @@ pf_evm_require_uint "$(balance_of "$sender" "$big_id")" "$near_max" \
 
 # Cross-owner movement: sender moves 40 to other.
 receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'transferFrom(address,address,uint256,uint256)' \
-  "$sender" "$other" "$token_id" 40)"
+  "$addr" "$safe_sig" \
+  "$sender" "$other" "$token_id" 40 0x)"
 pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
   "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $token_id, \"value\": 40}" \
-  "transferFrom TransferSingle LOG4"
+  "safeTransferFrom TransferSingle LOG4"
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 60 "source after transfer"
 pf_evm_require_uint "$(balance_of "$other" "$token_id")" 40 "destination after transfer"
 
 # Same-address transfer is a successful no-op after the debit gate (still logs).
 receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'transferFrom(address,address,uint256,uint256)' \
-  "$sender" "$sender" "$token_id" 15)"
+  "$addr" "$safe_sig" \
+  "$sender" "$sender" "$token_id" 15 0x)"
 pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
   "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$sender\", \"id\": $token_id, \"value\": 15}" \
-  "self transferFrom TransferSingle LOG4"
+  "self safeTransferFrom TransferSingle LOG4"
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 60 "self transfer keeps balance"
 
 # Underflow: other owns 40, moving 41 as the owner passes auth but fails the debit gate.
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
-    "$addr" 'transferFrom(address,address,uint256,uint256)' \
-    "$other" "$sender" "$token_id" 41 >/dev/null 2>&1; then
+    "$addr" "$safe_sig" \
+    "$other" "$sender" "$token_id" 41 0x >/dev/null 2>&1; then
   echo "FAIL: underflow transfer unexpectedly succeeded" >&2
   exit 1
 fi
 pf_evm_require_insufficient "$addr" "$other" \
-  "$("$cast" calldata 'transferFrom(address,address,uint256,uint256)' \
-    "$other" "$sender" "$token_id" 41)" 40 41 "underflow transfer"
+  "$("$cast" calldata "$safe_sig" \
+    "$other" "$sender" "$token_id" 41 0x)" 40 41 "underflow transfer"
 pf_evm_require_uint "$(balance_of "$other" "$token_id")" 40 "underflow left source untouched"
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 60 \
   "underflow left destination untouched"
 
 # Unauthorized operator: other cannot move sender funds without approval.
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
-    "$addr" 'transferFrom(address,address,uint256,uint256)' \
-    "$sender" "$other" "$token_id" 1 >/dev/null 2>&1; then
+    "$addr" "$safe_sig" \
+    "$sender" "$other" "$token_id" 1 0x >/dev/null 2>&1; then
   echo "FAIL: unauthorized operator transfer unexpectedly succeeded" >&2
   exit 1
 fi
 pf_evm_require_unauthorized "$addr" "$other" \
-  "$("$cast" calldata 'transferFrom(address,address,uint256,uint256)' \
-    "$sender" "$other" "$token_id" 1)" "$other" "unauthorized operator transfer"
+  "$("$cast" calldata "$safe_sig" \
+    "$sender" "$other" "$token_id" 1 0x)" "$other" "unauthorized operator transfer"
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 60 \
   "unauthorized transfer left source untouched"
 
@@ -177,11 +188,11 @@ if [[ "${approved,,}" != "true" ]]; then
   exit 1
 fi
 receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$other_key" \
-  "$addr" 'transferFrom(address,address,uint256,uint256)' \
-  "$sender" "$other" "$token_id" 5)"
+  "$addr" "$safe_sig" \
+  "$sender" "$other" "$token_id" 5 0x)"
 pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
   "{\"operator\": \"$other\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $token_id, \"value\": 5}" \
-  "operator transferFrom TransferSingle LOG4"
+  "operator safeTransferFrom TransferSingle LOG4"
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 55 "source after operator transfer"
 pf_evm_require_uint "$(balance_of "$other" "$token_id")" 45 \
   "destination after operator transfer"
@@ -197,8 +208,8 @@ if [[ "${approved,,}" == "true" ]]; then
   exit 1
 fi
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
-    "$addr" 'transferFrom(address,address,uint256,uint256)' \
-    "$sender" "$other" "$token_id" 5 >/dev/null 2>&1; then
+    "$addr" "$safe_sig" \
+    "$sender" "$other" "$token_id" 5 0x >/dev/null 2>&1; then
   echo "FAIL: revoked operator transfer unexpectedly succeeded" >&2
   exit 1
 fi
@@ -231,15 +242,418 @@ pf_evm_require_unauthorized "$addr" "$sender" \
 
 # Transfer to the zero address → ZeroAddress().
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-    "$addr" 'transferFrom(address,address,uint256,uint256)' \
-    "$sender" "$zero" "$token_id" 1 >/dev/null 2>&1; then
+    "$addr" "$safe_sig" \
+    "$sender" "$zero" "$token_id" 1 0x >/dev/null 2>&1; then
   echo "FAIL: transfer to zero unexpectedly succeeded" >&2
   exit 1
 fi
 pf_evm_require_zero_address "$addr" "$sender" \
-  "$("$cast" calldata 'transferFrom(address,address,uint256,uint256)' \
-    "$sender" "$zero" "$token_id" 1)" "transfer to zero"
+  "$("$cast" calldata "$safe_sig" \
+    "$sender" "$zero" "$token_id" 1 0x)" "transfer to zero"
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 50 \
   "zero-address transfer left source untouched"
 
-echo "evm-anvil-multitoken: ok (mint/burn/transferFrom/operator + ERC-1155 TransferSingle LOG4 / ApprovalForAll LOG3)"
+# Bounded balanceOfBatch: capacity 4, one checked single-id read per slot.
+balance_of_batch() { # owners ids
+  "$cast" call --rpc-url "$rpc" "$addr" \
+    'balanceOfBatch(address[],uint256[])(uint256[])' "$1" "$2"
+}
+pf_evm_require_equal "$(balance_of_batch "[$sender,$other]" "[$token_id,$token_id]")" \
+  "[50, 45]" "balanceOfBatch matches the two single reads"
+pf_evm_require_equal "$(balance_of_batch "[$other]" "[$token_id]")" \
+  "[45]" "one-element batch"
+pf_evm_require_equal "$(balance_of_batch "[$sender,$other,$sender,$zero]" \
+  "[$token_id,$alias_id,0,$token_id]")" "[50, 0, 0, 0]" \
+  "full-capacity batch: unencodable alias and unknown pairs read zero"
+pf_evm_require_equal "$(balance_of_batch "[]" "[]")" "[]" "empty batch"
+pf_evm_require_equal "$(balance_of_batch "[$sender]" "[$token_id,$token_id]")" "[]" \
+  "unequal batch lengths answer an empty array"
+pf_evm_require_equal "$(balance_of_batch "[$sender,$other]" "[$token_id]")" "[]" \
+  "unequal batch lengths answer an empty array (more owners)"
+if "$cast" call --rpc-url "$rpc" "$addr" 'balanceOfBatch(address[],uint256[])(uint256[])' \
+    "[$sender,$other,$sender,$other,$sender]" "[$token_id,$token_id,$token_id,$token_id,$token_id]" \
+    >/dev/null 2>&1; then
+  echo "FAIL: five-element batch exceeded capacity 4 but decoded" >&2
+  exit 1
+fi
+
+# Bounded safeBatchTransferFrom: capacity 4, OZ check order, OZ log rule (a one-slot batch logs
+# TransferSingle, any other length logs one TransferBatch whose arrays are the submitted slots),
+# then the outbound onERC1155BatchReceived check when the recipient has code.
+second_id=9
+batch_sig='safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)'
+batch_calldata() { # source to ids amounts
+  "$cast" calldata "$batch_sig" "$1" "$2" "$3" "$4" 0x
+}
+batch_send() { # key source to ids amounts
+  "$cast" send --json --rpc-url "$rpc" --private-key "$1" \
+    "$addr" "$batch_sig" "$2" "$3" "$4" "$5" 0x
+}
+batch_must_fail() { # key source to ids amounts label
+  if "$cast" send --rpc-url "$rpc" --private-key "$1" \
+      "$addr" "$batch_sig" "$2" "$3" "$4" "$5" 0x \
+      >/dev/null 2>&1; then
+    echo "FAIL: $6 unexpectedly succeeded" >&2
+    exit 1
+  fi
+}
+sig_len_mismatch='ERC1155InvalidArrayLength(uint256,uint256)'
+sig_short='ERC1155InsufficientBalance(address,uint256,uint256,uint256)'
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$sender" "$second_id" 30 >/dev/null
+
+batch_must_fail "$other_key" "$sender" "$other" "[$token_id]" "[1]" "unauthorized batch"
+pf_evm_require_unauthorized "$addr" "$other" \
+  "$(batch_calldata "$sender" "$other" "[$token_id]" "[1]")" "$other" "unauthorized batch"
+batch_must_fail "$private_key" "$sender" "$other" "[$alias_id]" "[1]" "unencodable alias batch"
+pf_evm_require_unauthorized "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$alias_id]" "[1,1]")" "$sender" \
+  "unencodable alias in a batch"
+batch_must_fail "$private_key" "$sender" "$zero" "[$token_id]" "[1]" "batch to zero"
+pf_evm_require_zero_address "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$zero" "[$token_id]" "[1]")" "batch to zero"
+batch_must_fail "$private_key" "$sender" "$other" "[$token_id,$second_id]" "[1]" \
+  "batch length mismatch"
+pf_evm_require_word_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$second_id]" "[1]")" "$sig_len_mismatch" \
+  "batch length mismatch (2 ids, 1 amount)" 2 1
+pf_evm_require_word_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[]" "[1]")" "$sig_len_mismatch" \
+  "batch length mismatch (0 ids, 1 amount)" 0 1
+batch_must_fail "$private_key" "$sender" "$other" "[$token_id,$token_id]" "[1,1]" \
+  "duplicate id batch"
+pf_evm_require_named_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$second_id,$token_id]" "[1,1,1]")" \
+  'DuplicateId()' "duplicate id in slot 2"
+# Slot 0 would pass; slot 1 is short. Nothing is written before every slot is checked.
+batch_must_fail "$private_key" "$sender" "$other" "[$token_id,$second_id]" "[10,31]" \
+  "short second slot"
+pf_evm_require_word_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$second_id]" "[10,31]")" "$sig_short" \
+  "short second slot reverts with its balance and need" "$sender" 30 31 "$second_id"
+pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 50 "short batch left slot 0 untouched"
+pf_evm_require_uint "$(balance_of "$other" "$token_id")" 45 "short batch left slot 0 destination"
+# A credit that would wrap the destination stops in the checked add256 of the slot's
+# pre-check, the same empty revert the single mint above takes; nothing is written.
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$other" "$big_id" 20 >/dev/null
+batch_must_fail "$private_key" "$sender" "$other" "[$big_id]" "[$near_max]" "wrapping batch credit"
+pf_evm_require_empty_revert "$addr" "$sender" \
+  "$(batch_calldata "$sender" "$other" "[$token_id,$big_id]" "[1,$near_max]")" \
+  "wrapping batch credit in slot 1 is the checked-add revert"
+pf_evm_require_uint "$(balance_of "$other" "$big_id")" 20 "wrapping batch left destination"
+pf_evm_require_uint "$(balance_of "$sender" "$big_id")" "$near_max" "wrapping batch left source"
+
+receipt="$(batch_send "$private_key" "$sender" "$other" "[$token_id,$second_id]" "[10,30]")"
+pf_evm_typed_event_check "$abi" "$receipt" TransferBatch "$topic_batch" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"ids\": [$token_id, $second_id], \"values\": [10, 30]}" \
+  "two-slot batch TransferBatch LOG4"
+pf_evm_typed_event_absent "$receipt" TransferSingle "$topic_xfer" \
+  "two-slot batch logs no TransferSingle"
+pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 40 "batch source slot 0"
+pf_evm_require_uint "$(balance_of "$other" "$token_id")" 55 "batch destination slot 0"
+pf_evm_require_uint "$(balance_of "$sender" "$second_id")" 0 "batch source slot 1"
+pf_evm_require_uint "$(balance_of "$other" "$second_id")" 30 "batch destination slot 1"
+pf_evm_require_equal "$(balance_of_batch "[$sender,$other,$sender,$other]" \
+  "[$token_id,$token_id,$second_id,$second_id]")" "[40, 55, 0, 30]" \
+  "balanceOfBatch reflects the batch transfer"
+
+# Empty batch: authorized no-op that logs a TransferBatch with two empty arrays, as OZ does.
+# A one-slot batch takes the OZ TransferSingle branch; zero amounts on a held id move nothing.
+receipt="$(batch_send "$private_key" "$sender" "$other" "[]" "[]")"
+pf_evm_typed_event_check "$abi" "$receipt" TransferBatch "$topic_batch" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"ids\": [], \"values\": []}" \
+  "empty batch TransferBatch LOG4"
+pf_evm_typed_event_absent "$receipt" TransferSingle "$topic_xfer" "empty batch logs no TransferSingle"
+receipt="$(batch_send "$private_key" "$sender" "$other" "[$token_id]" "[0]")"
+pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$other\", \"id\": $token_id, \"value\": 0}" \
+  "one-slot batch logs TransferSingle"
+pf_evm_typed_event_absent "$receipt" TransferBatch "$topic_batch" \
+  "one-slot batch logs no TransferBatch"
+pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 40 "zero-amount slot moves nothing"
+
+# Operator batch at full capacity, then revoked. other holds 55 of id 7 and 30 of id 9.
+third_id=10
+fourth_id=11
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$other" "$third_id" 3 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$other" "$fourth_id" 4 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'setApprovalForAll(address,bool)' "$sender" true >/dev/null
+receipt="$(batch_send "$private_key" "$other" "$sender" \
+  "[$token_id,$second_id,$third_id,$fourth_id]" "[5,30,3,4]")"
+pf_evm_typed_event_check "$abi" "$receipt" TransferBatch "$topic_batch" \
+  "{\"operator\": \"$sender\", \"from\": \"$other\", \"to\": \"$sender\", \"ids\": [$token_id, $second_id, $third_id, $fourth_id], \"values\": [5, 30, 3, 4]}" \
+  "full-capacity operator batch TransferBatch LOG4"
+pf_evm_typed_event_absent "$receipt" TransferSingle "$topic_xfer" \
+  "full-capacity batch logs no TransferSingle"
+pf_evm_require_equal "$(balance_of_batch "[$sender,$sender,$sender,$sender]" \
+  "[$token_id,$second_id,$third_id,$fourth_id]")" "[45, 30, 3, 4]" \
+  "operator batch credited every slot"
+pf_evm_require_equal "$(balance_of_batch "[$other,$other,$other,$other]" \
+  "[$token_id,$second_id,$third_id,$fourth_id]")" "[50, 0, 0, 0]" \
+  "operator batch debited every slot"
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'setApprovalForAll(address,bool)' "$sender" false >/dev/null
+batch_must_fail "$private_key" "$other" "$sender" "[$token_id]" "[1]" "revoked operator batch"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" "$batch_sig" "$sender" "$other" \
+    "[$token_id,$second_id,$third_id,$fourth_id,$token_id]" "[1,1,1,1,1]" 0x >/dev/null 2>&1; then
+  echo "FAIL: five-slot batch exceeded capacity 4 but decoded" >&2
+  exit 1
+fi
+
+# Balances here: sender 45 of id 7, other 50 of id 7.
+solc_bin="$(pf_evm_find_tool solc)" || {
+  echo "evm-anvil-multitoken: skip: solc not found, safeTransferFrom receiver hook not driven" >&2
+  echo "evm-anvil-multitoken: ok (mint/burn/safeTransferFrom/operator/balanceOfBatch/safeBatchTransferFrom + ERC-1155 TransferSingle LOG4 / TransferBatch LOG4 / ApprovalForAll LOG3; receiver hook skipped)"
+  exit 0
+}
+"$solc_bin" --bin --optimize --overwrite -o "$root/build/evm" "$here/ReceiverMock.sol" >/dev/null
+mock_bin="$root/build/evm/ReceiverMock.bin"
+[[ -f "$mock_bin" ]] || { echo "FAIL: missing ReceiverMock.bin" >&2; exit 1; }
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x$(tr -d '\n\r ' < "$mock_bin")")"
+receiver="$(printf '%s' "$receipt" | pf_evm_contract_address)"
+hook_word="$("$python" -I -S -c \
+  "print(int('$("$cast" sig 'onERC1155Received(address,address,uint256,uint256,bytes)')', 16) << 224)")"
+
+set_hook() { # word size reverts
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$receiver" 'setHookWord(uint256)' "$1" >/dev/null
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$receiver" 'setHookSize(uint256)' "$2" >/dev/null
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$receiver" 'setHookReverts(bool)' "$3" >/dev/null
+}
+seen() { # getter signature
+  "$cast" call --rpc-url "$rpc" "$receiver" "$1"
+}
+lower() { tr 'A-F' 'a-f' <<<"$1"; }
+
+set_hook "$hook_word" 32 false
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" \
+  "$safe_sig(bool)" "$sender" "$receiver" "$token_id" 5 0x616263)" true \
+  "safeTransferFrom answers true"
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$sender" "$receiver" "$token_id" 5 0x616263)"
+pf_evm_typed_event_check "$abi" "$receipt" TransferSingle "$topic_xfer" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$receiver\", \"id\": $token_id, \"value\": 5}" \
+  "safeTransferFrom to a contract TransferSingle LOG4"
+pf_evm_require_uint "$(balance_of "$receiver" "$token_id")" 5 "receiver credited"
+pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 40 "sender debited"
+pf_evm_require_equal "$(lower "$(seen 'seenOperator()(address)')")" "$(lower "$sender")" \
+  "hook saw the operator"
+pf_evm_require_equal "$(lower "$(seen 'seenFrom()(address)')")" "$(lower "$sender")" \
+  "hook saw from"
+pf_evm_require_uint "$(seen 'seenId()(uint256)')" "$token_id" "hook saw the id"
+pf_evm_require_uint "$(seen 'seenValue()(uint256)')" 5 "hook saw the value"
+pf_evm_require_equal "$(seen 'seenDataHash()(bytes32)')" "$("$cast" keccak 0x616263)" \
+  "hook saw the bytes payload"
+pf_evm_require_uint "$(seen 'seenBalance()(uint256)')" 5 \
+  "hook read balanceOf and saw the credited balance (stores land before the CALL)"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$sender" "$receiver" "$token_id" 2 0x >/dev/null
+pf_evm_require_uint "$(seen 'seenValue()(uint256)')" 2 "second hook saw its own value"
+pf_evm_require_uint "$(seen 'seenBalance()(uint256)')" 7 \
+  "second hook saw the running balance, not the amount"
+
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'setApprovalForAll(address,bool)' "$sender" true >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$other" "$receiver" "$token_id" 1 0x >/dev/null
+pf_evm_require_equal "$(lower "$(seen 'seenOperator()(address)')")" "$(lower "$sender")" \
+  "hook saw the approved operator"
+pf_evm_require_equal "$(lower "$(seen 'seenFrom()(address)')")" "$(lower "$other")" \
+  "hook saw the holder as from"
+pf_evm_require_uint "$(balance_of "$other" "$token_id")" 49 "holder debited by the operator"
+pf_evm_require_uint "$(seen 'seenBalance()(uint256)')" 8 "hook saw the balance after the operator move"
+
+refuse() { # word size reverts label
+  set_hook "$1" "$2" "$3"
+  pf_evm_require_empty_revert "$addr" "$sender" \
+    "$("$cast" calldata "$safe_sig" "$sender" "$receiver" "$token_id" 1 0x)" "$4"
+  if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+      "$addr" "$safe_sig" "$sender" "$receiver" "$token_id" 1 0x >/dev/null 2>&1; then
+    echo "FAIL: $4 passed the magic gate" >&2
+    exit 1
+  fi
+  pf_evm_require_uint "$(balance_of "$receiver" "$token_id")" 8 "$4 left the receiver balance"
+  pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 38 "$4 left the sender balance"
+}
+refuse "$("$python" -I -S -c "print(0xdeadbeef << 224)")" 32 false "a wrong selector"
+refuse "$("$python" -I -S -c "print(($hook_word) | 1)")" 32 false "a dirty low byte"
+refuse "$hook_word" 0 false "an empty frame"
+refuse "$hook_word" 64 false "a two-word frame"
+refuse "$hook_word" 32 true "a receiver reverting with the magic word"
+set_hook "$hook_word" 32 false
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$sender" "$receiver" "$token_id" 1 0x >/dev/null
+pf_evm_require_uint "$(balance_of "$receiver" "$token_id")" 9 \
+  "hook accepted again once the magic frame is restored"
+
+data32="0x$(printf '%02x' $(seq 1 32))"
+pf_evm_require_empty_revert "$addr" "$sender" \
+  "$("$cast" calldata "$safe_sig" "$sender" "$receiver" "$token_id" 1 "${data32}ff")" \
+  "33 bytes of data exceed the bound"
+pf_evm_require_uint "$(balance_of "$receiver" "$token_id")" 9 "refused data left the balance"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$sender" "$receiver" "$token_id" 1 "$data32" >/dev/null
+pf_evm_require_equal "$(seen 'seenDataHash()(bytes32)')" "$("$cast" keccak "$data32")" \
+  "hook saw all 32 data bytes"
+
+# Batch hook: two uint256[] tails plus bytes, magic 0xbc197c81. Inventory is topped up so
+# the cases do not depend on the leftover single-id balances.
+batch_hook_word="$("$python" -I -S -c \
+  "print(int('$("$cast" sig 'onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)')', 16) << 224)")"
+set_hook "$batch_hook_word" 32 false
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$sender" "$token_id" 20 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'mint(address,uint256,uint256)' "$sender" "$second_id" 10 >/dev/null
+recv_id7="$(balance_of "$receiver" "$token_id")"
+recv_id9="$(balance_of "$receiver" "$second_id")"
+ids_hash="$("$cast" keccak "0x$(printf '%064x%064x' "$token_id" "$second_id")")"
+values_hash="$("$cast" keccak "0x$(printf '%064x%064x' 3 4)")"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" \
+  "$batch_sig(bool)" "$sender" "$receiver" "[$token_id,$second_id]" "[3,4]" 0x616263)" true \
+  "safeBatchTransferFrom answers true"
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$batch_sig" "$sender" "$receiver" "[$token_id,$second_id]" "[3,4]" 0x616263)"
+pf_evm_typed_event_check "$abi" "$receipt" TransferBatch "$topic_batch" \
+  "{\"operator\": \"$sender\", \"from\": \"$sender\", \"to\": \"$receiver\", \"ids\": [$token_id, $second_id], \"values\": [3, 4]}" \
+  "safeBatchTransferFrom to a contract TransferBatch LOG4"
+pf_evm_require_uint "$(balance_of "$receiver" "$token_id")" "$((recv_id7 + 3))" \
+  "batch receiver credited id 7"
+pf_evm_require_uint "$(balance_of "$receiver" "$second_id")" "$((recv_id9 + 4))" \
+  "batch receiver credited id 9"
+pf_evm_require_equal "$(lower "$(seen 'seenOperator()(address)')")" "$(lower "$sender")" \
+  "batch hook saw the operator"
+pf_evm_require_equal "$(lower "$(seen 'seenFrom()(address)')")" "$(lower "$sender")" \
+  "batch hook saw from"
+pf_evm_require_uint "$(seen 'seenBatchLength()(uint256)')" 2 "batch hook saw length 2"
+pf_evm_require_equal "$(seen 'seenIdsHash()(bytes32)')" "$ids_hash" \
+  "batch hook saw packed ids"
+pf_evm_require_equal "$(seen 'seenValuesHash()(bytes32)')" "$values_hash" \
+  "batch hook saw packed values"
+pf_evm_require_equal "$(seen 'seenDataHash()(bytes32)')" "$("$cast" keccak 0x616263)" \
+  "batch hook saw the bytes payload"
+pf_evm_require_uint "$(seen 'seenBatchBalance()(uint256)')" "$((recv_id7 + 3))" \
+  "batch hook read balanceOf and saw the credited id-7 balance"
+
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'setApprovalForAll(address,bool)' "$sender" true >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$batch_sig" "$other" "$receiver" "[$token_id]" "[1]" 0x >/dev/null
+pf_evm_require_equal "$(lower "$(seen 'seenOperator()(address)')")" "$(lower "$sender")" \
+  "batch hook saw the approved operator"
+pf_evm_require_equal "$(lower "$(seen 'seenFrom()(address)')")" "$(lower "$other")" \
+  "batch hook saw the holder as from"
+pf_evm_require_uint "$(seen 'seenBatchLength()(uint256)')" 1 "one-slot batch hook saw length 1"
+
+recv_id7="$(balance_of "$receiver" "$token_id")"
+send_id7="$(balance_of "$sender" "$token_id")"
+batch_refuse() { # word size reverts label
+  set_hook "$1" "$2" "$3"
+  pf_evm_require_empty_revert "$addr" "$sender" \
+    "$("$cast" calldata "$batch_sig" "$sender" "$receiver" "[$token_id]" "[1]" 0x)" "$4"
+  if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+      "$addr" "$batch_sig" "$sender" "$receiver" "[$token_id]" "[1]" 0x >/dev/null 2>&1; then
+    echo "FAIL: $4 passed the batch magic gate" >&2
+    exit 1
+  fi
+  pf_evm_require_uint "$(balance_of "$receiver" "$token_id")" "$recv_id7" \
+    "$4 left the batch receiver balance"
+  pf_evm_require_uint "$(balance_of "$sender" "$token_id")" "$send_id7" \
+    "$4 left the batch sender balance"
+}
+batch_refuse "$("$python" -I -S -c "print(0xdeadbeef << 224)")" 32 false "a wrong batch selector"
+batch_refuse "$("$python" -I -S -c "print(($batch_hook_word) | 1)")" 32 false "a dirty batch low byte"
+batch_refuse "$batch_hook_word" 0 false "an empty batch frame"
+batch_refuse "$batch_hook_word" 64 false "a two-word batch frame"
+batch_refuse "$batch_hook_word" 32 true "a receiver reverting with the batch magic word"
+set_hook "$batch_hook_word" 32 false
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$batch_sig" "$sender" "$receiver" "[$token_id]" "[1]" 0x >/dev/null
+pf_evm_require_uint "$(balance_of "$receiver" "$token_id")" "$((recv_id7 + 1))" \
+  "batch hook accepted again once the magic frame is restored"
+
+pf_evm_require_empty_revert "$addr" "$sender" \
+  "$("$cast" calldata "$batch_sig" "$sender" "$receiver" "[$token_id]" "[1]" "${data32}ff")" \
+  "33 bytes of batch data exceed the bound"
+
+# EOA recipient: no hook, balances still move.
+eoa_before="$(balance_of "$other" "$token_id")"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$batch_sig" "$sender" "$other" "[$token_id]" "[1]" 0x >/dev/null
+pf_evm_require_uint "$(balance_of "$other" "$token_id")" "$((eoa_before + 1))" \
+  "batch to an EOA credits without a hook"
+
+# Force the two extcodesize to 0 so a contract recipient is treated as an EOA: balances
+# still move and the mock records nothing. The gate has to fail if that assignment is live.
+yul="$root/build/evm/MultiToken.yul"
+if [[ ! -f "$yul" ]]; then
+  lake exe pf -- build --target evm --out "$root/build/evm" MultiToken >/dev/null \
+    || { echo "FAIL: pf build MultiToken for extcodesize mutation failed" >&2; exit 1; }
+fi
+[[ -f "$yul" ]] || { echo "FAIL: missing $yul" >&2; exit 1; }
+mut_dir="$root/build/evm/multitoken-extcodesize-mut"
+rm -rf "$mut_dir"
+mkdir -p "$mut_dir"
+"$python" -I -S -c "
+from pathlib import Path
+import re, sys
+src = Path('$yul').read_text()
+n = src.count('extcodesize(')
+if n != 2:
+    sys.stderr.write(f'FAIL: expected two extcodesize(, got {n}\\n')
+    sys.exit(1)
+out, k = re.subn(r'extcodesize\\([^)]*\\)', '0', src, count=2)
+if k != 2:
+    sys.stderr.write('FAIL: extcodesize rewrite missed\\n')
+    sys.exit(1)
+Path('$mut_dir/MultiToken.yul').write_text(out)
+"
+mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$mut_dir/MultiToken.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc --strict-assembly wrote no bytecode')
+print(hexes[-1])
+")"
+[[ -n "$mut_code" ]] || { echo "FAIL: empty mutated MultiToken bytecode" >&2; exit 1; }
+mut_addr="$(pf_evm_deploy_ctor_address "$mut_code" "$sender")"
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x$(tr -d '\n\r ' < "$mock_bin")")"
+mut_receiver="$(printf '%s' "$receipt" | pf_evm_contract_address)"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$mut_receiver" 'setHookWord(uint256)' "$hook_word" >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$mut_addr" 'mint(address,uint256,uint256)' "$sender" "$token_id" 10 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$mut_addr" "$safe_sig" "$sender" "$mut_receiver" "$token_id" 3 0x >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$mut_addr" \
+  'balanceOf(address,uint256)(uint256)' "$mut_receiver" "$token_id")" 3 \
+  "extcodesize forced to 0 still credits a contract recipient"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$mut_addr" \
+  'balanceOf(address,uint256)(uint256)' "$sender" "$token_id")" 7 \
+  "extcodesize forced to 0 still debits the sender"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$mut_receiver" \
+  'seenValue()(uint256)')" 0 \
+  "extcodesize forced to 0 skips onERC1155Received"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$mut_addr" 'mint(address,uint256,uint256)' "$sender" "$second_id" 4 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$mut_addr" "$batch_sig" "$sender" "$mut_receiver" "[$second_id]" "[2]" 0x >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$mut_addr" \
+  'balanceOf(address,uint256)(uint256)' "$mut_receiver" "$second_id")" 2 \
+  "extcodesize forced to 0 still credits a batch contract recipient"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$mut_receiver" \
+  'seenBatchLength()(uint256)')" 0 \
+  "extcodesize forced to 0 skips onERC1155BatchReceived"
+
+echo "evm-anvil-multitoken: ok (mint/burn/safeTransferFrom/operator/balanceOfBatch/safeBatchTransferFrom + ERC-1155 TransferSingle LOG4 / TransferBatch LOG4 / ApprovalForAll LOG3 + receiver hooks: magic, running balance, operator, five refusals, data bound, batch ids/values, extcodesize mutation)"

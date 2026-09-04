@@ -180,7 +180,10 @@ elab "#pf_guard_evm_bounded_abi" : command => do
       yul.contains "if gt(arg8, 0xffff)" &&
       yul.contains "let abi_padded0 := and(add(arg0, 31), not(31))" &&
       yul.contains "for { let abi_padding_i0 := arg0 }" &&
-      yul.contains "arg8 := byte(0, calldataload" &&
+      yul.contains "let abi_bytes0 := add(add(4, abi_data0), 32)" &&
+      yul.contains "let abi_bytes5 := add(add(4, abi_data1), 32)" &&
+      !yul.contains "arg8 := byte(0, calldataload" &&
+      yul.contains "mul(lt(2, arg5), byte(0, calldataload(add(abi_bytes5, 2))))" &&
       yul.contains "let abi_utf8_need0 := 0" &&
       yul.contains "if abi_utf8_need0 { revert(0, 0) }" &&
       yul.contains "mstore(0, 32)" && yul.contains "mstore(32, arg0)" &&
@@ -242,10 +245,23 @@ elab "#pf_guard_evm_bounded_abi" : command => do
   | .error reason => reason.contains "local frame exceeds 64 words"
   | .ok _ => false
 
+#guard ProofForge.Evm.Codec.maxPackedBytesCapacity == 65
+#guard ProofForge.Evm.Codec.maxPackedBytesLocalWords == 66
+
 #guard
-  match ProofForge.Evm.Codec.inputPlan (.boundedBytes 64) with
-  | .error reason => reason.contains "packed bytes local frame exceeds 64 words"
+  match ProofForge.Evm.Codec.inputPlan (.boundedBytes 65) with
+  | .ok plan => plan.wordCount == 66
+  | .error _ => false
+
+#guard
+  match ProofForge.Evm.Codec.inputPlan (.boundedBytes 66) with
+  | .error reason => reason.contains "packed bytes local frame exceeds 66 words"
   | .ok _ => false
+
+#guard
+  match ProofForge.Evm.Codec.dynamicOutputPlan (.boundedBytes 65) with
+  | .ok (some (.packedBytes plan)) => plan.capacity == 65
+  | _ => false
 
 #guard
   match ProofForge.Evm.Codec.dynamicOutputPlan
@@ -254,8 +270,8 @@ elab "#pf_guard_evm_bounded_abi" : command => do
   | .ok _ => false
 
 #guard
-  match ProofForge.Evm.Codec.dynamicOutputPlan (.boundedString 64) with
-  | .error reason => reason.contains "result frame exceeds 64 words"
+  match ProofForge.Evm.Codec.dynamicOutputPlan (.boundedString 66) with
+  | .error reason => reason.contains "packed bytes result frame exceeds 66 words"
   | .ok _ => false
 
 

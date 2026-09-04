@@ -311,6 +311,13 @@ separately accept `msg.value` (`Ether.accept`) when the method is payable. -/
     UInt64 :=
   Runtime.evmOpenCallValue target value payload
 
+/-- Typed external CALL whose callee must answer with exactly one word equal to this call's own
+selector, left-aligned: the receiver-hook convention of `onERC721Received`, `onERC1155Received`,
+`onERC1155BatchReceived`, and ERC-1271 `isValidSignature`. Any other length or word reverts the
+transaction. Reentrancy is application-visible. -/
+@[pf_inline] def callMagic {α : Type} (target : Address) (payload : α) : UInt64 :=
+  Runtime.evmOpenCallMagic target payload
+
 /-- Typed STATICCALL with the exact-one-word policy. The source carrier is `UInt256`. -/
 @[pf_inline] def staticWord {α : Type} (target : Address) (payload : α) : UInt256 :=
   Runtime.evmOpenStaticWord target payload
@@ -319,6 +326,26 @@ separately accept `msg.value` (`Ether.accept`) when the method is payable. -/
 `UInt256`; both words are still size-gated. -/
 @[pf_inline] def staticWords2 {α : Type} (target : Address) (payload : α) : UInt256 :=
   Runtime.evmOpenStaticWords2 target payload
+
+/-- Typed STATICCALL with the exact-three-word policy. The source carrier is the first
+`UInt256`; all three words are still size-gated. -/
+@[pf_inline] def staticWords3 {α : Type} (target : Address) (payload : α) : UInt256 :=
+  Runtime.evmOpenStaticWords3 target payload
+
+/-- Typed STATICCALL with the exact-four-word policy. The source carrier is the first
+`UInt256`; all four words are still size-gated. -/
+@[pf_inline] def staticWords4 {α : Type} (target : Address) (payload : α) : UInt256 :=
+  Runtime.evmOpenStaticWords4 target payload
+
+/-- Typed STATICCALL with the strict-bool policy: the callee must return exactly one word equal
+to `0` or `1`. Any other frame reverts. -/
+@[pf_inline] def staticBool {α : Type} (target : Address) (payload : α) : Bool :=
+  Runtime.evmOpenStaticBool target payload
+
+/-- Typed STATICCALL with the canonical-address policy: the callee must return exactly one word
+whose high 12 bytes are zero. Any other frame reverts. -/
+@[pf_inline] def staticAddress {α : Type} (target : Address) (payload : α) : Address :=
+  Runtime.evmOpenStaticAddress target payload
 
 end OpenCall
 

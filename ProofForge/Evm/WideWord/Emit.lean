@@ -1,5 +1,7 @@
 import ProofForge.Evm.WideWord
 import ProofForge.Evm.Ops
+import ProofForge.Evm.Codec.Emit
+import ProofForge.Evm.CallResult.Emit
 import ProofForge.Evm.Precompile.Emit
 
 namespace ProofForge.Evm.WideWord.Emit
@@ -9,15 +11,10 @@ private def u64MaxYul : String := "0xffffffffffffffff"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 private def packU256Word (src : String) (word : Nat) : String :=
-  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), " ++ u64MaxYul ++ ")"
-
-/-- Call the shared runtime helper that packs three little-endian Addr20 limbs into an
-ABI address word at `memory[0..31]`. -/
-private def packAddrMstore8 (indent w0 w1 w2 : String) : String :=
-  indent ++ "pf_store_addr20(0, " ++ w0 ++ ", " ++ w1 ++ ", " ++ w2 ++ ")" ++ nl
+  Codec.Emit.packU256Word src word
 
 /-- Shared with hashed-map emission so the main emitter can pass one context record. -/
 structure Context (σ : Type) where
@@ -71,12 +68,8 @@ private def emitEq20 (context : Context σ)
   let (bv, t4) := context.fresh t3
   let (nm, t5) := context.fresh t4
   let txt := p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent x0 x1 x2 ++
-    indent ++ "let " ++ av ++ " := mload(0)" ++ nl ++
-    indent ++ "mstore(0, 0)" ++ nl ++
-    packAddrMstore8 indent y0 y1 y2 ++
-    indent ++ "let " ++ bv ++ " := mload(0)" ++ nl ++
+    Codec.Emit.bindAddrWord indent av x0 x1 x2 ++
+    Codec.Emit.bindAddrWord indent bv y0 y1 y2 ++
     indent ++ "let " ++ nm ++ " := eq(" ++ av ++ ", " ++ bv ++ ")" ++ nl
   return (txt, nm, t5)
 
@@ -355,19 +348,6 @@ private def packFixedBytesAt (indent : String) (off : Nat) (w0 w1 w2 w3 : String
   indent ++ "pf_store_fixed_bytes(" ++ toString off ++ ", " ++ w0 ++ ", " ++ w1 ++
     ", " ++ w2 ++ ", " ++ w3 ++ ", 32)" ++ nl
 
-/-- Convert EVM's big-endian 20-byte address word into source Addr20 little-endian limbs. -/
-private def packAddrWord (src : String) (word : Nat) : String :=
-  let rec orBytes (index remaining : Nat) (acc : String) : String :=
-    match remaining with
-    | 0 => acc
-    | count + 1 =>
-        let byteExpr := "byte(" ++ toString (12 + 8 * word + index) ++ ", " ++ src ++ ")"
-        let next :=
-          if index == 0 then byteExpr
-          else "or(" ++ acc ++ ", shl(" ++ toString (8 * index) ++ ", " ++ byteExpr ++ "))"
-        orBytes (index + 1) count next
-  orBytes 0 (if word == 2 then 4 else 8) "0"
-
 private def precompileContext (context : Context σ) : Precompile.Emit.Context σ :=
   { fresh := context.fresh, indent := context.indent }
 
@@ -380,8 +360,8 @@ private def emitEcrecover20 (context : Context σ) (limb : Nat) (operands : Arra
   match context.lookupWide st cacheKey with
   | some packed =>
       let (name, next) := context.fresh st
-      return (context.indent ++ "let " ++ name ++ " := " ++ packAddrWord packed limb ++ nl,
-        name, next)
+      return (context.indent ++ "let " ++ name ++ " := " ++
+        CallResult.Emit.wordLimb .address20 packed limb ++ nl, name, next)
   | none =>
     let indent := context.indent
     let mut text := ""
@@ -403,7 +383,8 @@ private def emitEcrecover20 (context : Context σ) (limb : Nat) (operands : Arra
       packFixedBytesAt indent 96 names[9]! names[10]! names[11]! names[12]! ++
       precompileTxt ++
       indent ++ "let " ++ packed ++ " := " ++ signer ++ nl ++
-      indent ++ "let " ++ result ++ " := " ++ packAddrWord packed limb ++ nl
+      indent ++ "let " ++ result ++ " := " ++
+        CallResult.Emit.wordLimb .address20 packed limb ++ nl
     return (text, result, context.rememberWide s2 cacheKey packed)
 
 def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array Ops.Val)

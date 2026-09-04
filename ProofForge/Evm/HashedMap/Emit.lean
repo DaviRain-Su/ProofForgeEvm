@@ -1,5 +1,6 @@
 import ProofForge.Evm.HashedMap
 import ProofForge.Evm.Ops
+import ProofForge.Evm.Codec.Emit
 
 namespace ProofForge.Evm.HashedMap.Emit
 
@@ -8,10 +9,10 @@ private def u64MaxYul : String := "0xffffffffffffffff"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
-  "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
+  Codec.Emit.packU256 w0 w1 w2 w3
 
 private def packU256Word (src : String) (word : Nat) : String :=
-  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), " ++ u64MaxYul ++ ")"
+  Codec.Emit.packU256Word src word
 
 /-- Generic hashed-map emission context. The main emitter supplies materialization and
 fresh-name state; this module does not know about the surrounding Render record. -/
@@ -79,26 +80,11 @@ private def emitGetPair (context : Context σ) (base o0 o1 o2 s0 s1 s2 : Ops.Val
   let (q0, b0, st5) ← context.materialize s0 st4
   let (q1, b1, st6) ← context.materialize s1 st5
   let (q2, b2, st7) ← context.materialize s2 st6
-  let (slot, st8) := context.fresh st7
-  let (tag, st9) := context.fresh st8
-  let (pay, st10) := context.fresh st9
+  let (pay, st8) := context.fresh st7
   let txt := pb ++ p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++
-    indent ++ "mstore(0, " ++ a0 ++ ")" ++ nl ++
-    indent ++ "mstore(32, " ++ a1 ++ ")" ++ nl ++
-    indent ++ "mstore(64, " ++ a2 ++ ")" ++ nl ++
-    indent ++ "mstore(96, " ++ b0 ++ ")" ++ nl ++
-    indent ++ "mstore(128, " ++ b1 ++ ")" ++ nl ++
-    indent ++ "mstore(160, " ++ b2 ++ ")" ++ nl ++
-    indent ++ "mstore(192, " ++ b ++ ")" ++ nl ++
-    indent ++ "let " ++ slot ++ " := keccak256(0, 224)" ++ nl ++
-    indent ++ "let " ++ tag ++ " := sload(" ++ slot ++ ")" ++ nl ++
-    indent ++ "if gt(" ++ tag ++ ", " ++ u64MaxYul ++ ") { " ++ revert0 ++ " }" ++ nl ++
-    indent ++ "let " ++ pay ++ " := 0" ++ nl ++
-    indent ++ "if " ++ tag ++ " {" ++ nl ++
-    indent ++ "  " ++ pay ++ " := sload(add(" ++ slot ++ ", 1))" ++ nl ++
-    indent ++ "  if gt(" ++ pay ++ ", " ++ u64MaxYul ++ ") { " ++ revert0 ++ " }" ++ nl ++
-    indent ++ "}" ++ nl
-  return (txt, pay, st10)
+    indent ++ "let " ++ pay ++ " := pf_load_pair_u64(" ++ a0 ++ ", " ++ a1 ++ ", " ++
+      a2 ++ ", " ++ b0 ++ ", " ++ b1 ++ ", " ++ b2 ++ ", " ++ b ++ ")" ++ nl
+  return (txt, pay, st8)
 
 private def emitGetAddr256 (context : Context σ) (limb : Nat)
     (base w0 w1 w2 : Ops.Val) (st : σ) : Except String (String × String × σ) := do
@@ -155,27 +141,13 @@ private def emitGetPair256 (context : Context σ) (limb : Nat)
       return (pb ++ p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++
         indent ++ "let " ++ nm ++ " := " ++ packU256Word pay limb ++ nl, nm, st8)
   | none =>
-      let (slot, st8) := context.fresh st7
-      let (tag, st9) := context.fresh st8
-      let (pay, st10) := context.fresh st9
-      let (nm, st11) := context.fresh (context.rememberWide st10 cacheKey pay)
+      let (pay, st8) := context.fresh st7
+      let (nm, st9) := context.fresh (context.rememberWide st8 cacheKey pay)
       let txt := pb ++ p0 ++ p1 ++ p2 ++ q0 ++ q1 ++ q2 ++
-        indent ++ "mstore(0, " ++ a0 ++ ")" ++ nl ++
-        indent ++ "mstore(32, " ++ a1 ++ ")" ++ nl ++
-        indent ++ "mstore(64, " ++ a2 ++ ")" ++ nl ++
-        indent ++ "mstore(96, " ++ b0 ++ ")" ++ nl ++
-        indent ++ "mstore(128, " ++ b1 ++ ")" ++ nl ++
-        indent ++ "mstore(160, " ++ b2 ++ ")" ++ nl ++
-        indent ++ "mstore(192, " ++ b ++ ")" ++ nl ++
-        indent ++ "let " ++ slot ++ " := keccak256(0, 224)" ++ nl ++
-        indent ++ "let " ++ tag ++ " := sload(" ++ slot ++ ")" ++ nl ++
-        indent ++ "if gt(" ++ tag ++ ", " ++ u64MaxYul ++ ") { " ++ revert0 ++ " }" ++ nl ++
-        indent ++ "let " ++ pay ++ " := 0" ++ nl ++
-        indent ++ "if " ++ tag ++ " {" ++ nl ++
-        indent ++ "  " ++ pay ++ " := sload(add(" ++ slot ++ ", 1))" ++ nl ++
-        indent ++ "}" ++ nl ++
+        indent ++ "let " ++ pay ++ " := pf_load_pair256(" ++ a0 ++ ", " ++ a1 ++ ", " ++
+          a2 ++ ", " ++ b0 ++ ", " ++ b1 ++ ", " ++ b2 ++ ", " ++ b ++ ")" ++ nl ++
         indent ++ "let " ++ nm ++ " := " ++ packU256Word pay limb ++ nl
-      return (txt, nm, st11)
+      return (txt, nm, st9)
 
 def emitQuery (context : Context σ) (query : HashedMap.Query) (operands : Array Ops.Val)
     (st : σ) : Except String (String × String × σ) :=

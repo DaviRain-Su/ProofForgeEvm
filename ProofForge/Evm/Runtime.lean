@@ -436,6 +436,10 @@ The host stub returns 0; extraction preserves the plan. Reentrancy is applicatio
     (_payload : _α) : UInt64 :=
   value.w0
 
+/-- Typed external CALL whose one returned word must be this call's own selector, left-aligned
+(`OpenCall.callMagic`): the receiver-hook convention. Host returns 0. -/
+@[irreducible] def evmOpenCallMagic {_α : Type} (_target : Addr20) (_payload : _α) : UInt64 := 0
+
 /-- Typed STATICCALL with exact-one-word policy (`OpenCall.staticWord`). Host returns 0. -/
 @[irreducible] def evmOpenStaticWord {_α : Type} (_target : Addr20) (_payload : _α) : UInt256 :=
   ⟨0, 0, 0, 0⟩
@@ -444,5 +448,25 @@ The host stub returns 0; extraction preserves the plan. Reentrancy is applicatio
 The source carrier is the first word; both words are still gated. -/
 @[irreducible] def evmOpenStaticWords2 {_α : Type} (_target : Addr20) (_payload : _α) : UInt256 :=
   ⟨0, 0, 0, 0⟩
+
+/-- Typed STATICCALL with exact-three-word policy (`OpenCall.staticWords3`). Host returns 0.
+The source carrier is the first word; all three words are still gated. -/
+@[irreducible] def evmOpenStaticWords3 {_α : Type} (_target : Addr20) (_payload : _α) : UInt256 :=
+  ⟨0, 0, 0, 0⟩
+
+/-- Typed STATICCALL with exact-four-word policy (`OpenCall.staticWords4`). Host returns 0.
+The source carrier is the first word; all four words are still gated. -/
+@[irreducible] def evmOpenStaticWords4 {_α : Type} (_target : Addr20) (_payload : _α) : UInt256 :=
+  ⟨0, 0, 0, 0⟩
+
+/-- Typed STATICCALL with the strict-bool policy (`OpenCall.staticBool`): exactly one word equal
+to `0` or `1`. Host returns `false`. -/
+@[irreducible] def evmOpenStaticBool {_α : Type} (_target : Addr20) (_payload : _α) : Bool :=
+  false
+
+/-- Typed STATICCALL with the canonical-address policy (`OpenCall.staticAddress`): exactly one
+word whose high 12 bytes are zero. Host returns the zero address. -/
+@[irreducible] def evmOpenStaticAddress {_α : Type} (_target : Addr20) (_payload : _α) : Addr20 :=
+  ⟨0, 0, 0⟩
 
 end ProofForge.Evm.Runtime

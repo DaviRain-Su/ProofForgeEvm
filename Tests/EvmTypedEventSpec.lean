@@ -62,9 +62,9 @@ private def approvalAbi : String :=
   .lit 6, .lit 7, .lit 8, .lit 9]
 #guard (transferFrame.mapValues fun _ => (.lit 11 : Ops.Val)).values.all (· == .lit 11)
 
-#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped transferFrame)
-#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped approvalFrame)
-#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped tippedFrame)
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped transferFrame #[])
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped approvalFrame #[])
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped tippedFrame #[])
 
 #guard !(ProofForge.Core.Ops.EventFrame.wellFormed
   (·.wellFormed Ops.ValKind.arity)
@@ -100,8 +100,8 @@ private def fiveData : ProofForge.Core.Ops.EventFrame Ops.Val := {
 #guard fiveData.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard fourIndexed.indexedCount + 1 > LogError.maxTopics
 #guard fiveData.dataCount > LogError.maxLogDataWords
-#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped fourIndexed)
-#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped fiveData)
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped fourIndexed #[])
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped fiveData #[])
 
 -- Closed EVM type vocabulary: Core-well-formed scalars without a one-word EVM carrier
 -- (`uint96` spans two limbs but is not whole 64-bit limbs; `address32`) fail before Yul.
@@ -131,17 +131,17 @@ private def emptyFrame : ProofForge.Core.Ops.EventFrame Ops.Val := {
 
 #guard uint96Frame.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard address32Frame.wellFormed (·.wellFormed Ops.ValKind.arity)
-#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped uint96Frame)
-#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped address32Frame)
-#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped boolFrame)
-#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped bytes32Frame)
-#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped emptyFrame)
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped uint96Frame #[])
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped address32Frame #[])
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped boolFrame #[])
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped bytes32Frame #[])
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped emptyFrame #[])
 #guard
-  match NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) transferFrame with
+  match NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) transferFrame #[] with
   | .ok types => types == #["address", "address", "uint256"]
   | .error _ => false
 #guard
-  match NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) uint96Frame with
+  match NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) uint96Frame #[] with
   | .error reason => reason.contains "typed event"
   | .ok _ => false
 
@@ -178,7 +178,7 @@ private def mockLogCtx : LogError.Emit.Context := { indent := "  " }
   match LogError.Emit.emitLog mockLogCtx
         { data := #["v2"]
           topics := #["0x" ++ transferTopic0, "v0", "v1"] },
-        NativeFx.Emit.emitCall mockNativeCtx (.logTyped transferFrame) 0,
+        NativeFx.Emit.emitCall mockNativeCtx (.logTyped transferFrame #[]) 0,
         NativeFx.Emit.emitCall mockNativeCtx
           (.logTransfer256 lit lit lit lit lit lit lit lit lit lit) 0 with
   | .ok fragment, .ok (typedTxt, _, typedSt), .ok (closedTxt, _, closedSt) =>
@@ -188,42 +188,132 @@ private def mockLogCtx : LogError.Emit.Context := { indent := "  " }
   | _, _, _ => false
 
 #guard
-  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped approvalFrame) 0 with
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped approvalFrame #[]) 0 with
   | .error _ => false
   | .ok (txt, _, _) => txt.contains s!"log3(0, 32, 0x{approvalTopic0}"
 
 #guard
-  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped tippedFrame) 0 with
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped tippedFrame #[]) 0 with
   | .error _ => false
   | .ok (txt, _, _) =>
       txt == s!"  mstore(0, 0)\n  log1(0, 32, 0x{tippedTopic0})\n"
 
 #guard
-  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped fourIndexed) 0 with
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped fourIndexed #[]) 0 with
   | .error reason => reason.contains "typed event"
   | .ok _ => false
 
 -- Emission never silently drops limbs: unsupported carriers fail, not truncate.
 #guard
-  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped uint96Frame) 0 with
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped uint96Frame #[]) 0 with
   | .error reason => reason.contains "typed event"
   | .ok _ => false
 
 -- Signature-only event: zero data words, LOG1 with `(0, 0)` geometry.
 #guard
-  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped emptyFrame) 0 with
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped emptyFrame #[]) 0 with
   | .error _ => false
   | .ok (txt, _, st) =>
       txt == s!"  log1(0, 0, 0x{Keccak.keccak256HexOfString "Ping()"})\n" && st == 0
 
 -- Indexed bytes32 packs through the fixed-bytes helper into a fresh topic word.
 #guard
-  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped bytes32Frame) 0 with
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped bytes32Frame #[]) 0 with
   | .error _ => false
   | .ok (txt, _, st) =>
       txt.contains "pf_store_fixed_bytes(0, 0, 0, 0, 0, 32)" &&
         txt.contains s!"log2(0, 0, 0x{Keccak.keccak256HexOfString "Digest(bytes32)"}, v0)" &&
         st == 1
+
+-- Bounded dynamic-array tails: the ERC-1155 `TransferBatch` shape. Three indexed addresses, no
+-- static data word, two `uint256[]` tails of capacity two (four limbs per slot). The topic0 is
+-- pinned to the ecosystem constant, so the `T[]` signature spelling is not this repository's.
+private def batchFrame : ProofForge.Core.Ops.EventFrame Ops.Val := {
+  constructor := "TransferBatch"
+  args := #[
+    { name := "operator", type := .address20, parts := #[.lit 0, .lit 1, .lit 2], indexed := true },
+    { name := "from", type := .address20, parts := #[.lit 3, .lit 4, .lit 5], indexed := true },
+    { name := "to", type := .address20, parts := #[.lit 6, .lit 7, .lit 8], indexed := true }
+  ]
+}
+
+private def limbs (base count : Nat) : Array Ops.Val :=
+  (Array.range count).map fun i => .lit (UInt64.ofNat (base + i))
+
+private def idsTail : NativeFx.LogTail Ops.Val :=
+  { name := "ids", elementType := .uint256, capacity := 2, length := .lit 20,
+    elements := limbs 21 8 }
+
+private def valuesTail : NativeFx.LogTail Ops.Val :=
+  { name := "values", elementType := .uint256, capacity := 2, length := .lit 30,
+    elements := limbs 31 8 }
+
+private def batchTails : Array (NativeFx.LogTail Ops.Val) := #[idsTail, valuesTail]
+
+private def transferBatchSignature : String :=
+  "TransferBatch(address,address,address,uint256[],uint256[])"
+
+private def transferBatchTopic0 : String :=
+  "4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb"
+
+#guard Keccak.signature "TransferBatch" #["address", "address", "address", "uint256[]", "uint256[]"]
+  == transferBatchSignature
+#guard Keccak.keccak256HexOfString transferBatchSignature == transferBatchTopic0
+#guard idsTail.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard idsTail.values == #[.lit 20] ++ limbs 21 8
+#guard (idsTail.mapValues fun _ => (.lit 11 : Ops.Val)).values.all (· == .lit 11)
+#guard NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity) (.logTyped batchFrame batchTails)
+#guard (NativeFx.Call.logTyped batchFrame batchTails).values ==
+  batchFrame.values ++ idsTail.values ++ valuesTail.values
+#guard
+  match NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) batchFrame batchTails with
+  | .ok types => types == #["address", "address", "address", "uint256[]", "uint256[]"]
+  | .error _ => false
+
+-- Fail closed: a third tail, a tail short one limb, a tail with no slot, a tail named like a
+-- scalar field, and two tails sharing a name.
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity)
+  (.logTyped batchFrame (batchTails.push { idsTail with name := "extra" }))
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity)
+  (.logTyped batchFrame #[{ idsTail with elements := idsTail.elements.pop }])
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity)
+  (.logTyped batchFrame #[{ idsTail with capacity := 0, elements := #[] }])
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity)
+  (.logTyped batchFrame #[{ idsTail with name := "to" }])
+#guard !NativeFx.Call.wellFormed (·.wellFormed Ops.ValKind.arity)
+  (.logTyped batchFrame #[idsTail, { valuesTail with name := "ids" }])
+
+-- Emission golden: the head is two offset words, each tail is length-guarded, and the LOG4
+-- data length is the cursor, byte-exact. The tail words share the frame's fresh-name counter.
+#guard
+  match NativeFx.Emit.emitCall mockNativeCtx (.logTyped batchFrame batchTails) 0 with
+  | .error _ => false
+  | .ok (txt, _, st) =>
+      txt == "  let v0 := 0\n  let v1 := 0\n  let v2 := 0\n" ++
+        "  let v3 := 0\n  let v4 := 0\n  let v5 := 0\n" ++
+        "  let v6 := 0\n  let v7 := 0\n  let v8 := 0\n" ++
+        "  {\n" ++
+        "    let pf_log_end := 64\n" ++
+        "    mstore(0, pf_log_end)\n" ++
+        "    if gt(v3, 2) { revert(0, 0) }\n" ++
+        "    mstore(pf_log_end, v3)\n" ++
+        "    if gt(v3, 0) { mstore(add(pf_log_end, 32), v4) }\n" ++
+        "    if gt(v3, 1) { mstore(add(pf_log_end, 64), v5) }\n" ++
+        "    pf_log_end := add(pf_log_end, mul(add(v3, 1), 32))\n" ++
+        "    mstore(32, pf_log_end)\n" ++
+        "    if gt(v6, 2) { revert(0, 0) }\n" ++
+        "    mstore(pf_log_end, v6)\n" ++
+        "    if gt(v6, 0) { mstore(add(pf_log_end, 32), v7) }\n" ++
+        "    if gt(v6, 1) { mstore(add(pf_log_end, 64), v8) }\n" ++
+        "    pf_log_end := add(pf_log_end, mul(add(v6, 1), 32))\n" ++
+        s!"    log4(0, pf_log_end, 0x{transferBatchTopic0}, v0, v1, v2)\n" ++
+        "  }\n" && st == 9
+
+#guard
+  match NativeFx.Emit.emitCall mockNativeCtx
+      (.logTyped batchFrame #[{ idsTail with elements := idsTail.elements.pop }]) 0 with
+  | .error reason => reason.contains "typed event"
+  | .ok _ => false
 
 private def spliceTyped (p : IR.Program) (frame : ProofForge.Core.Ops.EventFrame Ops.Val) :
     Option IR.Program :=
@@ -231,7 +321,7 @@ private def spliceTyped (p : IR.Program) (frame : ProofForge.Core.Ops.EventFrame
   | none => none
   | some get =>
       some { p with entries := #[{ get with
-        ops := #[.component (.nativeFx (.logTyped frame)), .returnU64 (.lit 0)] }] }
+        ops := #[.component (.nativeFx (.logTyped frame #[])), .returnU64 (.lit 0)] }] }
 
 #guard
   match IR.fromProgram ProofForge.Golden.extractedCounter with
@@ -290,7 +380,7 @@ private def spliceOps (p : IR.Program) (ops : Array IR.Op) : Option IR.Program :
   | some get => some { p with entries := #[{ get with ops := ops.push (.returnU64 (.lit 0)) }] }
 
 private def logTypedOp (frame : ProofForge.Core.Ops.EventFrame Ops.Val) : IR.Op :=
-  .component (.nativeFx (.logTyped frame))
+  .component (.nativeFx (.logTyped frame #[]))
 
 private def abiOf (p : IR.Program) (ops : Array IR.Op) : Except String String :=
   match spliceOps p ops with
@@ -334,8 +424,32 @@ private def countOccurrences (haystack needle : String) : Nat :=
         | .error reason => reason.contains "conflicts with closed event"
         | .ok _ => false)
 
+-- ABI JSON for a tailed event lists each tail after the scalars as a non-indexed `T[]`; two
+-- frames sharing the signature but not a tail name conflict, since receipts cannot tell them apart.
+private def transferBatchAbi : String :=
+  "{\"type\":\"event\",\"name\":\"TransferBatch\",\"inputs\":[" ++
+    "{\"name\":\"operator\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"from\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"to\",\"type\":\"address\",\"indexed\":true}," ++
+    "{\"name\":\"ids\",\"type\":\"uint256[]\",\"indexed\":false}," ++
+    "{\"name\":\"values\",\"type\":\"uint256[]\",\"indexed\":false}],\"anonymous\":false}"
+
+#guard
+  match IR.fromProgram ProofForge.Golden.extractedCounter with
+  | .error _ => false
+  | .ok base =>
+      let batchOp : IR.Op := .component (.nativeFx (.logTyped batchFrame batchTails))
+      let renamedOp : IR.Op := .component (.nativeFx
+        (.logTyped batchFrame #[idsTail, { valuesTail with name := "amounts" }]))
+      (match abiOf base #[batchOp, batchOp] with
+        | .ok abi => countOccurrences abi transferBatchAbi == 1
+        | .error _ => false) &&
+      (match abiOf base #[batchOp, renamedOp] with
+        | .error reason => reason.contains "conflicting typed event"
+        | .ok _ => false)
+
 -- Registry / golden digests for existing programs stay pinned (no closed-union spelling change).
-#guard Registry.digestOf "Token" == some "7d01d10202d87dd3"
+#guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "EvmTypedErrors" == some "499001a31fb4d9e7"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
 #guard Registry.digestOf "Counter" == some "254202356ee921d6"
@@ -359,7 +473,7 @@ private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     Array (ProofForge.Core.Ops.EventFrame ProofForge.Extract.IR.Val) :=
   ops.foldl (init := #[]) fun frames op =>
     let frames := match op with
-      | .ext (.evm (.component (.nativeFx (.logTyped frame)))) => frames.push frame
+      | .ext (.evm (.component (.nativeFx (.logTyped frame _)))) => frames.push frame
       | _ => frames
     match op with
     | .ite _ _ _ yes no => frames ++ sourceTypedFrames yes ++ sourceTypedFrames no
@@ -370,7 +484,7 @@ private partial def evmTypedFrames (ops : Array ProofForge.Evm.IR.Op) :
     Array (ProofForge.Core.Ops.EventFrame ProofForge.Evm.Ops.Val) :=
   ops.foldl (init := #[]) fun frames op =>
     let frames := match op with
-      | .component (.nativeFx (.logTyped frame)) => frames.push frame
+      | .component (.nativeFx (.logTyped frame _)) => frames.push frame
       | _ => frames
     match op with
     | .ite _ _ _ yes no => frames ++ evmTypedFrames yes ++ evmTypedFrames no
@@ -427,6 +541,31 @@ inductive TippedValue where
 
 def conflict (left right : UInt64) : UInt64 :=
   Event.emit (TippedAmt.Tipped left) ||| Event.emit (TippedValue.Tipped right)
+
+inductive IndexedArray where
+  | Batch (ids : Event.Indexed (ProofForge.Core.Value.BoundedVec UInt64 2))
+
+def indexedArray (ids : ProofForge.Core.Value.BoundedVec UInt64 2) : UInt64 :=
+  Event.emit (IndexedArray.Batch (Event.indexed ids))
+
+inductive ScalarAfterArray where
+  | Batch (ids : ProofForge.Core.Value.BoundedVec UInt64 2) (total : UInt64)
+
+def scalarAfterArray (ids : ProofForge.Core.Value.BoundedVec UInt64 2) (total : UInt64) :
+    UInt64 :=
+  Event.emit (ScalarAfterArray.Batch ids total)
+
+inductive OptionArray where
+  | Batch (ids : ProofForge.Core.Value.BoundedVec (Option UInt64) 2)
+
+def optionArray (ids : ProofForge.Core.Value.BoundedVec (Option UInt64) 2) : UInt64 :=
+  Event.emit (OptionArray.Batch ids)
+
+inductive ThreeArrays where
+  | Batch (a b c : ProofForge.Core.Value.BoundedVec UInt64 2)
+
+def threeArrays (a b c : ProofForge.Core.Value.BoundedVec UInt64 2) : UInt64 :=
+  Event.emit (ThreeArrays.Batch a b c)
 
 end Unsupported
 
@@ -505,6 +644,10 @@ elab "#pf_guard_evm_typed_event_source" : command => do
   expectUnsupported env ``Unsupported.fifthTopic "malformed typed event"
   expectUnsupported env ``Unsupported.anonymous "explicitly named"
   expectUnsupported env ``Unsupported.implicitField "explicitly named"
+  expectUnsupported env ``Unsupported.indexedArray "dynamic-array field cannot be indexed"
+  expectUnsupported env ``Unsupported.scalarAfterArray "must be the last fields"
+  expectUnsupported env ``Unsupported.optionArray "array element type is not a closed EVM scalar"
+  expectUnsupported env ``Unsupported.threeArrays "malformed typed event"
   match ProofForge.Extract.extractMethod env .get ``Unsupported.conflict with
   | .error reason => throwError s!"conflict unexpectedly failed extract: {reason}"
   | .ok method =>

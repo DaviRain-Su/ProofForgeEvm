@@ -287,8 +287,9 @@ and S1a is the safest first implementation.
 
 - A direct reuse of `ErrorFrame` would be wrong: its current gate requires one to four named
   `UInt64` fields and carries no indexed metadata. S1a mirrors its path, not its data type.
-- `LogError` currently permits at most four topics and four data words. Common ERC-721 and
-  single-id ERC-1155 events fit; ERC-1155 `TransferBatch` does not.
+- `LogError` permits at most four topics and four static data words, plus (since Phase 2) at
+  most two bounded dynamic-array tails. Common ERC-721 and single-id ERC-1155 events fit the
+  static words; ERC-1155 `TransferBatch` rides on two tails.
 - Before S2, `CallResult` was structurally single-word (`retBound ≤ 32`, `Option String` result).
   S2 retains that compatibility carrier and adds bounded `emitBound` names for up to four words.
 - Event ABI is currently inferred from `NativeFx.logName` with special cases. S1 must derive ABI

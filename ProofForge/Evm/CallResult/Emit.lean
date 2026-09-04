@@ -9,8 +9,10 @@ Emitter interpreter for the typed call-result contract (EVM-RT-2a, S2).
 and projects the historical first-word `Option String` carrier so ClosedCall / Precompile
 consumers keep their existing output and fresh-name order.
 
-1. the `call`/`staticcall` instruction itself, with calldata at `memory[0, inSize)` and
-   returndata copied to `memory[0, retBound)` (`retBound ≤ maxRetBytes`);
+1. the `call`/`staticcall` instruction itself, with calldata at `memory[0, inSize)`, extended by
+   the caller's bound padded tail length when the plan carries a lone `bytes` argument, or sized
+   by a cursor expression when the plan carries an array tail, and returndata copied to
+   `memory[0, retBound)` (`retBound ≤ maxRetBytes`);
 2. the fail-closed success gate. Default `FailMode.revert0` is `if iszero(ok) { revert(0, 0) }`,
    byte-identical with pre-S2 ClosedCall Yul. Opt-in `FailMode.bubble` forwards callee revert
    data instead;
@@ -83,24 +85,35 @@ private def emitExactWords (context : Context σ) (indent : String) (st : σ)
 
 /-- Emit one closed external call and its typed fail-closed result gates, binding every
 decoded word. `target` is the already-materialized callee word; `value` is the msg.value
-expression and must be present exactly when `request.value` holds. -/
+expression and must be present exactly when `request.value` holds. `inSizeTail` is the
+already-bound padded byte count of a lone `bytes` tail, added to the static `request.inSize`
+when present. `inSizeExpr` is the full calldata size when tails were written along a cursor;
+it is mutually exclusive with `inSizeTail`. -/
 def emitBound (context : Context σ) (request : CallResult.Request) (target : String)
-    (value : Option String) (st : σ) : Except String (String × Bound × σ) := do
+    (value : Option String) (st : σ) (inSizeTail : Option String := none)
+    (inSizeExpr : Option String := none) :
+    Except String (String × Bound × σ) := do
   if !(request.wellFormed) then
     throw "extract/unsupported: evm call-result request shape"
   if request.value != value.isSome then
     throw "extract/unsupported: evm call-result value shape"
   let indent := context.indent
   let (ok, st1) := context.fresh st
+  let inSize ← match inSizeExpr, inSizeTail with
+    | some expr, none => pure expr
+    | none, none => pure (toString request.inSize)
+    | none, some tail => pure ("add(" ++ toString request.inSize ++ ", " ++ tail ++ ")")
+    | some _, some _ =>
+        throw "extract/unsupported: evm call-result inSize shape"
   let invoke := match request.kind, value with
     | .call, some val =>
-        "call(gas(), " ++ target ++ ", " ++ val ++ ", 0, " ++ toString request.inSize ++
+        "call(gas(), " ++ target ++ ", " ++ val ++ ", 0, " ++ inSize ++
           ", 0, " ++ toString request.retBound ++ ")"
     | .call, none =>
-        "call(gas(), " ++ target ++ ", 0, 0, " ++ toString request.inSize ++
+        "call(gas(), " ++ target ++ ", 0, 0, " ++ inSize ++
           ", 0, " ++ toString request.retBound ++ ")"
     | .staticcall, _ =>
-        "staticcall(gas(), " ++ target ++ ", 0, " ++ toString request.inSize ++
+        "staticcall(gas(), " ++ target ++ ", 0, " ++ inSize ++
           ", 0, " ++ toString request.retBound ++ ")"
   let head :=
     indent ++ "let " ++ ok ++ " := " ++ invoke ++ nl ++
@@ -143,6 +156,25 @@ def emitBound (context : Context σ) (request : CallResult.Request) (target : St
   | .words kinds =>
       let (tail, bound, st2) := emitExactWords context indent st1 kinds
       return (head ++ tail, bound, st2)
+
+/-- Yul for source limb `limb` of the bound word `src`. A canonical address word yields the
+little-endian byte limbs `pf_store_addr20` consumes (bytes 12..19, 20..27, 28..31 of the word);
+any other word yields numeric 64-bit limbs from bit `64 * limb`. -/
+def wordLimb (kind : CallResult.WordKind) (src : String) (limb : Nat) : String :=
+  match kind with
+  | .address20 =>
+      let rec orBytes (index remaining : Nat) (acc : String) : String :=
+        match remaining with
+        | 0 => acc
+        | count + 1 =>
+            let byteExpr := "byte(" ++ toString (12 + 8 * limb + index) ++ ", " ++ src ++ ")"
+            let next :=
+              if index == 0 then byteExpr
+              else "or(" ++ acc ++ ", shl(" ++ toString (8 * index) ++ ", " ++ byteExpr ++ "))"
+            orBytes (index + 1) count next
+      orBytes 0 (if limb == 2 then 4 else 8) "0"
+  | .uint256 | .boolean | .bytes4 =>
+      "and(shr(" ++ toString (64 * limb) ++ ", " ++ src ++ "), 0xffffffffffffffff)"
 
 /-- Compatibility wrapper: same Yul and fresh-name order as `emitBound`, projecting the
 historical first-word `Option String` carrier for ClosedCall / Precompile consumers. -/

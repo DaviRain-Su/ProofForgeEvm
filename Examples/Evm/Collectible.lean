@@ -1,14 +1,15 @@
 import ProofForge.Evm.Sdk
 
 /-!
-Owner-minted ERC-721 consumer. The SDK owns token-id encoding, ownership/approval maps, and
-checked mint/transfer movement. This contract owns the immutable minter gate, zero-address
-policy, and canonical ERC-721 `Transfer` / `Approval` logs (`Erc721.Log`). Operator
-`ApprovalForAll` is not part of this method surface.
+Owner-minted ERC-721 consumer. The SDK owns token-id encoding, ownership/approval maps,
+checked mint/transfer movement, and the receiver hook (`Erc721.checkOnReceived`). This contract
+owns the immutable minter gate, zero-address policy, and canonical ERC-721 `Transfer` /
+`Approval` logs (`Erc721.Log`). Operator `ApprovalForAll` is not part of this method surface.
 -/
 
 namespace Examples.Evm.Collectible
 open ProofForge.Evm.Sdk
+open ProofForge.Core.Value (BoundedBytes)
 
 structure State where
   dummy : UInt64
@@ -71,6 +72,25 @@ def transferFrom (s : State) (source to : Address) (tokenId : UInt256) :
       Erc721.Log.transfer source to tokenId)
   else
     .ok (s, Revert.unauthorized Context.caller)
+
+/-- `safeTransferFrom(address,address,uint256,bytes)`: `transferFrom` followed by OZ's receiver
+check. The ledger move and the `Transfer` log land before the hook runs, so a receiver that
+reads `ownerOf` inside `onERC721Received` sees itself; a recipient without code is not called;
+a hook answer other than its own selector reverts the whole transaction. `data` is bounded to
+32 bytes; there is no three-argument overload, so callers pass `0x` for no data. -/
+@[pf_entry]
+def safeTransferFrom (s : State) (source to : Address) (tokenId : UInt256)
+    (data : BoundedBytes 32) : Except Error (State × Bool) :=
+  if !Erc721.isApprovedOrOwner owners approvals operators Context.caller tokenId then
+    Effect.abort s (Revert.unauthorized Context.caller)
+  else if Address.isZero to then
+    Effect.abort s Revert.zeroAddress
+  else if Erc721.canTransfer owners balances source to tokenId then
+    .ok ({ dummy := Erc721.transfer owners approvals balances source to tokenId |||
+        Erc721.Log.transfer source to tokenId },
+      Effect.thenTrue (Erc721.checkOnReceived to Context.caller source tokenId data))
+  else
+    Effect.abort s (Revert.unauthorized Context.caller)
 
 /-- Packed owner (`⟨w0,w1,w2,0⟩`). Address-typed returns from map reads still expand to four
 UInt256 limbs under Extract, so consumers expose the packed word until Emit grows a 3-limb

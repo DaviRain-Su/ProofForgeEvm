@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Collectible: owner mint, approve, transferFrom over Erc721 ledger. Darwin + Linux.
+# Collectible: owner mint, approve, transferFrom over Erc721 ledger, and the safeTransferFrom
+# receiver hook against a Solidity receiver. Darwin + Linux.
 # Receipts are ABI-decoded: ERC-721 Transfer/Approval are LOG4 (indexed tokenId, empty data).
 set -euo pipefail
 
@@ -160,4 +161,127 @@ pf_evm_require_unauthorized "$addr" "$sender" \
   "$("$cast" calldata 'transferFrom(address,address,uint256)' "$other" "$sender" "$token_id")" \
   "$sender" "unauthorized transfer"
 
-echo "evm-anvil-collectible: ok (mint/approve/transferFrom + ERC-721 Transfer/Approval LOG4)"
+# safeTransferFrom: a recipient with code must answer onERC721Received with its own selector.
+# The Solidity receiver records the hook's arguments, reads ownerOf back through msg.sender while
+# the transfer is still running, and answers with a settable frame, so the right magic, a wrong
+# selector, a dirty low byte, an empty frame, a two-word frame, and a revert carrying the magic
+# word are each driven. Every refusal is an empty revert that leaves the owner in place; a
+# recipient without code is never called.
+solc_bin="$(pf_evm_find_tool solc)" || {
+  echo "evm-anvil-collectible: skip: solc not found, safeTransferFrom receiver hook not driven" >&2
+  echo "evm-anvil-collectible: ok (mint/approve/transferFrom + ERC-721 Transfer/Approval LOG4; safeTransferFrom skipped)"
+  exit 0
+}
+"$solc_bin" --bin --optimize --overwrite -o "$root/build/evm" "$here/ReceiverMock.sol" >/dev/null
+mock_bin="$root/build/evm/ReceiverMock.bin"
+[[ -f "$mock_bin" ]] || { echo "FAIL: missing ReceiverMock.bin" >&2; exit 1; }
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x$(tr -d '\n\r ' < "$mock_bin")")"
+receiver="$(printf '%s' "$receipt" | pf_evm_contract_address)"
+receiver_packed="$(pf_pack_addr_u256 "$receiver")"
+hook_word="$("$python" -I -S -c \
+  "print(int('$("$cast" sig 'onERC721Received(address,address,uint256,bytes)')', 16) << 224)")"
+safe_sig='safeTransferFrom(address,address,uint256,bytes)'
+
+set_hook() { # word size reverts
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$receiver" 'setHookWord(uint256)' "$1" >/dev/null
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$receiver" 'setHookSize(uint256)' "$2" >/dev/null
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$receiver" 'setHookReverts(bool)' "$3" >/dev/null
+}
+seen() { # getter signature
+  "$cast" call --rpc-url "$rpc" "$receiver" "$1"
+}
+lower() { tr 'A-F' 'a-f' <<<"$1"; }
+owner_of() { # id
+  "$cast" call --rpc-url "$rpc" "$addr" 'ownerOf(uint256)(uint256)' "$1"
+}
+mint_to_sender() { # id
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'mint(address,uint256)' "$sender" "$1" >/dev/null
+}
+
+set_hook "$hook_word" 32 false
+mint_to_sender 2
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" \
+  "$safe_sig(bool)" "$sender" "$receiver" 2 0x616263)" true "safeTransferFrom answers true"
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$sender" "$receiver" 2 0x616263)"
+pf_evm_typed_event_check "$abi" "$receipt" Transfer "$topic_xfer" \
+  "{\"from\": \"$sender\", \"to\": \"$receiver\", \"tokenId\": 2}" \
+  "safeTransferFrom Transfer LOG4"
+pf_evm_require_uint "$(owner_of 2)" "$receiver_packed" "owner after safeTransferFrom to a contract"
+pf_evm_require_equal "$(lower "$(seen 'seenOperator()(address)')")" "$(lower "$sender")" \
+  "hook saw the operator"
+pf_evm_require_equal "$(lower "$(seen 'seenFrom()(address)')")" "$(lower "$sender")" \
+  "hook saw from"
+pf_evm_require_uint "$(seen 'seenId()(uint256)')" 2 "hook saw the token id"
+pf_evm_require_equal "$(seen 'seenDataHash()(bytes32)')" "$("$cast" keccak 0x616263)" \
+  "hook saw the bytes payload"
+pf_evm_require_uint "$(seen 'seenOwnerWord()(uint256)')" "$receiver_packed" \
+  "hook read ownerOf and saw itself (stores land before the CALL)"
+
+# Operator path: the approved spender is the operator, the owner is from.
+mint_to_sender 6
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'approve(address,uint256)' "$other" 6 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" "$safe_sig" "$sender" "$receiver" 6 0x >/dev/null
+pf_evm_require_equal "$(lower "$(seen 'seenOperator()(address)')")" "$(lower "$other")" \
+  "hook saw the approved spender as operator"
+pf_evm_require_equal "$(lower "$(seen 'seenFrom()(address)')")" "$(lower "$sender")" \
+  "hook saw the owner as from"
+pf_evm_require_equal "$(seen 'seenDataHash()(bytes32)')" "$("$cast" keccak 0x)" \
+  "hook saw the empty payload"
+
+# A recipient without code is not called.
+mint_to_sender 3
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$sender" "$other" 3 0x >/dev/null
+pf_evm_require_uint "$(owner_of 3)" "$other_packed" "safeTransferFrom to an EOA skips the hook"
+
+# Every other answer is an empty revert that leaves the owner in place.
+mint_to_sender 4
+refuse() { # word size reverts label
+  set_hook "$1" "$2" "$3"
+  pf_evm_require_empty_revert "$addr" "$sender" \
+    "$("$cast" calldata "$safe_sig" "$sender" "$receiver" 4 0x)" "$4"
+  if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+      "$addr" "$safe_sig" "$sender" "$receiver" 4 0x >/dev/null 2>&1; then
+    echo "FAIL: $4 passed the magic gate" >&2
+    exit 1
+  fi
+  pf_evm_require_uint "$(owner_of 4)" "$sender_packed" "$4 left the owner in place"
+}
+refuse "$("$python" -I -S -c "print(0xdeadbeef << 224)")" 32 false "a wrong selector"
+refuse "$("$python" -I -S -c "print(($hook_word) | 1)")" 32 false "a dirty low byte"
+refuse "$hook_word" 0 false "an empty frame"
+refuse "$hook_word" 64 false "a two-word frame"
+refuse "$hook_word" 32 true "a receiver reverting with the magic word"
+set_hook "$hook_word" 32 false
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$sender" "$receiver" 4 0x >/dev/null
+pf_evm_require_uint "$(seen 'seenId()(uint256)')" 4 \
+  "hook accepted again once the magic frame is restored"
+
+# The entry's own gates still stand in front of the hook: authorization, the zero address, and
+# the 32-byte data bound.
+mint_to_sender 5
+pf_evm_require_unauthorized "$addr" "$other" \
+  "$("$cast" calldata "$safe_sig" "$sender" "$receiver" 5 0x)" "$other" \
+  "unauthorized safeTransferFrom"
+pf_evm_require_zero_address "$addr" "$sender" \
+  "$("$cast" calldata "$safe_sig" "$sender" "$zero" 5 0x)" "safeTransferFrom to zero"
+data32="0x$(printf '%02x' $(seq 1 32))"
+pf_evm_require_empty_revert "$addr" "$sender" \
+  "$("$cast" calldata "$safe_sig" "$sender" "$receiver" 5 "${data32}ff")" \
+  "33 bytes of data exceed the bound"
+pf_evm_require_uint "$(owner_of 5)" "$sender_packed" "refused data left the owner in place"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe_sig" "$sender" "$receiver" 5 "$data32" >/dev/null
+pf_evm_require_equal "$(seen 'seenDataHash()(bytes32)')" "$("$cast" keccak "$data32")" \
+  "hook saw all 32 data bytes"
+
+echo "evm-anvil-collectible: ok (mint/approve/transferFrom + ERC-721 Transfer/Approval LOG4 + safeTransferFrom receiver hook: magic, operator, EOA skip, five refusals, data bound)"

@@ -68,6 +68,27 @@ RULES: tuple[Rule, ...] = (
         "Emit.lean renderFixedBytesHelper",
     ),
     Rule(
+        "pf.pf_load_pair256",
+        "warn",
+        re.compile(r"pf_load_pair256\s*\("),
+        "ProofForge helper `pf_load_pair256` (not in yul-compiler opTable; inline or lower before yulc)",
+        "Emit.lean renderPairMapLoadHelpers",
+    ),
+    Rule(
+        "pf.pf_load_pair_u64",
+        "warn",
+        re.compile(r"pf_load_pair_u64\s*\("),
+        "ProofForge helper `pf_load_pair_u64` (not in yul-compiler opTable; inline or lower before yulc)",
+        "Emit.lean renderPairMapLoadHelpers",
+    ),
+    Rule(
+        "pf.pf_addr_w",
+        "warn",
+        re.compile(r"pf_addr_w[0-2]\s*\("),
+        "ProofForge helper `pf_addr_w0..2` (address limb from an ABI word; not in yul-compiler opTable)",
+        "Codec/Emit.lean renderAddrLimbHelpers",
+    ),
+    Rule(
         "yulc.memoryguard",
         "info",
         re.compile(r"memoryguard\s*\("),
@@ -204,6 +225,7 @@ def run_self_test() -> int:
       code {
         let g := gas()
         pf_store_addr20(0, 1, 2, 3)
+        mstore(0, pf_addr_w0(caller()))
         call(gas(), 0x1, 0, 0, 0, 0, 0)
         linkersymbol("Lib.sol:Math")
         mstore(64, memoryguard(4096))
@@ -217,6 +239,7 @@ def run_self_test() -> int:
     required = {
         "yulc.gas_builtin",
         "pf.pf_store_addr20",
+        "pf.pf_addr_w",
         "yulc.linkersymbol",
         "yulc.memoryguard",
         "yulc.setimmutable",

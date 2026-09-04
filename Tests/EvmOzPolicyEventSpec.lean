@@ -60,7 +60,7 @@ private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     Array (ProofForge.Core.Ops.EventFrame ProofForge.Extract.IR.Val) :=
   ops.foldl (init := #[]) fun frames op =>
     let frames := match op with
-      | .ext (.evm (.component (.nativeFx (.logTyped frame)))) => frames.push frame
+      | .ext (.evm (.component (.nativeFx (.logTyped frame _)))) => frames.push frame
       | _ => frames
     match op with
     | .ite _ _ _ yes no => frames ++ sourceTypedFrames yes ++ sourceTypedFrames no
