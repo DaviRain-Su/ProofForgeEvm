@@ -242,8 +242,6 @@ elab "#pf_guard_evm_bounded_abi" : command => do
   | .error reason => reason.contains "local frame exceeds 64 words"
   | .ok _ => false
 
--- Packed bytes have their own ceiling, one ECDSA signature: 65 bytes enter and 66 do not, while
--- the bounded-array ceiling above stays at 64 words.
 #guard ProofForge.Evm.Codec.maxPackedBytesCapacity == 65
 #guard ProofForge.Evm.Codec.maxPackedBytesLocalWords == 66
 

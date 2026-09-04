@@ -103,7 +103,6 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 #guard (OpenCall.ArgType.bytes 8).limbCount == 9
 #guard (OpenCall.ArgType.bytes 8).abiType matches .ok "bytes"
 #guard (OpenCall.ArgType.bytes 8).canonical == "bytes8"
--- The `bytes` ceiling is one ECDSA signature: 65 bytes enter, 66 do not.
 #guard (OpenCall.ArgType.bytes 65).supported
 #guard !(OpenCall.ArgType.bytes 66).supported
 #guard OpenCall.ArgType.supported (.bytes Codec.maxPackedBytesCapacity)

@@ -64,8 +64,6 @@ set_frame() { # word size reverts
     "$wallet" 'setFrame(uint256,uint256,bool)' "$1" "$2" "$3" >/dev/null
 }
 
-# The owner's signature passes: the wallet recovers the sender, answers its selector, and the
-# check counts it. The wallet saw the hash and all 65 signature bytes the check sent.
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" \
   "$sig_of(bool)" "$wallet" "$digest" "$good_sig")" true "requireSigner answers true"
 require "$wallet" "$digest" "$good_sig"
@@ -76,8 +74,6 @@ pf_evm_require_equal "$(seen 'seenSignatureHash()(bytes32)')" "$("$cast" keccak 
 pf_evm_require_equal "$(seen 'seenLength()(uint256)')" 65 "wallet saw the runtime length 65"
 pf_evm_require_equal "$(seen 'calls()(uint256)')" 1 "wallet was called once"
 
-# Every refusal is an empty revert that leaves the counter in place: a foreign key, a tampered
-# byte, a 64-byte signature, a different hash, and an empty signature.
 refuse "$wallet" "$digest" "$foreign_sig" "a signature from another key"
 tampered="${good_sig:0:20}$(printf '%02x' $(( (16#${good_sig:20:2} ^ 1) )))${good_sig:22}"
 refuse "$wallet" "$digest" "$tampered" "a tampered signature byte"
@@ -86,18 +82,12 @@ refuse "$wallet" "$("$cast" keccak "SignerLink-other")" "$good_sig" "a different
 refuse "$wallet" "$digest" 0x "an empty signature"
 pf_evm_require_equal "$(accepted)" 1 "refusals left the counter in place"
 
-# A 66th byte never leaves the entry: the bound check reverts before the wallet is called.
 refuse "$wallet" "$digest" "${good_sig}ff" "66 bytes exceed the bound"
 pf_evm_require_equal "$(seen 'calls()(uint256)')" 1 "the over-bound signature did not reach the wallet"
 
-# A signer without code answers an empty frame, which the magic policy refuses: an EOA and a
-# fresh address with no code.
 refuse "$other" "$digest" "$good_sig" "an EOA signer"
 refuse "0x00000000000000000000000000000000000000ee" "$digest" "$good_sig" "a signer with no code"
 
-# The check trusts the wallet's word, and only the exact word: with a fixed magic frame a garbage
-# signature passes; a wrong selector, a dirty low byte, an empty frame, a two-word frame, and a
-# revert carrying the magic word are each an empty revert.
 set_frame "$magic_word" 32 false
 require "$wallet" "$digest" 0xdeadbeef
 pf_evm_require_equal "$(accepted)" 2 "a fixed magic frame passes whatever the bytes are"
