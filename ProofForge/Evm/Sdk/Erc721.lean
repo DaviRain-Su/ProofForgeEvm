@@ -32,8 +32,9 @@ orders the hashed-map stores, then the log, then the hook, so a receiver that re
 inside the hook sees itself as the owner, as under OZ `_safeTransfer`. Two bounds are the
 product boundary, not the standard's: `data` carries at most 32 bytes (`Hook` spells the literal
 because the open-call decoder wants one), and the three-argument `safeTransferFrom` overload has
-no home because one Lean name is one ABI name; callers pass `0x` for no data. Implementing the
-receiving side (`onERC721Received` on this contract) stays a non-goal.
+no home because one Lean name is one ABI name; callers pass `0x` for no data. A `pf` contract
+answers the hook by returning `onReceivedSelector` as `Bytes4`; `Examples.Evm.ReceiverLink` is
+that shape. Enumeration and the rest of IERC721 stay out.
 -/
 
 /-- UInt256 unit used only for application event amount limbs. -/
@@ -195,6 +196,11 @@ clears approval. Precondition: `canTransfer owners balances source to tokenId`. 
       owners.putOwner tokenId to |||
       balances.debit source |||
       balances.credit to
+
+/-- `onERC721Received` selector `0x150b7a02`, packed in the source fixed-bytes limb order.
+A receiving entry returns this as `Bytes4`. Same packing as `Erc165.erc721Receiver`. -/
+@[pf_inline] def onReceivedSelector : Bytes4 :=
+  ⟨0x027a0b15, 0, 0, 0⟩
 
 /-- The receiver hook a contract recipient must answer. Constructor and field names are the ABI
 surface: `onERC721Received(address operator, address from, uint256 tokenId, bytes data)`, magic

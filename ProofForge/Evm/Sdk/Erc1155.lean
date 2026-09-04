@@ -67,8 +67,9 @@ recipient without code is not called.
 
 ## Explicitly unsupported
 
-Implementing the receiving side of the hooks, metadata URI, duplicate ids inside one batch, and
-unbounded inputs.
+Metadata URI, duplicate ids inside one batch, and unbounded inputs. A `pf` contract answers the
+hooks by returning `onReceivedSelector` / `onBatchReceivedSelector` as `Bytes4`;
+`Examples.Evm.ReceiverLink` is that shape.
 Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
 interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,
@@ -291,6 +292,14 @@ the id-encoding gate). -/
 @[pf_inline] def burn (balances : Balances) (source : Address)
     (tokenId amount : UInt256) : UInt64 :=
   balances.debit source tokenId amount
+
+/-- `onERC1155Received` selector `0xf23a6e61`, packed in the source fixed-bytes limb order. -/
+@[pf_inline] def onReceivedSelector : Bytes4 :=
+  ⟨0x616e3af2, 0, 0, 0⟩
+
+/-- `onERC1155BatchReceived` selector `0xbc197c81`, packed in the source fixed-bytes limb order. -/
+@[pf_inline] def onBatchReceivedSelector : Bytes4 :=
+  ⟨0x817c19bc, 0, 0, 0⟩
 
 /-- The receiver hook a contract recipient must answer. Constructor and field names are the ABI
 surface: `onERC1155Received(address operator, address from, uint256 id, uint256 value, bytes data)`,
