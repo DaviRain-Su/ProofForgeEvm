@@ -523,10 +523,88 @@ def stringArg (target : Address) (data : BoundedString 4) : UInt64 :=
 
 end Unsupported
 
-/-- A CALL's word is a dummy carrier. Compared, it still lowers as the effect statement it is,
-never as a `Query` value. -/
-def callWordCompared (_s : Examples.Evm.EvmOpenCall.State) (target : Address) : Bool :=
+/-! A CALL's `UInt64` is a sequencing carrier, not the callee's word. Each shape below computes
+with it, and extraction refuses every one with the `CALL carrier` reason. Before the refusal each
+compiled to the CALL followed by the constant `0`, so `isZero` answered `false` where the Lean
+function answers `true`, `gated` never ran the CALL, and `callArg` dropped the inner CALL. -/
+namespace CarrierMisuse
+
+def compared (_s : Examples.Evm.EvmOpenCall.State) (target : Address) : Bool :=
   OpenCall.callSuccess target Remote.ping == 1
+
+def isZero (_s : Examples.Evm.EvmOpenCall.State) (target : Address) : Bool :=
+  OpenCall.callSuccess target Remote.ping == 0
+
+def plusOne (_s : Examples.Evm.EvmOpenCall.State) (target : Address) : UInt64 :=
+  OpenCall.callSuccess target Remote.ping + 1
+
+def stored (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ s with flag := OpenCall.callSuccess target Remote.ping }, 1)
+  else
+    .error .overflow
+
+def gated (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × UInt64) :=
+  if OpenCall.callSuccess target Remote.ping == 1 then
+    .ok ({ s with flag := 1 }, 1)
+  else
+    .ok ({ s with flag := 2 }, 0)
+
+def readArg (_s : Examples.Evm.EvmOpenCall.State) (target : Address) : UInt256 :=
+  OpenCall.staticWord target (Remote.echo ⟨OpenCall.callSuccess target Remote.ping, 0, 0, 0⟩)
+
+def callArg (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ s with dummy := 0 },
+      OpenCall.callSuccess target
+        (Remote.echo ⟨OpenCall.callSuccess target Remote.ping, 0, 0, 0⟩))
+  else
+    .error .overflow
+
+def valueCompared (_s : Examples.Evm.EvmOpenCall.State) (target : Address) (amt : UInt256) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ dummy := Ether.accept amt, flag := _s.flag, target := _s.target },
+      OpenCall.callValue target amt Remote.deposit == amt.w0)
+  else
+    .error .overflow
+
+end CarrierMisuse
+
+/-! The carrier's three homes stay compiled, each with its CALL plan kept: the entry's result
+word, the `effect` of `Effect.thenTrue` (and so of `Effect.abort` and `Effect.ensure`), and a
+`let` whose body never reads the binder. -/
+namespace CarrierWord
+
+def asBool (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ s with dummy := 0 }, Effect.thenTrue (OpenCall.callSuccess target Remote.ping))
+  else
+    .error .overflow
+
+def ensured (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  Effect.ensure (s.flag == 0) s (OpenCall.callSuccess target Remote.ping)
+    (fun _ => .ok ({ s with flag := 1 }, true))
+
+def bound (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × UInt64) :=
+  let _sent := OpenCall.callSuccess target Remote.ping
+  .ok ({ s with flag := 1 }, 1)
+
+end CarrierWord
+
+private def expectCallKept (env : Environment) (name : Name) : CommandElabM Unit := do
+  match ProofForge.Extract.extractMethod env .get name with
+  | .error reason => throwError s!"{name}: carrier word unexpectedly refused: {reason}"
+  | .ok method =>
+      let plans := sourceOpenCalls method.ops
+      unless plans.size == 1 && plans[0]!.name == "ping" && plans[0]!.kind == .call do
+        throwError s!"{name} lost its ping CALL: {repr plans}"
 
 elab "#pf_guard_evm_open_call_source" : command => do
   let env ← getEnv
@@ -699,19 +777,19 @@ elab "#pf_guard_evm_open_call_source" : command => do
       balanceOfLimb 0 ++ "," ++ balanceOfLimb 1 ++ "," ++ balanceOfLimb 2 ++ "," ++
       balanceOfLimb 3 ++ ")))",
      s!"retu(ocallq.0.3.ocall.static.word1.echo({target};"]
-  -- A compared CALL word is still the effect statement plus the dummy word: one `Call.invoke`
-  -- plan, no `Query`, and the comparison is not compiled. No CALL result reaches a value
-  -- position; refusing this shape outright is the next open-call unit.
-  match ProofForge.Extract.extractMethod env .get ``callWordCompared with
-  | .error reason => throwError s!"callWordCompared: {reason}"
-  | .ok method =>
-      let plans := sourceOpenCalls method.ops
-      let dummyReturn := match method.ops.back? with
-        | some (.returnU64 (.lit 0)) => true
-        | _ => false
-      unless plans.size == 1 && plans[0]!.name == "ping" && plans[0]!.kind == .call &&
-          dummyReturn do
-        throwError "callWordCompared must lower as the ping CALL followed by the dummy word"
+  -- A CALL carrier computed with is refused, whatever computes with it; the carrier in its
+  -- three homes keeps its plan.
+  expectUnsupported env ``CarrierMisuse.compared "CALL carrier"
+  expectUnsupported env ``CarrierMisuse.isZero "CALL carrier"
+  expectUnsupported env ``CarrierMisuse.plusOne "CALL carrier"
+  expectUnsupported env ``CarrierMisuse.stored "CALL carrier"
+  expectUnsupported env ``CarrierMisuse.gated "CALL carrier"
+  expectUnsupported env ``CarrierMisuse.readArg "CALL carrier"
+  expectUnsupported env ``CarrierMisuse.callArg "CALL carrier"
+  expectUnsupported env ``CarrierMisuse.valueCompared "CALL carrier"
+  expectCallKept env ``CarrierWord.asBool
+  expectCallKept env ``CarrierWord.ensured
+  expectCallKept env ``CarrierWord.bound
 
   logInfo s!"EvmOpenCall digest: {ProofForge.Evm.IR.digestHex evm}"
 
