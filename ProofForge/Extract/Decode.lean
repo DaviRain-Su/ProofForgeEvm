@@ -2742,94 +2742,8 @@ private inductive DecodedError where
   | typed (frame : Core.Ops.ErrorFrame Ops.Val)
   | unsupported (reason : String)
 
-/-- Preserve direct parameterized source-error constructors as one target-neutral fixed frame.
-The first safe slice accepts one through four explicitly named UInt64 fields. Unsupported payloads
-must not silently degrade to selector-only errors. -/
-private def decodeErrorCtor (env : Environment) (e : Expr) : DecodedError :=
-  let e := peelControl 8 e
-  if isExceptErrorHead e then
-    let args := e.getAppArgs
-    if h : args.size > 0 then
-      let applied := strip args[args.size - 1]
-      match applied.getAppFn.constName? with
-      | none => .notError
-      | some ctorName =>
-        let name := Core.IR.lastName ctorName.toString
-        match env.find? ctorName with
-        | some (.ctorInfo ctor) =>
-          if ctor.numFields == 0 then
-            if name == "overflow" then .overflow else .named name
-          else if name == "overflow" then
-            .unsupported "overflow error constructor cannot carry fields"
-          else if ctor.numFields > 4 then
-            .unsupported "parameterized source error supports at most four UInt64 fields"
-          else
-            match env.find? ctor.induct with
-            | some (.inductInfo info) =>
-              if info.numParams != 0 || info.numIndices != 0 || info.isRec then
-                .unsupported "parameterized source error must be a nonrecursive monomorphic enum"
-              else if applied.getAppArgs.size < ctor.numFields then
-                .unsupported "parameterized source error lost constructor fields"
-              else Id.run do
-                let mut type := ctor.type
-                let mut errorArgs : Array (Core.Ops.ErrorArg Ops.Val) := #[]
-                let mut names : Array String := #[]
-                for fieldIndex in [:ctor.numFields] do
-                  let .forallE fieldName domain body binderInfo := strip type
-                    | return .unsupported "parameterized source error lost field metadata"
-                  if fieldName.isAnonymous || binderInfo != .default then
-                    return .unsupported "parameterized source error fields must be explicitly named"
-                  if domain.consumeMData.getAppFn.constName? != some ``UInt64 then
-                    return .unsupported "parameterized source error currently supports only UInt64 fields"
-                  let fieldName := fieldName.toString
-                  if fieldName.isEmpty || names.contains fieldName then
-                    return .unsupported "parameterized source error field names must be unique"
-                  let some fieldExpr := applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
-                    | return .unsupported "parameterized source error lost field value"
-                  let some value := val env fieldExpr
-                    | return .unsupported "parameterized source error field is not a scalar value"
-                  names := names.push fieldName
-                  errorArgs := errorArgs.push { name := fieldName, type := .uint64, parts := #[value] }
-                  type := body
-                let frame : Core.Ops.ErrorFrame Ops.Val := { constructor := name, args := errorArgs }
-                if frame.wellFormed (·.wellFormed IR.ValKind.arity) then .typed frame
-                else .unsupported "parameterized source error frame is malformed"
-            | _ => .unsupported "parameterized source error has no enum metadata"
-        | _ => if name == "overflow" then .overflow else .named name
-    else .notError
-  else .notError
-
-private inductive DecodedEvent where
-  | notEvent
-  | typed (frame : Core.Ops.EventFrame Ops.Val)
-  | unsupported (reason : String)
-
-private def isEvmLogTypedApp (e : Expr) : Bool :=
-  isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped || endsWith e ".evmLogTyped"
-
-private def isIndexedType (ty : Expr) : Bool :=
-  match ty.consumeMData.getAppFn.constName? with
-  | some n => n.toString.endsWith ".Event.Indexed"
-  | none => false
-
-private def indexedPayloadType (ty : Expr) : Option Expr :=
-  if isIndexedType ty then ty.consumeMData.getAppArgs.back? else none
-
-private def unwrapIndexedValue (env : Environment) (e : Expr) : Expr :=
-  let e := unfoldUserHelpers env 8 (peelLets (strip e))
-  match e.getAppFn.constName? with
-  | none => e
-  | some n =>
-    match env.find? n with
-    | some (.ctorInfo ctor) =>
-      if ctor.induct.toString.endsWith ".Event.Indexed" && e.getAppArgs.size ≥ 1 then
-        e.getAppArgs[e.getAppArgs.size - 1]!
-      else e
-    | _ =>
-      if n.toString.endsWith ".Event.Indexed.value" && e.getAppArgs.size ≥ 1 then
-        e.getAppArgs[e.getAppArgs.size - 1]!
-      else e
-
+/-- The closed EVM scalar vocabulary shared by typed events and typed errors: each type packs
+into exactly one ABI word from its little-endian source limbs. -/
 private def eventScalarOfLeanType (ty : Expr) : Option Core.Codec.Scalar :=
   let ty := ty.consumeMData
   match ty.getAppFn.constName? with
@@ -2869,6 +2783,98 @@ private def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar) (e : E
         let (w0, w1, w2, w3) := bytes32Leaves env e
         some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
       else none
+
+/-- Preserve direct parameterized source-error constructors as one target-neutral fixed frame.
+Accepts one through four explicitly named fields over the closed EVM scalar vocabulary shared
+with typed events (`eventScalarOfLeanType`), so an OZ-shaped error such as
+`ERC1155InvalidArrayLength(uint256,uint256)` keeps its selector. Unsupported payloads must not
+silently degrade to selector-only errors. -/
+private def decodeErrorCtor (env : Environment) (e : Expr) : DecodedError :=
+  let e := peelControl 8 e
+  if isExceptErrorHead e then
+    let args := e.getAppArgs
+    if h : args.size > 0 then
+      let applied := strip args[args.size - 1]
+      match applied.getAppFn.constName? with
+      | none => .notError
+      | some ctorName =>
+        let name := Core.IR.lastName ctorName.toString
+        match env.find? ctorName with
+        | some (.ctorInfo ctor) =>
+          if ctor.numFields == 0 then
+            if name == "overflow" then .overflow else .named name
+          else if name == "overflow" then
+            .unsupported "overflow error constructor cannot carry fields"
+          else if ctor.numFields > 4 then
+            .unsupported "parameterized source error supports at most four fields"
+          else
+            match env.find? ctor.induct with
+            | some (.inductInfo info) =>
+              if info.numParams != 0 || info.numIndices != 0 || info.isRec then
+                .unsupported "parameterized source error must be a nonrecursive monomorphic enum"
+              else if applied.getAppArgs.size < ctor.numFields then
+                .unsupported "parameterized source error lost constructor fields"
+              else Id.run do
+                let mut type := ctor.type
+                let mut errorArgs : Array (Core.Ops.ErrorArg Ops.Val) := #[]
+                let mut names : Array String := #[]
+                for fieldIndex in [:ctor.numFields] do
+                  let .forallE fieldName domain body binderInfo := strip type
+                    | return .unsupported "parameterized source error lost field metadata"
+                  if fieldName.isAnonymous || binderInfo != .default then
+                    return .unsupported "parameterized source error fields must be explicitly named"
+                  let some scalar := eventScalarOfLeanType domain
+                    | return .unsupported "parameterized source error field type is not a closed EVM scalar"
+                  unless Evm.NativeFx.eventScalarSupported scalar do
+                    return .unsupported "parameterized source error field type is not a closed EVM scalar"
+                  let fieldName := fieldName.toString
+                  if fieldName.isEmpty || names.contains fieldName then
+                    return .unsupported "parameterized source error field names must be unique"
+                  let some fieldExpr := applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
+                    | return .unsupported "parameterized source error lost field value"
+                  let some parts := eventPartsOf env scalar (peelLets (strip fieldExpr))
+                    | return .unsupported "parameterized source error field is not a scalar value"
+                  names := names.push fieldName
+                  errorArgs := errorArgs.push { name := fieldName, type := scalar, parts }
+                  type := body
+                let frame : Core.Ops.ErrorFrame Ops.Val := { constructor := name, args := errorArgs }
+                if frame.wellFormed (·.wellFormed IR.ValKind.arity) then .typed frame
+                else .unsupported "parameterized source error frame is malformed"
+            | _ => .unsupported "parameterized source error has no enum metadata"
+        | _ => if name == "overflow" then .overflow else .named name
+    else .notError
+  else .notError
+
+private inductive DecodedEvent where
+  | notEvent
+  | typed (frame : Core.Ops.EventFrame Ops.Val)
+  | unsupported (reason : String)
+
+private def isEvmLogTypedApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped || endsWith e ".evmLogTyped"
+
+private def isIndexedType (ty : Expr) : Bool :=
+  match ty.consumeMData.getAppFn.constName? with
+  | some n => n.toString.endsWith ".Event.Indexed"
+  | none => false
+
+private def indexedPayloadType (ty : Expr) : Option Expr :=
+  if isIndexedType ty then ty.consumeMData.getAppArgs.back? else none
+
+private def unwrapIndexedValue (env : Environment) (e : Expr) : Expr :=
+  let e := unfoldUserHelpers env 8 (peelLets (strip e))
+  match e.getAppFn.constName? with
+  | none => e
+  | some n =>
+    match env.find? n with
+    | some (.ctorInfo ctor) =>
+      if ctor.induct.toString.endsWith ".Event.Indexed" && e.getAppArgs.size ≥ 1 then
+        e.getAppArgs[e.getAppArgs.size - 1]!
+      else e
+    | _ =>
+      if n.toString.endsWith ".Event.Indexed.value" && e.getAppArgs.size ≥ 1 then
+        e.getAppArgs[e.getAppArgs.size - 1]!
+      else e
 
 /-- User-written explicit binders only. Hygienic `_`, implicit/instance binders, and generated
 numeric names must not become ABI field names. -/

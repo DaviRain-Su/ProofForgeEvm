@@ -565,8 +565,10 @@ private partial def materializeVal (p : IR.Program) (indent paramPrefix : String
         let e ← loadVal p paramPrefix paramCount paramWidths v
         return ("", e, st)
 
-/-- Validate the first generic source-error surface. Each named field is one ABI `uint64`
-word; wider and structured fields stay closed until their source codec contract is explicit. -/
+/-- Validate a typed source error against the closed EVM scalar vocabulary shared with typed
+events: each named field packs into exactly one ABI word from its little-endian limbs, so
+`ERC1155InvalidArrayLength(uint256,uint256)` and address-bearing OZ errors keep their
+selectors. Structured and dynamic fields stay closed. -/
 private def typedErrorAbiTypes (frame : Core.Ops.ErrorFrame Ops.Val) : Except String (Array String) := do
   unless frame.wellFormed (·.wellFormed Ops.ValKind.arity) do
     throw "extract/unsupported: malformed typed error frame"
@@ -574,24 +576,30 @@ private def typedErrorAbiTypes (frame : Core.Ops.ErrorFrame Ops.Val) : Except St
     throw "extract/unsupported: typed error requires one to four fields"
   let mut types := #[]
   for arg in frame.args do
-    unless arg.type == .uint 64 && arg.parts.size == 1 do
-      throw "extract/unsupported: typed error fields must be named UInt64 values"
+    unless NativeFx.eventScalarSupported arg.type &&
+        arg.parts.size == Codec.limbCount arg.type do
+      throw "extract/unsupported: typed error field type has no EVM word carrier"
     types := types.push (← Codec.abiType arg.type)
   return types
 
 /-- Materialize one validated source error frame and hand its ABI geometry to the existing
 target-local custom-error interpreter. Selector, argument order, and ABI metadata all consume
-the same typed frame. -/
+the same typed frame; each field is packed by the same word packer typed events use. -/
 private def emitTypedError (p : IR.Program) (indent paramPrefix : String)
     (paramCount : Nat) (paramWidths : Array Core.Codec.Scalar)
     (frame : Core.Ops.ErrorFrame Ops.Val) (st : Render) : Except String (String × Render) := do
   let abiTypes ← typedErrorAbiTypes frame
+  let context : NativeFx.Emit.Context Render := {
+    materialize := fun value st =>
+      materializeVal p indent paramPrefix paramCount paramWidths value st
+    fresh := fresh
+    indent
+  }
   let mut prelude := ""
   let mut words := #[]
   let mut st := st
   for arg in frame.args do
-    let (pre, word, st') ←
-      materializeVal p indent paramPrefix paramCount paramWidths arg.parts[0]! st
+    let (pre, word, st') ← NativeFx.Emit.packAbiWord context arg.type arg.parts st
     prelude := prelude ++ pre
     words := words.push word
     st := st'

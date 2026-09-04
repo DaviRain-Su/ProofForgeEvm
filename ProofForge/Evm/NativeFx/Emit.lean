@@ -138,48 +138,48 @@ private def emitLogTransfer256 (context : Context σ)
     logTxt
   return (txt, z0, s12)
 
-/-- Pack one event field into a single ABI word. Addresses and fixed bytes go through the
-shared memory helpers; wide integers use the little-endian `packU256` spelling; narrow
-integers and booleans are already one word. Any other carrier fails closed. -/
-private def packEventWord (context : Context σ) (arg : Core.Ops.EventArg Ops.Val) (st : σ) :
-    Except String (String × String × σ) := do
+/-- Pack one typed event or typed error field into a single ABI word. Addresses and fixed bytes
+go through the shared memory helpers; wide integers use the little-endian `packU256` spelling;
+narrow integers and booleans are already one word. Any other carrier fails closed. -/
+def packAbiWord (context : Context σ) (type : Core.Codec.Scalar) (limbs : Array Ops.Val)
+    (st : σ) : Except String (String × String × σ) := do
   let indent := context.indent
   let mut prelude := ""
   let mut parts : Array String := #[]
   let mut st := st
-  for part in arg.parts do
+  for part in limbs do
     let (pre, expr, st') ← context.materialize part st
     prelude := prelude ++ pre
     parts := parts.push expr
     st := st'
   if parts.isEmpty then
-    throw "extract/unsupported: typed event field has no limbs"
-  if Codec.isAddressCarrier arg.type then
+    throw "extract/unsupported: typed field has no limbs"
+  if Codec.isAddressCarrier type then
     let (word, st') := context.fresh st
     let txt := prelude ++
       indent ++ "mstore(0, 0)" ++ nl ++
       packAddrMstore8 indent (parts[0]!) ((parts[1]?).getD "0") ((parts[2]?).getD "0") ++
       indent ++ "let " ++ word ++ " := mload(0)" ++ nl
     return (txt, word, st')
-  else if Codec.isFixedBytesCarrier arg.type then
+  else if Codec.isFixedBytesCarrier type then
     let (word, st') := context.fresh st
     let txt := prelude ++
       indent ++ "mstore(0, 0)" ++ nl ++
       indent ++ "pf_store_fixed_bytes(0, " ++ (parts[0]?).getD "0" ++ ", " ++
         (parts[1]?).getD "0" ++ ", " ++ (parts[2]?).getD "0" ++ ", " ++
-        (parts[3]?).getD "0" ++ ", " ++ toString arg.type.byteWidth ++ ")" ++ nl ++
+        (parts[3]?).getD "0" ++ ", " ++ toString type.byteWidth ++ ")" ++ nl ++
       indent ++ "let " ++ word ++ " := mload(0)" ++ nl
     return (txt, word, st')
-  else if Codec.isWideIntegerCarrier arg.type then
+  else if Codec.isWideIntegerCarrier type then
     let (word, st') := context.fresh st
     let packed := packU256 (parts[0]!) ((parts[1]?).getD "0") ((parts[2]?).getD "0")
       ((parts[3]?).getD "0")
     let txt := prelude ++ indent ++ "let " ++ word ++ " := " ++ packed ++ nl
     return (txt, word, st')
-  else if Codec.isNarrowIntegerCarrier arg.type && parts.size == 1 then
+  else if Codec.isNarrowIntegerCarrier type && parts.size == 1 then
     return (prelude, parts[0]!, st)
   else
-    throw "extract/unsupported: typed event field type has no EVM word carrier"
+    throw "extract/unsupported: typed field type has no EVM word carrier"
 
 private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops.Val) (st : σ) :
     Except String (String × String × σ) := do
@@ -191,7 +191,7 @@ private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops
   let mut st := st
   let mut last : String := "0"
   for arg in frame.args do
-    let (pre, word, st') ← packEventWord context arg st
+    let (pre, word, st') ← packAbiWord context arg.type arg.parts st
     prelude := prelude ++ pre
     st := st'
     last := word
