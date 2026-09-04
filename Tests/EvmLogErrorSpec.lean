@@ -46,7 +46,80 @@ not claim any new source-level event API. -/
 #guard !({ selector := "", args := #["a"] } : LogError.ErrorPlan).wellFormed
 #guard !({ selector := "0123abcd", args := Array.replicate 5 "a" } : LogError.ErrorPlan).wellFormed
 
+-- Plan layer: bounded dynamic tails. The head grows by one offset word per tail, at most two
+-- tails ride on one plan, and a tail needs one slot and fits the codec's bounded-array frame.
+private def tailA : LogError.LogTailPlan := { length := "n0", elements := #["a0", "a1"] }
+private def tailB : LogError.LogTailPlan := { length := "n1", elements := #["b0", "b1"] }
+private def emptyTail : LogError.LogTailPlan := { length := "n", elements := #[] }
+#guard tailA.capacity == 2
+#guard tailA.wellFormed
+#guard !emptyTail.wellFormed
+#guard ({ length := "n", elements := Array.replicate 63 "a" } : LogError.LogTailPlan).wellFormed
+#guard !({ length := "n", elements := Array.replicate 64 "a" } : LogError.LogTailPlan).wellFormed
+#guard ({ data := #["d"], tails := #[tailA] } : LogError.LogPlan).dataBytes == 64
+#guard ({ data := #["d"], tails := #[tailA, tailB] } : LogError.LogPlan).tailOffsetWord 0 == 32
+#guard ({ data := #["d"], tails := #[tailA, tailB] } : LogError.LogPlan).tailOffsetWord 1 == 64
+#guard ({ topics := #["t"], tails := #[tailA, tailB] } : LogError.LogPlan).wellFormed
+private def fullPlan : LogError.LogPlan :=
+  { data := Array.replicate 4 "d", topics := Array.replicate 4 "t", tails := #[tailA, tailB] }
+#guard fullPlan.wellFormed
+#guard !({ topics := #["t"], tails := #[tailA, tailB, tailA] } : LogError.LogPlan).wellFormed
+#guard !({ topics := #["t"], tails := #[emptyTail] } : LogError.LogPlan).wellFormed
+
 private def mockCtx : LogError.Emit.Context := { indent := "  " }
+
+-- Emission golden: the TransferBatch shape, LOG4 with no static words and two tails, byte-exact.
+-- Every slot store is guarded by the runtime length, a length past the capacity reverts before
+-- the log, and the cursor is scoped to one block.
+#guard
+  match LogError.Emit.emitLog mockCtx
+      { topics := #["t0", "t1", "t2", "t3"], tails := #[tailA, tailB] } with
+  | .error _ => false
+  | .ok txt =>
+      txt == "  {\n" ++
+        "    let pf_log_end := 64\n" ++
+        "    mstore(0, pf_log_end)\n" ++
+        "    if gt(n0, 2) { revert(0, 0) }\n" ++
+        "    mstore(pf_log_end, n0)\n" ++
+        "    if gt(n0, 0) { mstore(add(pf_log_end, 32), a0) }\n" ++
+        "    if gt(n0, 1) { mstore(add(pf_log_end, 64), a1) }\n" ++
+        "    pf_log_end := add(pf_log_end, mul(add(n0, 1), 32))\n" ++
+        "    mstore(32, pf_log_end)\n" ++
+        "    if gt(n1, 2) { revert(0, 0) }\n" ++
+        "    mstore(pf_log_end, n1)\n" ++
+        "    if gt(n1, 0) { mstore(add(pf_log_end, 32), b0) }\n" ++
+        "    if gt(n1, 1) { mstore(add(pf_log_end, 64), b1) }\n" ++
+        "    pf_log_end := add(pf_log_end, mul(add(n1, 1), 32))\n" ++
+        "    log4(0, pf_log_end, t0, t1, t2, t3)\n" ++
+        "  }\n"
+
+-- Emission golden: one static word before one tail; the tail's offset word follows the static
+-- word and the cursor starts after both head words.
+#guard
+  match LogError.Emit.emitLog mockCtx { data := #["d0"], topics := #["t0"], tails := #[tailA] } with
+  | .error _ => false
+  | .ok txt =>
+      txt == "  mstore(0, d0)\n" ++
+        "  {\n" ++
+        "    let pf_log_end := 64\n" ++
+        "    mstore(32, pf_log_end)\n" ++
+        "    if gt(n0, 2) { revert(0, 0) }\n" ++
+        "    mstore(pf_log_end, n0)\n" ++
+        "    if gt(n0, 0) { mstore(add(pf_log_end, 32), a0) }\n" ++
+        "    if gt(n0, 1) { mstore(add(pf_log_end, 64), a1) }\n" ++
+        "    pf_log_end := add(pf_log_end, mul(add(n0, 1), 32))\n" ++
+        "    log1(0, pf_log_end, t0)\n" ++
+        "  }\n"
+
+-- Fail closed at emission: a third tail and an empty tail.
+#guard
+  match LogError.Emit.emitLog mockCtx { topics := #["t"], tails := #[tailA, tailB, tailA] } with
+  | .error reason => reason.contains "log plan shape"
+  | .ok _ => false
+#guard
+  match LogError.Emit.emitLog mockCtx { topics := #["t"], tails := #[emptyTail] } with
+  | .error reason => reason.contains "log plan shape"
+  | .ok _ => false
 
 -- Emission golden: LOG0 with one data word, byte-exact.
 #guard
