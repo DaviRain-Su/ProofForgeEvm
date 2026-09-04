@@ -181,14 +181,20 @@ def word (frame : ParamFrame) (i : Nat) : String :=
 
 /-- The payload offset local of the frame these limbs spell exactly: its length word followed
 by every byte word in order. Any other limb shape is not one calldata region. -/
-def calldataBytes (frame : ParamFrame) (parts : Array Ops.Val) : Option String := do
-  let lengthWord ←
-    match parts[0]? with
-    | some (.arg i) => some i
-    | _ => none
-  let bytes ← frame.bytes.find? (·.lengthWord == lengthWord)
-  guard (parts == (Array.range (1 + bytes.capacity)).map fun k => Ops.Val.arg (lengthWord + k))
-  return bytes.dataName
+def calldataBytes (frame : ParamFrame) (parts : Array Ops.Val) : Option String :=
+  match parts[0]? with
+  | some v =>
+      match v with
+      | .arg lengthWord =>
+          match frame.bytes.find? (fun b => b.lengthWord == lengthWord) with
+          | some bytes =>
+              let expected : Array Ops.Val :=
+                (Array.range (1 + bytes.capacity)).map fun k =>
+                  .arg (lengthWord + k)
+              if parts == expected then some bytes.dataName else none
+          | none => none
+      | _ => none
+  | none => none
 
 end ParamFrame
 
