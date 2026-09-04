@@ -1,5 +1,6 @@
 import ProofForge.Evm.WideWord
 import ProofForge.Evm.Ops
+import ProofForge.Evm.CallResult.Emit
 import ProofForge.Evm.Precompile.Emit
 
 namespace ProofForge.Evm.WideWord.Emit
@@ -355,19 +356,6 @@ private def packFixedBytesAt (indent : String) (off : Nat) (w0 w1 w2 w3 : String
   indent ++ "pf_store_fixed_bytes(" ++ toString off ++ ", " ++ w0 ++ ", " ++ w1 ++
     ", " ++ w2 ++ ", " ++ w3 ++ ", 32)" ++ nl
 
-/-- Convert EVM's big-endian 20-byte address word into source Addr20 little-endian limbs. -/
-private def packAddrWord (src : String) (word : Nat) : String :=
-  let rec orBytes (index remaining : Nat) (acc : String) : String :=
-    match remaining with
-    | 0 => acc
-    | count + 1 =>
-        let byteExpr := "byte(" ++ toString (12 + 8 * word + index) ++ ", " ++ src ++ ")"
-        let next :=
-          if index == 0 then byteExpr
-          else "or(" ++ acc ++ ", shl(" ++ toString (8 * index) ++ ", " ++ byteExpr ++ "))"
-        orBytes (index + 1) count next
-  orBytes 0 (if word == 2 then 4 else 8) "0"
-
 private def precompileContext (context : Context σ) : Precompile.Emit.Context σ :=
   { fresh := context.fresh, indent := context.indent }
 
@@ -380,8 +368,8 @@ private def emitEcrecover20 (context : Context σ) (limb : Nat) (operands : Arra
   match context.lookupWide st cacheKey with
   | some packed =>
       let (name, next) := context.fresh st
-      return (context.indent ++ "let " ++ name ++ " := " ++ packAddrWord packed limb ++ nl,
-        name, next)
+      return (context.indent ++ "let " ++ name ++ " := " ++
+        CallResult.Emit.wordLimb .address20 packed limb ++ nl, name, next)
   | none =>
     let indent := context.indent
     let mut text := ""
@@ -403,7 +391,8 @@ private def emitEcrecover20 (context : Context σ) (limb : Nat) (operands : Arra
       packFixedBytesAt indent 96 names[9]! names[10]! names[11]! names[12]! ++
       precompileTxt ++
       indent ++ "let " ++ packed ++ " := " ++ signer ++ nl ++
-      indent ++ "let " ++ result ++ " := " ++ packAddrWord packed limb ++ nl
+      indent ++ "let " ++ result ++ " := " ++
+        CallResult.Emit.wordLimb .address20 packed limb ++ nl
     return (text, result, context.rememberWide s2 cacheKey packed)
 
 def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array Ops.Val)

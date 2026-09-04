@@ -204,15 +204,37 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
         txt.contains "if gt("
   | _, _ => false
 
--- Canonical-address STATICCALL: exact one word, high 12 bytes zero, three limbs bound.
+-- Canonical-address STATICCALL: exact one word, high 12 bytes zero. The three source limbs are
+-- Addr20's little-endian byte limbs (the layout `pf_store_addr20` writes), not numeric words.
 #guard
   match CallResult.Emit.emit mockCallResultCtx (.staticTyped 4 #[.address20]) "v0" none 1,
-        OpenCall.Emit.emitQuery mockOpenCtx { ownerQuery with limb := 2 } #[lit, lit, lit] 0 with
+        OpenCall.Emit.emitQuery mockOpenCtx ownerQuery #[lit, lit, lit] 0 with
   | .ok (fragment, _, _), .ok (txt, _, _) =>
       txt.contains fragment &&
         txt.contains "if shr(160, " &&
-        txt.contains "and(shr(128, "
+        txt.contains "byte(12, " && txt.contains "shl(56, byte(19, " &&
+        !txt.contains "and(shr("
   | _, _ => false
+#guard
+  match OpenCall.Emit.emitQuery mockOpenCtx { ownerQuery with limb := 2 } #[lit, lit, lit] 0 with
+  | .ok (txt, _, _) => txt.contains "byte(28, " && txt.contains "shl(24, byte(31, "
+  | .error _ => false
+#guard CallResult.Emit.wordLimb .address20 "w" 1 ==
+  "or(or(or(or(or(or(or(byte(20, w), shl(8, byte(21, w))), shl(16, byte(22, w))), shl(24, byte(23, w))), shl(32, byte(24, w))), shl(40, byte(25, w))), shl(48, byte(26, w))), shl(56, byte(27, w)))"
+#guard CallResult.Emit.wordLimb .uint256 "w" 3 == "and(shr(192, w), 0xffffffffffffffff)"
+#guard CallResult.Emit.wordLimb .boolean "w" 0 == "and(shr(0, w), 0xffffffffffffffff)"
+
+-- Limb indices are bounded by the bound word's kind, so a fourth address limb or a second
+-- bool limb never reaches the emitter.
+#guard CallResult.WordKind.address20.limbCount == 3
+#guard CallResult.WordKind.boolean.limbCount == 1
+#guard CallResult.WordKind.uint256.limbCount == 4
+#guard ownerQuery.limbCount == 3 && onQuery.limbCount == 1 && quadQuery.limbCount == 4
+#guard ({ ownerQuery with limb := 2 } : OpenCall.Query).wellFormed
+#guard !({ ownerQuery with limb := 3 } : OpenCall.Query).wellFormed
+#guard !({ onQuery with limb := 1 } : OpenCall.Query).wellFormed
+#guard ({ quadQuery with limb := 3 } : OpenCall.Query).wellFormed
+#guard !({ quadQuery with limb := 4 } : OpenCall.Query).wellFormed
 
 -- Three- and four-word STATICCALL reads gate the full static frame.
 #guard

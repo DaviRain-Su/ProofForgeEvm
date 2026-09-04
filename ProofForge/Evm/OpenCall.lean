@@ -222,13 +222,17 @@ def Query.toPlan (query : Query) (operands : Array V) : Option (Plan V) := Id.ru
     valueParts
   }
 
+/-- Source limbs the bound word `word` yields; zero when the policy binds no such word. -/
+def Query.limbCount (query : Query) : Nat :=
+  ((query.policy.wordKinds[query.word]?).map (·.limbCount)).getD 0
+
 def Query.wellFormed (query : Query) : Bool :=
   isIdent query.name && query.argTypes.size ≤ maxArgWords &&
     query.argTypes.all argScalarSupported &&
     query.policy.wellFormed &&
     query.copiedWordCount ≥ 1 &&
     query.word < query.copiedWordCount &&
-    query.limb ≤ 3 &&
+    query.limb < query.limbCount &&
     (!query.hasValue || query.kind == .call)
 
 def Query.canonical (renderValue : V → String) (operands : Array V) (query : Query) : String :=
@@ -264,10 +268,8 @@ def StaticShape.policy : StaticShape → CallResult.Policy
 
 /-- Limbs of word 0 handed to the source carrier: four for `UInt256`, three for `Addr20`, one
 for `Bool`. -/
-def StaticShape.limbCount : StaticShape → Nat
-  | .word | .words2 | .words3 | .words4 => 4
-  | .address => 3
-  | .bool => 1
+def StaticShape.limbCount (shape : StaticShape) : Nat :=
+  ((shape.policy.wordKinds[0]?).map (·.limbCount)).getD 0
 
 /-- Query for limb 0 of word 0 under this shape; the extractor rebinds `limb` per carrier limb. -/
 def StaticShape.query (shape : StaticShape) (name : String)

@@ -13,14 +13,10 @@ gate is always `CallResult.Emit.emitBound`. This is not a third result-policy in
 -/
 
 private def nl : String := "\n"
-private def u64MaxYul : String := "0xffffffffffffffff"
 private def revert0 : String := "revert(0, 0)"
 
 private def packU256 (w0 w1 w2 w3 : String) : String :=
   "or(or(" ++ w0 ++ ", shl(64, " ++ w1 ++ ")), or(shl(128, " ++ w2 ++ "), shl(192, " ++ w3 ++ ")))"
-
-private def packU256Word (src : String) (word : Nat) : String :=
-  "and(shr(" ++ toString (64 * word) ++ ", " ++ src ++ "), " ++ u64MaxYul ++ ")"
 
 structure Context (σ : Type) where
   materialize : Ops.Val → σ → Except String (String × String × σ)
@@ -130,19 +126,20 @@ def emitQuery (context : Context σ) (query : OpenCall.Query) (operands : Array 
     | throw "extract/unsupported: open-call query arity"
   unless plan.wellFormed (·.wellFormed Ops.ValKind.arity) do
     throw "extract/unsupported: malformed open-call plan"
+  let some kind := plan.policy.wordKinds[query.word]?
+    | throw "extract/unsupported: open-call query missing result word"
+  let limbOf (word : String) : String := CallResult.Emit.wordLimb kind word query.limb
   let cacheKey := planCacheKey context plan query.word
   match context.lookupWide st cacheKey with
   | some ret =>
       let (nm, st') := context.fresh st
-      return (context.indent ++ "let " ++ nm ++ " := " ++ packU256Word ret query.limb ++ nl,
-        nm, st')
+      return (context.indent ++ "let " ++ nm ++ " := " ++ limbOf ret ++ nl, nm, st')
   | none =>
       let (txt, bound, st1) ← emitPlan context plan st
       let some word := bound.names[query.word]?
         | throw "extract/unsupported: open-call query missing result word"
       let st2 := context.rememberWide st1 cacheKey word
       let (nm, st3) := context.fresh st2
-      return (txt ++ context.indent ++ "let " ++ nm ++ " := " ++
-        packU256Word word query.limb ++ nl, nm, st3)
+      return (txt ++ context.indent ++ "let " ++ nm ++ " := " ++ limbOf word ++ nl, nm, st3)
 
 end ProofForge.Evm.OpenCall.Emit
