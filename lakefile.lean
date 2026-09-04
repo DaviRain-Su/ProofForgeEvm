@@ -5,9 +5,10 @@ package «proofforge» where
   version := v!"0.0.1"
 
 /-- Shared Attr + Core/Crypto surface, maintained in ProofForgeCommon.
-    Bump the pin when ProofForgeCommon publishes a new Core/Crypto change. -/
+    Tracks ProofForgeCommon main; Common CI gates every push, so a
+    -- breakage surfaces in these repositories' CI immediately. -/
 require «proofforge-common» from git
-  "https://github.com/DaviRain-Su/ProofForgeCommon.git" @ "v0.1.0"
+  "https://github.com/DaviRain-Su/ProofForgeCommon.git" @ "main"
 
 /-- Contract-facing EVM SDK (+ Runtime/Source needed for `pf_inline` erase). No Emit. -/
 lean_lib ProofForgeEvmSdk where

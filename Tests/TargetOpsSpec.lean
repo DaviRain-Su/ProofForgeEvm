@@ -47,7 +47,8 @@ private def coreOnlyCfgDialect :
 
 private def coreOnlyOpWellFormed :
     ProofForge.Core.Ops.Op CoreOnlyValKind CoreOnlyOpExt → Bool :=
-  ProofForge.Core.Ops.Op.wellFormed (fun _ => 0) (fun _ => false)
+  ProofForge.Core.Ops.Op.wellFormed (fun _ => 0)
+    (fun _ _ => true) (fun _ => false)
 
 private def coreOnlyRegistration :
     ProofForge.Core.Target.Registration

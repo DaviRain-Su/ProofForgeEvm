@@ -121,6 +121,7 @@ def OpExt.wellFormed : OpExt Val → Bool
   | .component call => call.wellFormed (·.wellFormed ValKind.arity)
 
 def Op.wellFormed (op : Op) : Bool :=
-  ProofForge.Core.Ops.Op.wellFormed ValKind.arity OpExt.wellFormed op
+  ProofForge.Core.Ops.Op.wellFormed ValKind.arity
+    (fun kind n => n == ValKind.arity kind) OpExt.wellFormed op
 
 end ProofForge.Evm.Ops
