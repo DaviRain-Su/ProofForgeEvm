@@ -49,8 +49,8 @@ compile-time static storage declarations, persistent bounded UInt64 storage vect
 queues/enumerable sets/maps/checkpoints, bounded static role sets with canonical RoleGranted /
 RoleRevoked logs, bounded per-address nonce and fixed-window rate-limit helpers, bounded static
 ERC-721/1155 metadata URI helpers, EIP-5267-style static EIP-712 domain field helpers, IERC5313
-owner and IERC6372 clock mode helpers, public typed ECDSA recover (`Sdk.Ecdsa`), the ERC-1271
-contract-signer check over `OpenCall.callMagic` (`Sdk.Ierc1271`), bounded
+owner and IERC6372 clock mode helpers, public typed ECDSA recover (`Sdk.Ecdsa`), ERC-1271
+`checkSignature` and combined `checkNow` (`Sdk.Ierc1271`), bounded
 single-beneficiary native-ETH vesting schedule helpers, bounded Merkle proof verification helpers,
 bounded block header / blockhash observation helpers,
 OZ completion-audit inventory counters, and shared allocation-free checked wide-to-UInt8/UInt16/UInt32/UInt64

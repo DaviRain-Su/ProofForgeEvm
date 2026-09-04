@@ -85,9 +85,12 @@ OpenCall.callMagic receiver (Remote.onERC721Received operator origin tokenId dat
 
 For the two token hooks the SDK ships the OZ check ready-made: `Erc721.checkOnReceived` and
 `Erc1155.checkOnReceived` skip a recipient without code and demand the selector from one with
-code. `Ierc1271.checkSignature signer hash signature` is the ERC-1271 signer check with a
-65-byte `BoundedBytes` signature (one ECDSA `r ‖ s ‖ v`); it has no code-size branch, because a
-signer without code answers an empty frame and the magic gate refuses it. A CALL result is an
+code. `Ierc1271.checkSignature signer hash signature` is the ERC-1271-only check with a
+65-byte `BoundedBytes` signature (one ECDSA `r ‖ s ‖ v`). It has no code-size branch, because a
+signer without code answers an empty frame and the magic gate refuses it.
+`Ierc1271.checkNow` is OZ `isValidSignatureNow`. A signer with code takes `checkSignature`.
+A signer without code recovers the same 65 bytes through `Ecdsa.recover` and reverts
+`Unauthorized(signer)` when the address differs. A CALL result is an
 effect carrier, so it stands only as the entry's result word; a `safeTransferFrom` puts the
 ledger move and the log in the state word and the check under `Effect.thenTrue` as the result,
 and the stores land before the CALL:
@@ -98,13 +101,15 @@ and the stores land before the CALL:
   Effect.thenTrue (Erc721.checkOnReceived to Context.caller source tokenId data))
 ```
 
-A signer check has the same shape. `SignerLink.requireSigner` counts the check in the state
-word and carries it in the result word, so a refused signature reverts with the counter where it
-was (`runtime-tests/evm/anvil_signerlink.sh` drives it against a Solidity ERC-1271 wallet):
+A signer check has the same shape. `SignerLink.requireNow` is the combined path.
+`requireSigner` stays the 1271-only path. Both count in the state word and carry the check in
+the result word, so a refused signature reverts with the counter where it was
+(`runtime-tests/evm/anvil_signerlink.sh` drives both against a Solidity ERC-1271 wallet and
+an EOA):
 
 ```lean
 .ok ({ accepted := s.accepted + 1 },
-  Effect.thenTrue (Ierc1271.checkSignature signer hash signature))
+  Effect.thenTrue (Ierc1271.checkNow signer hash signature))
 ```
 
 The target may be a parameter or a stored `Address`. Arguments are at most eight one-word
