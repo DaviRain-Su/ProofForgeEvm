@@ -2847,8 +2847,38 @@ private def decodeErrorCtor (env : Environment) (e : Expr) : DecodedError :=
 
 private inductive DecodedEvent where
   | notEvent
-  | typed (frame : Core.Ops.EventFrame Ops.Val)
+  | typed (frame : Core.Ops.EventFrame Ops.Val) (tails : Array (Evm.NativeFx.LogTail Ops.Val))
   | unsupported (reason : String)
+
+/-- Element type and literal capacity of a `BoundedVec α n` event field type. -/
+private def boundedVecFieldType? (ty : Expr) : Option (Expr × Nat) := do
+  let ty := ty.consumeMData
+  guard (ty.getAppFn.constName? == some boundedVecName)
+  let args := ty.getAppArgs
+  guard (args.size == 2)
+  let capacity ← natLiteral? args[1]!
+  return (args[0]!, capacity)
+
+/-- Source spelling of `field.values[slot]`, the same `GetElem` application the scalar leaf
+decoders already read, so a tail element takes the exact path a single `ids.values[0]` takes. -/
+private def boundedVecSlotExpr (elementType : Expr) (capacity : Nat) (field : Expr) (slot : Nat) :
+    Expr :=
+  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedVec.values)
+    #[elementType, mkNatLit capacity, field]
+  mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro]
+
+/-- One bounded dynamic-array event field as an EVM log tail: the runtime length leaf plus the
+limbs of every slot in order. -/
+private def decodeLogTail (env : Environment) (name : String) (elementType : Expr)
+    (scalar : Core.Codec.Scalar) (capacity : Nat) (field : Expr) :
+    Option (Evm.NativeFx.LogTail Ops.Val) := do
+  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedVec.length)
+    #[elementType, mkNatLit capacity, field])
+  let mut elements : Array Ops.Val := #[]
+  for slot in [0:capacity] do
+    let parts ← eventPartsOf env scalar (boundedVecSlotExpr elementType capacity field slot)
+    elements := elements ++ parts
+  return { name, elementType := scalar, capacity, length, elements }
 
 private def isEvmLogTypedApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped || endsWith e ".evmLogTyped"
@@ -2889,8 +2919,9 @@ private def explicitEventFieldBinder (fieldName : Name) (binderInfo : BinderInfo
     | _ => false
 
 /-- Preserve a typed event constructor applied to `Runtime.evmLogTyped` / `Sdk.Event.emit` as one
-target-local frame. Names, ABI types, and `Indexed` flags stay structured; unsupported shapes
-must not degrade to closed LOG helpers. -/
+target-local frame. Names, ABI types, and `Indexed` flags stay structured; a non-indexed
+`BoundedVec` field over a closed scalar becomes a dynamic-array tail and must follow every
+scalar field; unsupported shapes must not degrade to closed LOG helpers. -/
 private def decodeEventPayload (env : Environment) (applied : Expr) : DecodedEvent :=
   let applied := peelLets (strip applied)
   match applied.getAppFn.constName? with
@@ -2911,6 +2942,7 @@ private def decodeEventPayload (env : Environment) (applied : Expr) : DecodedEve
           else Id.run do
             let mut type := ctor.type
             let mut eventArgs : Array (Core.Ops.EventArg Ops.Val) := #[]
+            let mut tails : Array (Evm.NativeFx.LogTail Ops.Val) := #[]
             let mut names : Array String := #[]
             for fieldIndex in [:ctor.numFields] do
               let .forallE fieldName domain body binderInfo := strip type
@@ -2921,28 +2953,43 @@ private def decodeEventPayload (env : Environment) (applied : Expr) : DecodedEve
                 match indexedPayloadType domain with
                 | some payload => (payload, true)
                 | none => (domain, false)
-              let some scalar := eventScalarOfLeanType fieldType
-                | return .unsupported "typed event field type is not a closed EVM scalar"
-              unless Evm.NativeFx.eventScalarSupported scalar do
-                return .unsupported "typed event field type is not a closed EVM scalar"
               let fieldName := fieldName.toString
               if fieldName.isEmpty || names.contains fieldName then
                 return .unsupported "typed event field names must be unique"
               let some fieldExpr :=
                   applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
                 | return .unsupported "typed event lost field value"
-              let fieldExpr :=
-                if indexed then unwrapIndexedValue env fieldExpr else peelLets (strip fieldExpr)
-              let some parts := eventPartsOf env scalar fieldExpr
-                | return .unsupported "typed event field is not a scalar value"
               names := names.push fieldName
-              eventArgs := eventArgs.push
-                { name := fieldName, type := scalar, parts, indexed }
               type := body
+              match boundedVecFieldType? fieldType with
+              | some (elementType, capacity) =>
+                if indexed then
+                  return .unsupported "typed event dynamic-array field cannot be indexed"
+                let some scalar := eventScalarOfLeanType elementType
+                  | return .unsupported "typed event array element type is not a closed EVM scalar"
+                unless Evm.NativeFx.eventScalarSupported scalar do
+                  return .unsupported "typed event array element type is not a closed EVM scalar"
+                let some tail := decodeLogTail env fieldName elementType scalar capacity
+                    (peelLets (strip fieldExpr))
+                  | return .unsupported "typed event array field is not a bounded vector value"
+                tails := tails.push tail
+              | none =>
+                unless tails.isEmpty do
+                  return .unsupported "typed event dynamic-array fields must be the last fields"
+                let some scalar := eventScalarOfLeanType fieldType
+                  | return .unsupported "typed event field type is not a closed EVM scalar"
+                unless Evm.NativeFx.eventScalarSupported scalar do
+                  return .unsupported "typed event field type is not a closed EVM scalar"
+                let fieldExpr :=
+                  if indexed then unwrapIndexedValue env fieldExpr else peelLets (strip fieldExpr)
+                let some parts := eventPartsOf env scalar fieldExpr
+                  | return .unsupported "typed event field is not a scalar value"
+                eventArgs := eventArgs.push
+                  { name := fieldName, type := scalar, parts, indexed }
             let frame : Core.Ops.EventFrame Ops.Val := { constructor := name, args := eventArgs }
             if frame.wellFormed (·.wellFormed IR.ValKind.arity) &&
-                Evm.NativeFx.Call.logTypedWellFormed (·.wellFormed IR.ValKind.arity) frame then
-              .typed frame
+                Evm.NativeFx.Call.logTypedWellFormed (·.wellFormed IR.ValKind.arity) frame tails then
+              .typed frame tails
             else .unsupported "malformed typed event frame"
         | _ => .unsupported "typed event has no enum metadata"
     | _ => .unsupported "typed event lost constructor"
@@ -2964,7 +3011,7 @@ private def findTypedEventFailure (env : Environment) (e : Expr) : Option String
       let e := e.consumeMData
       match decodeEventCtor env e with
       | .unsupported reason => some reason
-      | .typed _ => none
+      | .typed .. => none
       | .notEvent =>
         if let some (_, unfolded) := unfoldUserHelper env e then
           walk fuel' unfolded
@@ -3780,7 +3827,7 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmLogTyped ||
       endsWith app ".evmLogTyped" then
     match decodeEventCtor env app with
-    | .typed frame => some (.evmLogTyped frame)
+    | .typed frame tails => some (.evmLogTyped frame tails)
     | .unsupported _ | .notEvent => none
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCall ||
       endsWith app ".evmOpenCall" ||
@@ -4316,7 +4363,7 @@ private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   | some (.evmLog _ v) => v
   | some (.evmLogTransfer256 _ _ _ _ _ _ a0 _ _ _) => a0
   | some (.evmLogApproval256 _ _ _ _ _ _ a0 _ _ _) => a0
-  | some (.evmLogTyped _) => .lit 0
+  | some (.evmLogTyped ..) => .lit 0
   | some (.evmRevertInsufficient h0 _ _ _ _ _ _ _) => h0
   | some (.evmRevertUnauthorized w0 _ _) => w0
   | some .evmRevertZeroAddress => .lit 0

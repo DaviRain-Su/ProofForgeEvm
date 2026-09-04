@@ -1629,18 +1629,20 @@ private def eventAbi (name : String) : String :=
     "{\"type\":\"event\",\"name\":\"" ++ escapeJson name ++
       "\",\"inputs\":[{\"name\":\"amt\",\"type\":\"uint64\",\"indexed\":false}],\"anonymous\":false}"
 
-/-- ABI types of one validated typed event frame; the same owner the Yul emitter uses for
-topic0, so ABI JSON and LOG geometry cannot drift apart. Existing Transfer256/Approval256 JSON
-is not rewritten here. -/
-private def typedEventAbiTypes (frame : Core.Ops.EventFrame Ops.Val) :
-    Except String (Array String) :=
-  NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame
+/-- One typed event as the emitter sees it: the scalar frame plus its bounded dynamic tails. -/
+private abbrev TypedEvent := Core.Ops.EventFrame Ops.Val × Array (NativeFx.LogTail Ops.Val)
+
+/-- ABI types of one validated typed event; the same owner the Yul emitter uses for topic0, so
+ABI JSON and LOG geometry cannot drift apart. Existing Transfer256/Approval256 JSON is not
+rewritten here. -/
+private def typedEventAbiTypes (event : TypedEvent) : Except String (Array String) :=
+  NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) event.1 event.2
 
 /-- Canonical event identity is the topic0 signature `Name(type,...)`. Two frames sharing it must
 agree on names and indexed flags, since receipts cannot distinguish them. -/
-private def typedEventIdentity (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
-  let types ← typedEventAbiTypes frame
-  return Keccak.signature frame.constructor types
+private def typedEventIdentity (event : TypedEvent) : Except String String := do
+  let types ← typedEventAbiTypes event
+  return Keccak.signature event.1.constructor types
 
 /-- Topic0 signature of a closed `NativeFx.logName` event, mirroring `eventAbi`. -/
 private def closedEventIdentity (name : String) : String :=
@@ -1648,12 +1650,15 @@ private def closedEventIdentity (name : String) : String :=
   else if name == "Approval256" then "Approval(address,address,uint256)"
   else name ++ "(uint64)"
 
-private def eventAbiTyped (frame : Core.Ops.EventFrame Ops.Val) : Except String String := do
-  let types ← typedEventAbiTypes frame
+private def eventAbiTyped (event : TypedEvent) : Except String String := do
+  let (frame, tails) := event
+  let types ← typedEventAbiTypes event
+  let names := frame.args.map (fun arg => (arg.name, arg.indexed)) ++
+    tails.map (fun tail => (tail.name, false))
   let mut inputs := #[]
-  for i in [0:frame.args.size] do
-    let indexed := if frame.args[i]!.indexed then "true" else "false"
-    inputs := inputs.push ("{\"name\":\"" ++ escapeJson frame.args[i]!.name ++
+  for i in [0:names.size] do
+    let indexed := if names[i]!.2 then "true" else "false"
+    inputs := inputs.push ("{\"name\":\"" ++ escapeJson names[i]!.1 ++
       "\",\"type\":\"" ++ types[i]! ++ "\",\"indexed\":" ++ indexed ++ "}")
   return "{\"type\":\"event\",\"name\":\"" ++ escapeJson frame.constructor ++
     "\",\"inputs\":[" ++ String.intercalate "," inputs.toList ++ "],\"anonymous\":false}"
@@ -1737,13 +1742,12 @@ private partial def collectTypedErrorFrames (ops : Array IR.Op) :
     | .forBody _ body => acc ++ collectTypedErrorFrames body
     | _ => acc
 
-/-- Collect typed event frames through the same structured control-flow tree as emission. -/
-private partial def collectTypedEventFrames (ops : Array IR.Op) :
-    Array (Core.Ops.EventFrame Ops.Val) :=
+/-- Collect typed events through the same structured control-flow tree as emission. -/
+private partial def collectTypedEventFrames (ops : Array IR.Op) : Array TypedEvent :=
   ops.foldl (init := #[]) fun acc op =>
     let acc :=
       match op with
-      | .component (.nativeFx (.logTyped frame)) => acc.push frame
+      | .component (.nativeFx (.logTyped frame tails)) => acc.push (frame, tails)
       | _ => acc
     match op with
     | .ite _ _ _ t f => acc ++ collectTypedEventFrames t ++ collectTypedEventFrames f

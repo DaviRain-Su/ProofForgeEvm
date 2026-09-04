@@ -12,6 +12,29 @@ structure EffectSummary where
   receive : Bool := false
   deriving BEq, Repr, Inhabited
 
+/-- One bounded dynamic-array field of a typed event. `name` and `elementType` are the ABI surface
+(`ids : uint256[]`), `capacity` the slot count of the source `BoundedVec`, `length` its runtime
+element count, and `elements` the `capacity · limbCount elementType` little-endian source limbs
+of every slot in order. Core's `EventFrame` carries scalars only, so the EVM target owns this
+shape: a dynamic field is never indexed and follows every scalar field of its event. -/
+structure LogTail (V : Type) where
+  name : String
+  elementType : Core.Codec.Scalar
+  capacity : Nat
+  length : V
+  elements : Array V
+  deriving BEq, Repr, Inhabited
+
+def LogTail.mapValues (mapValue : α → β) (tail : LogTail α) : LogTail β :=
+  { tail with length := mapValue tail.length, elements := tail.elements.map mapValue }
+
+def LogTail.mapValuesM [Monad m] (mapValue : α → m β) (tail : LogTail α) : m (LogTail β) := do
+  return { tail with length := ← mapValue tail.length, elements := ← tail.elements.mapM mapValue }
+
+/-- Length word first, then every slot's limbs in order. -/
+def LogTail.values (tail : LogTail V) : Array V :=
+  #[tail.length] ++ tail.elements
+
 /-- Native ETH, LOG, revert, and receive effects. Dynamic operands stay in the Call. -/
 inductive Call (V : Type) where
   | deposit (amount : V)
@@ -21,8 +44,9 @@ inductive Call (V : Type) where
   | log (name : String) (amount : V)
   | logTransfer256 (f0 f1 f2 t0 t1 t2 a0 a1 a2 a3 : V)
   | logApproval256 (o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 : V)
-  /-- Typed event frame lowered to one `LogPlan` (topic0 + ≤3 indexed topics, ≤4 data words). -/
-  | logTyped (frame : Core.Ops.EventFrame V)
+  /-- Typed event frame lowered to one `LogPlan` (topic0 + ≤3 indexed topics, ≤4 static data
+  words, ≤2 bounded dynamic-array tails). -/
+  | logTyped (frame : Core.Ops.EventFrame V) (tails : Array (LogTail V))
   | revertInsufficient (h0 h1 h2 h3 w0 w1 w2 w3 : V)
   | revertUnauthorized (w0 w1 w2 : V)
   | revertZeroAddress
@@ -49,7 +73,8 @@ def Call.mapValues (mapValue : α → β) : Call α → Call β
       .logApproval256 (mapValue o0) (mapValue o1) (mapValue o2)
         (mapValue s0) (mapValue s1) (mapValue s2)
         (mapValue a0) (mapValue a1) (mapValue a2) (mapValue a3)
-  | .logTyped frame => .logTyped (frame.mapValues mapValue)
+  | .logTyped frame tails =>
+      .logTyped (frame.mapValues mapValue) (tails.map (·.mapValues mapValue))
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       .revertInsufficient (mapValue h0) (mapValue h1) (mapValue h2) (mapValue h3)
         (mapValue w0) (mapValue w1) (mapValue w2) (mapValue w3)
@@ -78,7 +103,8 @@ def Call.mapValuesM [Monad m] (mapValue : α → m β) : Call α → m (Call β)
       return .logApproval256 (← mapValue o0) (← mapValue o1) (← mapValue o2)
         (← mapValue s0) (← mapValue s1) (← mapValue s2)
         (← mapValue a0) (← mapValue a1) (← mapValue a2) (← mapValue a3)
-  | .logTyped frame => return .logTyped (← frame.mapValuesM mapValue)
+  | .logTyped frame tails =>
+      return .logTyped (← frame.mapValuesM mapValue) (← tails.mapM (·.mapValuesM mapValue))
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       return .revertInsufficient (← mapValue h0) (← mapValue h1) (← mapValue h2)
         (← mapValue h3) (← mapValue w0) (← mapValue w1) (← mapValue w2) (← mapValue w3)
@@ -98,7 +124,7 @@ def Call.values : Call V → Array V
       #[f0, f1, f2, t0, t1, t2, a0, a1, a2, a3]
   | .logApproval256 o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 =>
       #[o0, o1, o2, s0, s1, s2, a0, a1, a2, a3]
-  | .logTyped frame => frame.values
+  | .logTyped frame tails => frame.values ++ tails.flatMap (·.values)
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       #[h0, h1, h2, h3, w0, w1, w2, w3]
   | .revertUnauthorized w0 w1 w2 => #[w0, w1, w2]
@@ -125,28 +151,45 @@ def eventScalarSupported (type : Core.Codec.Scalar) : Bool :=
   Codec.isNarrowIntegerCarrier type || Codec.isWideIntegerCarrier type ||
     Codec.isAddressCarrier type || Codec.isFixedBytesCarrier type
 
+/-- Fail-closed shape gate for one dynamic-array field: a named, closed-scalar element type, a
+slot count the `LogTailPlan` accepts, exactly `capacity · limbCount` element limbs, and
+well-formed limb values. -/
+def LogTail.wellFormed (valueWellFormed : V → Bool) (tail : LogTail V) : Bool :=
+  !tail.name.isEmpty && eventScalarSupported tail.elementType &&
+    LogError.tailCapacityWellFormed tail.capacity &&
+    tail.elements.size == tail.capacity * Codec.limbCount tail.elementType &&
+    valueWellFormed tail.length && tail.elements.all valueWellFormed
+
 /-- Fail-closed shape gate for a typed event: generic frame invariant, the closed EVM type
-vocabulary with exact limb counts, plus the EVM `LogPlan` bounds (topic0 plus at most three
-indexed topics; at most four data words). -/
+vocabulary with exact limb counts, field names unique across scalars and tails, plus the EVM
+`LogPlan` bounds (topic0 plus at most three indexed topics; at most four static data words; at
+most two well-formed tails). -/
 def Call.logTypedWellFormed (valueWellFormed : V → Bool)
-    (frame : Core.Ops.EventFrame V) : Bool :=
+    (frame : Core.Ops.EventFrame V) (tails : Array (LogTail V)) : Bool :=
+  let names := frame.args.toList.map (·.name) ++ tails.toList.map (·.name)
   frame.wellFormed valueWellFormed &&
     frame.args.all (fun arg =>
       eventScalarSupported arg.type && arg.parts.size == Codec.limbCount arg.type) &&
     frame.indexedCount + 1 ≤ LogError.maxTopics &&
-    frame.dataCount ≤ LogError.maxLogDataWords
+    frame.dataCount ≤ LogError.maxLogDataWords &&
+    tails.size ≤ LogError.maxLogTails &&
+    tails.all (·.wellFormed valueWellFormed) &&
+    names.length == names.eraseDups.length
 
-/-- ABI parameter types of a validated typed event, in declaration order. This is the single
-owner consumed by both the Yul emitter (topic0 signature) and the ABI JSON generator, so both
-artifacts derive from one descriptor. `indexed` is not part of the keccak signature. -/
-def Call.logTypedAbiTypes (valueWellFormed : V → Bool) (frame : Core.Ops.EventFrame V) :
-    Except String (Array String) := do
-  unless Call.logTypedWellFormed valueWellFormed frame do
+/-- ABI parameter types of a validated typed event, in declaration order: the scalar fields, then
+each tail as `T[]`. This is the single owner consumed by both the Yul emitter (topic0 signature)
+and the ABI JSON generator, so both artifacts derive from one descriptor. `indexed` is not part
+of the keccak signature. -/
+def Call.logTypedAbiTypes (valueWellFormed : V → Bool) (frame : Core.Ops.EventFrame V)
+    (tails : Array (LogTail V)) : Except String (Array String) := do
+  unless Call.logTypedWellFormed valueWellFormed frame tails do
     throw "extract/unsupported: malformed typed event frame"
-  frame.args.mapM fun arg => Codec.abiType arg.type
+  let scalars ← frame.args.mapM fun arg => Codec.abiType arg.type
+  let arrays ← tails.mapM fun tail => return (← Codec.abiType tail.elementType) ++ "[]"
+  return scalars ++ arrays
 
 def Call.wellFormed (valueWellFormed : V → Bool) : Call V → Bool
-  | .logTyped frame => Call.logTypedWellFormed valueWellFormed frame
+  | .logTyped frame tails => Call.logTypedWellFormed valueWellFormed frame tails
   | call => call.allValues valueWellFormed
 
 def Call.isDeposit : Call V → Bool
@@ -200,11 +243,13 @@ def Call.canonical (renderValue : V → String) : Call V → String
       s!"elog3.Transfer({renderValue f0},{renderValue f1},{renderValue f2},{renderValue t0},{renderValue t1},{renderValue t2},{renderValue a0},{renderValue a1},{renderValue a2},{renderValue a3})"
   | .logApproval256 o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 =>
       s!"elog3.Approval({renderValue o0},{renderValue o1},{renderValue o2},{renderValue s0},{renderValue s1},{renderValue s2},{renderValue a0},{renderValue a1},{renderValue a2},{renderValue a3})"
-  | .logTyped frame =>
+  | .logTyped frame tails =>
       let args := frame.args.toList.map fun arg =>
         let tag := if arg.indexed then "i" else "d"
         s!"{arg.name}:{repr arg.type}:{tag}({String.intercalate "," (arg.parts.map renderValue).toList})"
-      s!"elogT.{frame.constructor}({String.intercalate "," args})"
+      let arrays := tails.toList.map fun tail =>
+        s!"{tail.name}:{repr tail.elementType}[{tail.capacity}]({renderValue tail.length};{String.intercalate "," (tail.elements.map renderValue).toList})"
+      s!"elogT.{frame.constructor}({String.intercalate "," (args ++ arrays)})"
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       s!"err.Insufficient({renderValue h0},{renderValue h1},{renderValue h2},{renderValue h3},{renderValue w0},{renderValue w1},{renderValue w2},{renderValue w3})"
   | .revertUnauthorized w0 w1 w2 =>

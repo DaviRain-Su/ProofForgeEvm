@@ -176,9 +176,30 @@ def packAbiWord (context : Context σ) (type : Core.Codec.Scalar) (limbs : Array
   else
     throw "extract/unsupported: typed field type has no EVM word carrier"
 
-private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops.Val) (st : σ) :
+/-- Pack one bounded dynamic-array field into a tail plan: the runtime length bound to a fresh
+word (the plan reads it once per slot), then every slot packed by the same word packer the
+scalar fields use. Slots past the runtime length are packed but never stored. -/
+private def packLogTail (context : Context σ) (tail : NativeFx.LogTail Ops.Val) (st : σ) :
+    Except String (String × LogError.LogTailPlan × σ) := do
+  let indent := context.indent
+  let (lengthPre, lengthExpr, st0) ← context.materialize tail.length st
+  let (length, st1) := context.fresh st0
+  let mut prelude := lengthPre ++ indent ++ "let " ++ length ++ " := " ++ lengthExpr ++ nl
+  let mut elements : Array String := #[]
+  let mut st := st1
+  let limbs := Codec.limbCount tail.elementType
+  for slot in [0:tail.capacity] do
+    let (pre, word, st') ←
+      packAbiWord context tail.elementType (tail.elements.extract (slot * limbs) ((slot + 1) * limbs)) st
+    prelude := prelude ++ pre
+    elements := elements.push word
+    st := st'
+  return (prelude, { length, elements }, st)
+
+private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops.Val)
+    (tails : Array (NativeFx.LogTail Ops.Val)) (st : σ) :
     Except String (String × String × σ) := do
-  let abiTypes ← NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame
+  let abiTypes ← NativeFx.Call.logTypedAbiTypes (·.wellFormed Ops.ValKind.arity) frame tails
   let mut prelude := ""
   let mut topics : Array String :=
     #["0x" ++ Keccak.keccak256HexOfString (Keccak.signature frame.constructor abiTypes)]
@@ -194,7 +215,13 @@ private def emitLogTyped (context : Context σ) (frame : Core.Ops.EventFrame Ops
       topics := topics.push word
     else
       data := data.push word
-  let logTxt ← LogError.Emit.emitLog context.logError { data, topics }
+  let mut tailPlans : Array LogError.LogTailPlan := #[]
+  for tail in tails do
+    let (pre, plan, st') ← packLogTail context tail st
+    prelude := prelude ++ pre
+    tailPlans := tailPlans.push plan
+    st := st'
+  let logTxt ← LogError.Emit.emitLog context.logError { data, topics, tails := tailPlans }
   return (prelude ++ logTxt, last, st)
 
 private def emitLogApproval256 (context : Context σ)
@@ -288,7 +315,7 @@ def emitCall (context : Context σ) (call : NativeFx.Call Ops.Val) (st : σ) :
       emitLogTransfer256 context f0 f1 f2 t0 t1 t2 a0 a1 a2 a3 st
   | .logApproval256 o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 =>
       emitLogApproval256 context o0 o1 o2 s0 s1 s2 a0 a1 a2 a3 st
-  | .logTyped frame => emitLogTyped context frame st
+  | .logTyped frame tails => emitLogTyped context frame tails st
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       emitRevertInsufficient context h0 h1 h2 h3 w0 w1 w2 w3 st
   | .revertUnauthorized w0 w1 w2 => emitRevertUnauthorized context w0 w1 w2 st

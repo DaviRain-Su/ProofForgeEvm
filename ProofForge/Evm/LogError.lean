@@ -63,11 +63,14 @@ structure LogTailPlan where
 /-- Compile-time slot count of one tail. -/
 def LogTailPlan.capacity (tail : LogTailPlan) : Nat := tail.elements.size
 
-/-- Fail-closed shape gate: at least one slot, and a `length ‖ elements` frame no larger than the
+/-- A tail has at least one slot, and its `length ‖ elements` frame is no larger than the
 bounded-array local frame the codec accepts, so an event never publishes a bounded array an
 entry could not carry. -/
+def tailCapacityWellFormed (capacity : Nat) : Bool :=
+  0 < capacity && 1 + capacity ≤ Codec.maxBoundedArrayLocalWords
+
 def LogTailPlan.wellFormed (tail : LogTailPlan) : Bool :=
-  0 < tail.capacity && 1 + tail.capacity ≤ Codec.maxBoundedArrayLocalWords
+  tailCapacityWellFormed tail.capacity
 
 /-- Typed plan for one LOG0..4 emission. `data` holds already-materialized static ABI words stored
 at `memory[wordOffset i)`; `topics` holds the already-materialized topic words in order (topic 0
