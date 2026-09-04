@@ -1,0 +1,65 @@
+name: dep sync
+
+# Keep `require proofforge-common … @ "main"` honest: lake-manifest.json pins the
+# resolved rev, so tracking main needs a periodic `lake update`. This job re-resolves
+# daily and opens a PR when main moved; the PR runs full CI before merge.
+
+on:
+  schedule:
+    - cron: "15 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache elan
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: elan-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}
+
+      - name: Install Lean toolchain
+        run: |
+          curl -sSfL https://github.com/leanprover/elan/releases/download/v4.1.2/elan-x86_64-unknown-linux-gnu.tar.gz -o elan.tar.gz
+          tar -xzf elan.tar.gz
+          ./elan-init -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Re-resolve proofforge-common main
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake update proofforge-common
+
+      - name: Open bump PR when main moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet lake-manifest.json; then
+            echo "dep-sync: already at main HEAD"
+            exit 0
+          fi
+          old="$(git show HEAD:lake-manifest.json | python3 -c 'import json,sys; print([p["rev"] for p in json.load(sys.stdin)["packages"] if p["name"] == "«proofforge-common»"][0][:12])')"
+          new="$(python3 -c 'import json; print([p["rev"] for p in json.load(open("lake-manifest.json"))["packages"] if p["name"] == "«proofforge-common»"][0][:12])')"
+          branch="deps/proofforge-common-main"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add lake-manifest.json
+          git commit -m "deps: bump proofforge-common main $old -> $new"
+          git push --force-with-lease origin "$branch"
+          if gh pr view "$branch" >/dev/null 2>&1; then
+            gh pr comment "$branch" --body "bumped to $new"
+          else
+            gh pr create --base main --head "$branch" \
+              --title "deps: bump proofforge-common main to $new" \
+              --body "Automated re-resolve of \`require proofforge-common @ \"main\"\` ($old → $new). CI gates the bump."
+          fi
