@@ -110,8 +110,9 @@ was (`runtime-tests/evm/anvil_signerlink.sh` drives it against a Solidity ERC-12
 The target may be a parameter or a stored `Address`. Arguments are at most eight one-word
 scalars (integers, `Address`, fixed bytes), and one of them may be a `BoundedBytes n` with
 `n ≤ 65` (the packed `bytes` ceiling, one ECDSA signature), sent as ABI `bytes` at its runtime
-length. `string` and arrays are not accepted as arguments yet. A STATICCALL read is a value. It can be the body of a view entry, the condition
-of an `if`, an operand of a comparison, or the argument of another call:
+length. `string` and arrays are not accepted as arguments yet. A STATICCALL read is a value. It
+can be the body of a view entry, the condition of an `if`, an operand of a comparison, or the
+argument of another call:
 
 ```lean
 -- Run the CALL only when the callee says so. The read happens once, before the branch.
