@@ -67,9 +67,10 @@ recipient without code is not called.
 
 ## Explicitly unsupported
 
-Metadata URI, duplicate ids inside one batch, and unbounded inputs. A `pf` contract answers the
-hooks by returning `onReceivedSelector` / `onBatchReceivedSelector` as `Bytes4`;
-`Examples.Evm.ReceiverLink` is that shape.
+Unbounded inputs. Duplicate ids inside one batch revert `DuplicateId()` rather than applying
+slots in order as OZ does. Metadata URI lives in `Sdk.MetadataUri`, not this ledger. A `pf`
+contract answers the hooks by returning `onReceivedSelector` / `onBatchReceivedSelector` as
+`Bytes4`; `Examples.Evm.ReceiverLink` is that shape.
 Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
 interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,

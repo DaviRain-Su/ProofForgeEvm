@@ -11,7 +11,9 @@ Phase 3 hooks: row 12 (`interfaces/IERC1271.sol`) was the one temporary gap whil
 signature could not enter a frame. `Sdk.Ierc1271.checkSignature` over `OpenCall.callMagic` closes
 it, and `checkNow` is the combined `isValidSignatureNow` gate on the same PARTIAL row. No row
 is a temporary gap. The witness still exposes `isTemporaryGap` / `temporaryGapCount` so the
-next reopened row has a home. Counters stay 2 DONE / 21 PARTIAL / 9 ABSENT / 9 blocked / 0 gap.
+next reopened row has a home. IERC1155 `DuplicateId()` is a named PARTIAL bound, not a
+temporary gap: `temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PARTIAL / 9 ABSENT /
+9 blocked / 0 gap.
 -/
 
 namespace Tests.EvmOzAuditSpec

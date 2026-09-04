@@ -15,7 +15,9 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - 452 `contracts/` tree paths, 367 Solidity sources
 - 32 backlog coverage rows: 2 DONE, 21 PARTIAL, 9 ABSENT (all 9 blocked by non-goals; no
   implementable gap since row 12, `interfaces/IERC1271.sol`, shipped `checkSignature` and
-  `checkNow` over the 65-byte signature bound)
+  `checkNow` over the 65-byte signature bound. Rows 10 and 21 (`IERC1155` /
+  `token/ERC1155`) stay PARTIAL because batches are bounded. `DuplicateId()` is that profile's
+  fail-closed bound versus OZ in-order duplicate application, not a `temporaryGapCount` row.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal
