@@ -4603,6 +4603,21 @@ value must stay a local: substituting it would repeat the call or read at every 
 private def containsEvmEffect (env : Environment) (e : Expr) : Bool :=
   (decodeEvmEffect env e).isSome || containsEvmQuery env e
 
+/-- True when some unused `let` binder's value is an EVM effect. `substLets` instantiates that
+binder and discards the value, so the write never reaches `decodeExpr`. -/
+def containsDroppedEffectfulLet (env : Environment) : Nat → Expr → Bool
+  | 0, _ => false
+  | fuel + 1, e =>
+      match strip e with
+      | .letE _ _ value body _ =>
+          (!body.hasLooseBVar 0 && containsEvmEffect env value) ||
+            containsDroppedEffectfulLet env fuel value ||
+            containsDroppedEffectfulLet env fuel body
+      | .lam _ _ body _ => containsDroppedEffectfulLet env fuel body
+      | .app fn arg =>
+          containsDroppedEffectfulLet env fuel fn || containsDroppedEffectfulLet env fuel arg
+      | _ => false
+
 /-- Flatten one logical bounded byte value into `length, byte₀ … byteₙ₋₁`. Constructors already
 carry literal leaves; a parameter or local root is projected so the target input binder can later
 rewrite it to canonical scalar locals. -/
@@ -5963,6 +5978,27 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
             (stateful := stateful) (preserveLocals := preserveLocals)
             (localDepth := localDepth) (stateType? := stateType?)
             (deepScalars := deepScalars)
+      else if !body.hasLooseBVar 0 then
+        match decodeExpr env fuel' value (preserveLocals := preserveLocals)
+            (localDepth := localDepth) (stateType? := stateType?)
+            (deepScalars := deepScalars) with
+        | .error reason =>
+            return .error s!"extract/unsupported: effectful let: {reason}"
+        | .ok producerOps =>
+          let effectOps :=
+            if producerOps.back?.any (fun | .returnU64 _ => true | _ => false) then
+              producerOps.pop
+            else producerOps
+          -- Method arguments are already `methodArgRef` markers, so dropping the unused
+          -- binder must not `lowerLooseBVars`. Instantiating `Unit.unit` matches
+          -- `collectEvmEffectOps` and leaves those markers in place.
+          match decodeExpr env fuel' (body.instantiate1 (mkConst ``Unit.unit))
+              (stateful := stateful) (preserveLocals := preserveLocals)
+              (localDepth := localDepth) (stateType? := stateType?)
+              (deepScalars := deepScalars) with
+          | .ok continuationOps => return .ok (effectOps ++ continuationOps)
+          | .error reason =>
+              return .error s!"extract/unsupported: effectful let continuation: {reason}"
     | _ => pure ()
     if let some producer := nestedSequencedScalarHelper? env e then
       match decodeExpr env fuel' producer (preserveLocals := preserveLocals)

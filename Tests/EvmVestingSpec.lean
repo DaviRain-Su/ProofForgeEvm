@@ -68,7 +68,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "eed2a8b5af263474" do
+  unless IR.digestHex program == "5d69d8c33919f012" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

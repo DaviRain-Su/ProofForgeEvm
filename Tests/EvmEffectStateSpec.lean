@@ -150,6 +150,44 @@ def putWhen (s : State) (flag key value : UInt64) : Except Error (State × Bool)
 
 end OpaqueGuardFixture
 
+namespace DroppedLetFixture
+
+/-! A map write bound to an unused `let` must still run, then the `if` decides the ordinary
+state write. Substituting unused lets discards that write, so the else-branch would skip both
+the map and the count. -/
+
+structure State where
+  count : UInt64
+  deriving Repr, DecidableEq, Inhabited
+
+inductive Error where
+  | malformed
+  deriving Repr, DecidableEq, Inhabited, BEq
+
+@[pf_inline] def cells : Storage.U64Map := Storage.Layout.root.u64Map.handle
+
+@[pf_entry]
+def init (_seed : UInt64) : State :=
+  { count := 0 }
+
+@[pf_entry]
+def countOf (s : State) : UInt64 :=
+  s.count
+
+@[pf_entry]
+def get (_s : State) (key : UInt64) : UInt64 :=
+  cells.get key
+
+@[pf_entry]
+def putThenGuard (s : State) (flag key value : UInt64) : Except Error (State × Bool) :=
+  let _sent := cells.put key value
+  if flag == 0 then
+    .ok ({ s with count := s.count + 1 }, true)
+  else
+    .ok (s, false)
+
+end DroppedLetFixture
+
 private abbrev Op := ProofForge.Extract.IR.Op
 
 private def isMapSet : Op → Bool
@@ -304,6 +342,43 @@ private def expectEffectStateMerge : CommandElabM Unit := do
   | .error reason =>
       unless reason.contains "no comparison or Bool lowering" do
         throwError s!"opaque guard failed for the wrong reason: {reason}"
+
+  let dropped ←
+    match ProofForge.Extract.extractModuleIR env `Tests.EvmEffectStateSpec.DroppedLetFixture with
+    | .ok program => pure program
+    | .error reason => throwError reason
+  let some method := dropped.methods.find? (·.ixName == "putThenGuard")
+    | throwError "dropped-let fixture omitted putThenGuard"
+  let some sequence := findSequence 16 method.ops fun ops =>
+      ops.any isMapSet && ops.any fun | .ite .. => true | _ => false
+    | throwError "dropped-let map write was not sequenced before the if"
+  unless sequence.countP isMapSet == 1 do
+    throwError "dropped-let map write was duplicated or lost"
+  let some effectIndex := sequence.findIdx? isMapSet
+    | throwError "dropped-let sequence lost its map write"
+  let some iteIndex := sequence.findIdx? fun | .ite .. => true | _ => false
+    | throwError "dropped-let sequence lost its if"
+  unless effectIndex < iteIndex do
+    throwError "dropped-let map write must precede the if"
+  let guards := sequence.filterMap fun
+    | .ite cmp lhs rhs thn els => some (cmp, lhs, rhs, thn, els)
+    | _ => none
+  let some (_cmp, _lhs, _rhs, thn, els) := guards[0]?
+    | throwError "dropped-let if lost its branches"
+  unless guards.size == 1 do
+    throwError "dropped-let sequence grew extra branches"
+  unless thn.any fun
+      | .storeField "count" (.addU64 (.field (.arg 3) "count") (.lit 1)) => true
+      | .okState (.addU64 (.field (.arg 3) "count") (.lit 1)) => true
+      | _ => false do
+    throwError "dropped-let then-branch lost the count increment"
+  unless thn.countP isMapSet == 0 && els.countP isMapSet == 0 do
+    throwError "dropped-let map write leaked into a branch"
+  unless (els.countP fun
+      | .storeField "count" _ => true
+      | .okState _ => true
+      | _ => false) == 0 do
+    throwError "dropped-let else-branch wrote count"
 
 elab "#pf_guard_evm_effect_state" : command => expectEffectStateMerge
 
