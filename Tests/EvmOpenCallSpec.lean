@@ -363,7 +363,7 @@ private def frameTail : OpenCall.Plan Ops.Val :=
 private def frameCtx : OpenCall.Emit.Context Nat :=
   { mockOpenCtx with
     calldataBytes := fun parts =>
-      if parts == (Array.range 9).map (fun i => Ops.Val.arg (2 + i)) then some "abi_bytes2"
+      if parts == frameTail.args[1]!.parts then some "abi_bytes2"
       else none }
 #guard
   match OpenCall.Emit.emitCall frameCtx (.invoke frameTail) 0 with
