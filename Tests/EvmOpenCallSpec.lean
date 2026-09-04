@@ -351,6 +351,35 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
         txt.contains "call(gas(), v0, 0, 0, add(68, v2), 0, 0)"
   | .error _ => false
 
+-- A `bytes` argument whose limbs are exactly one packed-bytes entry parameter (the length word
+-- then its capacity byte words, here words 2..10) is copied from calldata in one
+-- `calldatacopy` of the padded length; the context names the payload offset. Any other limb
+-- shape (a literal above, a computed byte) keeps the per-byte stores.
+private def frameTail : OpenCall.Plan Ops.Val :=
+  { sinkPlan with args := #[
+      { name := "tag", type := .scalar .uint256, parts := #[.lit 7, lit, lit, lit] },
+      { name := "data", type := .bytes 8, parts := (Array.range 9).map fun i => .arg (2 + i) }
+    ] }
+private def frameCtx : OpenCall.Emit.Context Nat :=
+  { mockOpenCtx with
+    calldataBytes := fun parts =>
+      if parts == (Array.range 9).map (fun i => Ops.Val.arg (2 + i)) then some "abi_bytes2"
+      else none }
+#guard
+  match OpenCall.Emit.emitCall frameCtx (.invoke frameTail) 0 with
+  | .ok (txt, _, 4) =>
+      txt.contains "  mstore(36, 64)\n" &&
+        txt.contains "  let v1 := 0\n  if gt(v1, 8) { revert(0, 0) }\n  mstore(68, v1)\n" &&
+        txt.contains "  let v2 := and(add(v1, 31), not(31))\n  calldatacopy(100, abi_bytes2, v2)\n" &&
+        !txt.contains "mstore8(" && !txt.contains "mstore(100, 0)" &&
+        txt.contains "let v3 := call(gas(), v0, 0, 0, add(100, v2), 0, 0)\n"
+  | _ => false
+-- The same limbs under a context that does not know them stay on the per-byte path.
+#guard
+  match OpenCall.Emit.emitCall mockOpenCtx (.invoke frameTail) 0 with
+  | .ok (txt, _, _) => txt.contains "  if gt(v1, 7) { mstore8(107, 0) }\n" && !txt.contains "calldatacopy("
+  | .error _ => false
+
 -- Every operand is materialized before the first calldata store. An operand whose prelude runs
 -- its own call through scratch memory (a read passed as an argument) lands ahead of the target
 -- check, the selector, and every head word, so it cannot overwrite them. Here `.lit 9` stands
