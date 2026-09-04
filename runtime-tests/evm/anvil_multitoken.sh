@@ -12,8 +12,8 @@ bin="$root/build/evm/MultiToken.bin"
 abi="$root/build/evm/MultiToken.abi.json"
 if [[ ! -f "$bin" || ! -f "$abi" ]]; then
   echo "building registered MultiToken.bin" >&2
-  lake build Examples.MultiToken >/dev/null \
-    || { echo "FAIL: lake build Examples.MultiToken failed" >&2; exit 1; }
+  lake build Examples.Evm.MultiToken >/dev/null \
+    || { echo "FAIL: lake build Examples.Evm.MultiToken failed" >&2; exit 1; }
   lake exe pf -- build --target evm --out "$root/build/evm" MultiToken >/dev/null \
     || { echo "FAIL: build registered MultiToken failed" >&2; exit 1; }
 fi
@@ -242,4 +242,28 @@ pf_evm_require_zero_address "$addr" "$sender" \
 pf_evm_require_uint "$(balance_of "$sender" "$token_id")" 50 \
   "zero-address transfer left source untouched"
 
-echo "evm-anvil-multitoken: ok (mint/burn/transferFrom/operator + ERC-1155 TransferSingle LOG4 / ApprovalForAll LOG3)"
+# Bounded balanceOfBatch: capacity 4, one checked single-id read per slot.
+balance_of_batch() { # owners ids
+  "$cast" call --rpc-url "$rpc" "$addr" \
+    'balanceOfBatch(address[],uint256[])(uint256[])' "$1" "$2"
+}
+pf_evm_require_equal "$(balance_of_batch "[$sender,$other]" "[$token_id,$token_id]")" \
+  "[50, 45]" "balanceOfBatch matches the two single reads"
+pf_evm_require_equal "$(balance_of_batch "[$other]" "[$token_id]")" \
+  "[45]" "one-element batch"
+pf_evm_require_equal "$(balance_of_batch "[$sender,$other,$sender,$zero]" \
+  "[$token_id,$alias_id,0,$token_id]")" "[50, 0, 0, 0]" \
+  "full-capacity batch: unencodable alias and unknown pairs read zero"
+pf_evm_require_equal "$(balance_of_batch "[]" "[]")" "[]" "empty batch"
+pf_evm_require_equal "$(balance_of_batch "[$sender]" "[$token_id,$token_id]")" "[]" \
+  "unequal batch lengths answer an empty array"
+pf_evm_require_equal "$(balance_of_batch "[$sender,$other]" "[$token_id]")" "[]" \
+  "unequal batch lengths answer an empty array (more owners)"
+if "$cast" call --rpc-url "$rpc" "$addr" 'balanceOfBatch(address[],uint256[])(uint256[])' \
+    "[$sender,$other,$sender,$other,$sender]" "[$token_id,$token_id,$token_id,$token_id,$token_id]" \
+    >/dev/null 2>&1; then
+  echo "FAIL: five-element batch exceeded capacity 4 but decoded" >&2
+  exit 1
+fi
+
+echo "evm-anvil-multitoken: ok (mint/burn/transferFrom/operator/balanceOfBatch + ERC-1155 TransferSingle LOG4 / ApprovalForAll LOG3)"
