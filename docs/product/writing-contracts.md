@@ -88,14 +88,26 @@ Address.eq (OpenCall.staticAddress target Remote.ownerOf) who
 OpenCall.staticWord token (Remote.echo (OpenCall.staticWord token (Remote.balanceOf who)))
 ```
 
-A CALL helper's `UInt64` result is an effect carrier, not a value. Sequence it with
-`Effect.thenTrue`, `Effect.abort`, or `Effect.ensure`. A comparison such as
-`OpenCall.callSuccess target Remote.ping == 1` does not read the callee's word. The CALL still
-runs, the comparison is not compiled, and the method returns the carrier's constant `0`. A
-fail-closed refusal of that shape is the next OpenCall unit in
-[oz-sdk-backlog.md](oz-sdk-backlog.md). If the callee reverts, or its returndata does not match
-the policy, your transaction reverts with `revert(0, 0)`, so no partial state remains.
-Reentrancy is visible to the callee. Add `Sdk.Reentrancy` yourself.
+A CALL helper's `UInt64` result is an effect carrier, not a value. The call policy has already
+decided success before the carrier exists, and the carrier never holds the callee's word. It has
+one home: the entry's result word, alone or under `Effect.thenTrue`, `Effect.abort`, or
+`Effect.ensure`. A `let` whose binder reaches that word is the same home
+(`let sent := Effect.thenTrue (OpenCall.callSuccess t Remote.ping)` followed by
+`if s.flag == 0 then .ok ({ s with flag := 1 }, sent) else .error .locked`). Anywhere else does
+not compile. A comparison (`OpenCall.callSuccess target Remote.ping == 1`),
+an operator (`… + 1`), an `if` condition (with or without `Effect.thenTrue` around it), a state
+field (`{ s with flag := OpenCall.callSuccess … }`), a call argument
+(`Remote.echo ⟨OpenCall.callSuccess …, 0, 0, 0⟩`), or a `let` whose binder is dropped
+(`let _ := OpenCall.callSuccess …`) fails extraction with the `CALL carrier out of place`
+reason. Read the callee's answer through a STATICCALL instead. Before this refusal every such
+entry compiled. The computed-with shapes lowered to the CALL followed by the constant `0`, so
+`callSuccess t Remote.ping == 0` answered `false` on chain where the Lean function answers
+`true`; a dropped `let` above an `if` lost the `if` and its stores; `if Effect.thenTrue (call)
+then …` stored without running the CALL. `Tests/EvmOpenCallMisuse.lean` holds each refused
+shape, and `runtime-tests/evm/anvil_opencall.sh` fails if `pf build` ever compiles it again.
+If the callee reverts, or its returndata does not match the policy, your transaction reverts
+with `revert(0, 0)`, so no partial state remains. Reentrancy is visible to the callee. Add
+`Sdk.Reentrancy` yourself.
 
 Evidence: `runtime-tests/evm/anvil_compose.sh` deploys `Erc20Meta`, `Badge`, and `EvmOpenCall`,
 all compiled by `pf`. It moves tokens through `EvmOpenCall.openTransfer` and checks both
