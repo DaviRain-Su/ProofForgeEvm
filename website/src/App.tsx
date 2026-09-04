@@ -286,8 +286,8 @@ function CliPage() {
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
           {copy(lang, {
-            zh: "v0 产品面：checkout 内可复制的 solc 路径 + Anvil 工程门。没有独立安装包，没有 doctor/install，没有本仓 MCP。能力矩阵见 docs/product/。",
-            en: "v0 product surface: a reproducible in-checkout solc path + Anvil engineering gates. No standalone installer, no doctor/install, no in-repo MCP. See docs/product/ for the support matrix.",
+            zh: "v0 产品面：checkout 内可复制的 solc 路径 + Anvil 工程门。有 v* tag 时可用 GitHub Release 二进制与 Lake require @ tag；没有独立安装包 / curl|sh，没有 doctor/install，没有本仓 MCP。能力矩阵见 docs/product/。",
+            en: "v0 product surface: a reproducible in-checkout solc path + Anvil engineering gates. When a v* tag exists, use GitHub Release binaries and Lake require @ tag; no standalone installer / curl|sh, no doctor/install, no in-repo MCP. See docs/product/ for the support matrix.",
           })}
         </p>
         <p className="mt-4 font-mono text-xs text-subtle">
