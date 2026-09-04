@@ -9,7 +9,8 @@ Emitter interpreter for the typed call-result contract (EVM-RT-2a, S2).
 and projects the historical first-word `Option String` carrier so ClosedCall / Precompile
 consumers keep their existing output and fresh-name order.
 
-1. the `call`/`staticcall` instruction itself, with calldata at `memory[0, inSize)` and
+1. the `call`/`staticcall` instruction itself, with calldata at `memory[0, inSize)`, extended by
+   the caller's bound padded tail length when the plan carries a `bytes` argument, and
    returndata copied to `memory[0, retBound)` (`retBound ≤ maxRetBytes`);
 2. the fail-closed success gate. Default `FailMode.revert0` is `if iszero(ok) { revert(0, 0) }`,
    byte-identical with pre-S2 ClosedCall Yul. Opt-in `FailMode.bubble` forwards callee revert
@@ -83,24 +84,30 @@ private def emitExactWords (context : Context σ) (indent : String) (st : σ)
 
 /-- Emit one closed external call and its typed fail-closed result gates, binding every
 decoded word. `target` is the already-materialized callee word; `value` is the msg.value
-expression and must be present exactly when `request.value` holds. -/
+expression and must be present exactly when `request.value` holds. `inSizeTail` is the
+already-bound padded byte count of a dynamic calldata tail, added to the static
+`request.inSize` when present. -/
 def emitBound (context : Context σ) (request : CallResult.Request) (target : String)
-    (value : Option String) (st : σ) : Except String (String × Bound × σ) := do
+    (value : Option String) (st : σ) (inSizeTail : Option String := none) :
+    Except String (String × Bound × σ) := do
   if !(request.wellFormed) then
     throw "extract/unsupported: evm call-result request shape"
   if request.value != value.isSome then
     throw "extract/unsupported: evm call-result value shape"
   let indent := context.indent
   let (ok, st1) := context.fresh st
+  let inSize := match inSizeTail with
+    | none => toString request.inSize
+    | some tail => "add(" ++ toString request.inSize ++ ", " ++ tail ++ ")"
   let invoke := match request.kind, value with
     | .call, some val =>
-        "call(gas(), " ++ target ++ ", " ++ val ++ ", 0, " ++ toString request.inSize ++
+        "call(gas(), " ++ target ++ ", " ++ val ++ ", 0, " ++ inSize ++
           ", 0, " ++ toString request.retBound ++ ")"
     | .call, none =>
-        "call(gas(), " ++ target ++ ", 0, 0, " ++ toString request.inSize ++
+        "call(gas(), " ++ target ++ ", 0, 0, " ++ inSize ++
           ", 0, " ++ toString request.retBound ++ ")"
     | .staticcall, _ =>
-        "staticcall(gas(), " ++ target ++ ", 0, " ++ toString request.inSize ++
+        "staticcall(gas(), " ++ target ++ ", 0, " ++ inSize ++
           ", 0, " ++ toString request.retBound ++ ")"
   let head :=
     indent ++ "let " ++ ok ++ " := " ++ invoke ++ nl ++

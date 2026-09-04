@@ -10,18 +10,59 @@ Typed external CALL sibling of `ClosedCall` (S3). “Open” means the target ad
 typed source value; the call contract stays static and compiler-checked:
 
 - CALL or STATICCALL;
-- compile-time function name and fixed one-word-per-argument ABI schema;
+- compile-time function name and fixed ABI schema: one head word per argument, plus at most
+  one bounded `bytes` tail;
 - typed argument limbs and optional typed CALL value;
 - one `CallResult.Policy`;
 - `externalCall` (and `sendsValue` when msg.value is present).
 
 Calldata is assembled by the emitter. The source API never accepts an arbitrary bytes payload,
-selector string, return buffer length, or opcode. `delegatecall`, CREATE/CREATE2, and proxy
-dispatch are not variants. `NativeFx.sendEth` stays a separate zero-calldata primitive.
+selector string, return buffer length, or opcode. A `bytes` argument is a `BoundedBytes`
+source value whose capacity is fixed at compile time; its runtime length decides the calldata
+size. `delegatecall`, CREATE/CREATE2, and proxy dispatch are not variants. `NativeFx.sendEth`
+stays a separate zero-calldata primitive.
 -/
 
-/-- Fail-closed calldata bound: selector plus at most eight static ABI words. -/
+/-- Fail-closed calldata bound: selector plus at most eight ABI head words. -/
 def maxArgWords : Nat := 8
+
+/-- At most one `bytes` argument per plan, so the tail offset is a compile-time constant. -/
+def maxBytesArgs : Nat := 1
+
+/-- Closed EVM argument vocabulary: the same one-word carriers typed events already admit. -/
+def argScalarSupported (type : Core.Codec.Scalar) : Bool :=
+  Codec.isNarrowIntegerCarrier type || Codec.isWideIntegerCarrier type ||
+    Codec.isAddressCarrier type || Codec.isFixedBytesCarrier type
+
+/-- One ABI parameter type: a closed one-word scalar, or a `bytes` tail bounded by `capacity`. -/
+inductive ArgType where
+  | scalar (type : Core.Codec.Scalar)
+  | bytes (capacity : Nat)
+  deriving BEq, Repr, Inhabited
+
+def ArgType.isDynamic : ArgType → Bool
+  | .scalar _ => false
+  | .bytes _ => true
+
+/-- Source limbs the argument carries: the scalar's limbs, or the runtime length followed by one
+byte limb per slot of capacity, the frame `BoundedBytes` already has on the entry side. -/
+def ArgType.limbCount : ArgType → Nat
+  | .scalar type => Codec.limbCount type
+  | .bytes capacity => 1 + capacity
+
+def ArgType.abiType : ArgType → Except String String
+  | .scalar type => Codec.abiType type
+  | .bytes _ => pure "bytes"
+
+/-- A `bytes` capacity is bounded by the same local-frame ceiling the entry decoder admits, so
+every `BoundedBytes` an entry can receive can be forwarded. -/
+def ArgType.supported : ArgType → Bool
+  | .scalar type => argScalarSupported type
+  | .bytes capacity => 1 + capacity ≤ Codec.maxBoundedArrayLocalWords
+
+def ArgType.canonical : ArgType → String
+  | .scalar type => toString (repr type)
+  | .bytes capacity => s!"bytes{capacity}"
 
 /-- Transitive effects for one typed open CALL. -/
 structure EffectSummary where
@@ -29,10 +70,11 @@ structure EffectSummary where
   sendsValue : Bool := false
   deriving BEq, Repr, Inhabited
 
-/-- One ABI argument: declaration-order name, closed scalar type, little-endian source limbs. -/
+/-- One ABI argument: declaration-order name, parameter type, and source limbs (little-endian
+scalar limbs, or `length` followed by `capacity` byte limbs for `bytes`). -/
 structure Arg (V : Type) where
   name : String
-  type : Core.Codec.Scalar
+  type : ArgType
   parts : Array V
   deriving BEq, Repr, Inhabited
 
@@ -75,8 +117,19 @@ def Plan.values (plan : Plan V) : Array V :=
 def Plan.sendsValue (plan : Plan V) : Bool :=
   !plan.valueParts.isEmpty
 
-def Plan.inSize (plan : Plan V) : Nat :=
+/-- The `bytes` arguments in declaration order; at most `maxBytesArgs` when well-formed. -/
+def Plan.bytesArgs (plan : Plan V) : Array (Arg V) :=
+  plan.args.filter (·.type.isDynamic)
+
+/-- Byte length of the head: selector plus one word per argument (a value or a tail offset). The
+single tail starts here. -/
+def Plan.headBytes (plan : Plan V) : Nat :=
   CallResult.selectorBytes + CallResult.abiWordBytes * plan.args.size
+
+/-- Compile-time calldata bytes: the head plus one length word per `bytes` tail. The padded
+payload of a tail is added at emission from its runtime length. -/
+def Plan.inSize (plan : Plan V) : Nat :=
+  plan.headBytes + CallResult.abiWordBytes * plan.bytesArgs.size
 
 def Plan.request (plan : Plan V) : CallResult.Request :=
   { kind := plan.kind
@@ -88,18 +141,14 @@ def Plan.request (plan : Plan V) : CallResult.Request :=
 def isIdent (s : String) : Bool :=
   !s.isEmpty && s.front.isAlpha && s.all (fun c => c.isAlphanum || c == '_')
 
-/-- Closed EVM argument vocabulary: the same one-word carriers typed events already admit. -/
-def argScalarSupported (type : Core.Codec.Scalar) : Bool :=
-  Codec.isNarrowIntegerCarrier type || Codec.isWideIntegerCarrier type ||
-    Codec.isAddressCarrier type || Codec.isFixedBytesCarrier type
-
 def Arg.wellFormed (valueWellFormed : V → Bool) (arg : Arg V) : Bool :=
-  isIdent arg.name && argScalarSupported arg.type &&
-    arg.parts.size == Codec.limbCount arg.type && arg.parts.all valueWellFormed
+  isIdent arg.name && arg.type.supported &&
+    arg.parts.size == arg.type.limbCount && arg.parts.all valueWellFormed
 
 def Plan.wellFormed (valueWellFormed : V → Bool) (plan : Plan V) : Bool :=
   let names := plan.args.toList.map (·.name)
   isIdent plan.name && plan.args.size ≤ maxArgWords &&
+    plan.bytesArgs.size ≤ maxBytesArgs &&
     names.length == names.eraseDups.length &&
     plan.args.all (Arg.wellFormed valueWellFormed) &&
     plan.target.size == 3 && plan.target.all valueWellFormed &&
@@ -108,14 +157,13 @@ def Plan.wellFormed (valueWellFormed : V → Bool) (plan : Plan V) : Bool :=
     plan.request.wellFormed
 
 def Plan.abiTypes (plan : Plan V) : Except String (Array String) :=
-  plan.args.mapM fun arg => Codec.abiType arg.type
+  plan.args.mapM (·.type.abiType)
 
 /-- Keccak selector of `name(type1,type2,...)`. Fails closed on a malformed plan. -/
 def Plan.selectorHex (valueWellFormed : V → Bool) (plan : Plan V) : Except String String := do
   unless plan.wellFormed valueWellFormed do
     throw "extract/unsupported: malformed open-call plan"
-  let types ← plan.args.mapM fun arg => Codec.abiType arg.type
-  pure (Keccak.selector plan.name types)
+  pure (Keccak.selector plan.name (← plan.abiTypes))
 
 def policyCanon : CallResult.Policy → String
   | .canonicalTrueOrCodeBackedEmpty => "erc20"
@@ -138,7 +186,7 @@ def kindCanon : CallResult.Kind → String
 
 def Plan.canonical (renderValue : V → String) (plan : Plan V) : String :=
   let args := plan.args.toList.map fun arg =>
-    s!"{arg.name}:{repr arg.type}({String.intercalate "," (arg.parts.map renderValue).toList})"
+    s!"{arg.name}:{arg.type.canonical}({String.intercalate "," (arg.parts.map renderValue).toList})"
   let target := String.intercalate "," (plan.target.map renderValue).toList
   let value :=
     if plan.valueParts.isEmpty then ""
@@ -177,7 +225,7 @@ def Call.canonical (renderValue : V → String) : Call V → String
 /-- Value-producing open CALL/STATICCALL. `word` selects a bound ABI word; `limb` a UInt64 leaf. -/
 structure Query where
   name : String
-  argTypes : Array Core.Codec.Scalar
+  argTypes : Array ArgType
   kind : CallResult.Kind := .staticcall
   policy : CallResult.Policy := .exactWord
   hasValue : Bool := false
@@ -186,7 +234,7 @@ structure Query where
   deriving BEq, Repr, Inhabited
 
 def Query.argLimbCount (query : Query) : Nat :=
-  query.argTypes.foldl (init := 0) fun acc ty => acc + Codec.limbCount ty
+  query.argTypes.foldl (init := 0) fun acc ty => acc + ty.limbCount
 
 def Query.arity (query : Query) : Nat :=
   3 + query.argLimbCount + (if query.hasValue then 4 else 0)
@@ -206,7 +254,7 @@ def Query.toPlan (query : Query) (operands : Array V) : Option (Plan V) := Id.ru
   let mut args : Array (Arg V) := #[]
   for i in [0:query.argTypes.size] do
     let ty := query.argTypes[i]!
-    let n := Codec.limbCount ty
+    let n := ty.limbCount
     if rest.size < n then return none
     args := args.push { name := s!"a{i}", type := ty, parts := rest.extract 0 n }
     rest := rest.extract n rest.size
@@ -228,7 +276,8 @@ def Query.limbCount (query : Query) : Nat :=
 
 def Query.wellFormed (query : Query) : Bool :=
   isIdent query.name && query.argTypes.size ≤ maxArgWords &&
-    query.argTypes.all argScalarSupported &&
+    query.argTypes.all ArgType.supported &&
+    (query.argTypes.filter ArgType.isDynamic).size ≤ maxBytesArgs &&
     query.policy.wellFormed &&
     query.copiedWordCount ≥ 1 &&
     query.word < query.copiedWordCount &&
@@ -272,8 +321,7 @@ def StaticShape.limbCount (shape : StaticShape) : Nat :=
   ((shape.policy.wordKinds[0]?).map (·.limbCount)).getD 0
 
 /-- Query for limb 0 of word 0 under this shape; the extractor rebinds `limb` per carrier limb. -/
-def StaticShape.query (shape : StaticShape) (name : String)
-    (argTypes : Array Core.Codec.Scalar) : Query :=
+def StaticShape.query (shape : StaticShape) (name : String) (argTypes : Array ArgType) : Query :=
   { name, argTypes, kind := .staticcall, policy := shape.policy }
 
 end ProofForge.Evm.OpenCall

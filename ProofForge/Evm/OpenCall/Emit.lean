@@ -8,9 +8,11 @@ import ProofForge.Evm.Keccak
 namespace ProofForge.Evm.OpenCall.Emit
 
 /-!
-Emitter for typed open CALL/STATICCALL. Calldata is assembled from the plan; the result
-gate is always `CallResult.Emit.emitBound`. This is not a third result-policy interpreter.
-`NativeFx.sendEth` is not lowered through this module.
+Emitter for typed open CALL/STATICCALL. Calldata is assembled from the plan at `memory[0, …)`:
+selector, one head word per argument, then the single `bytes` tail (length word and padded
+payload) when the plan has one; the result gate is always `CallResult.Emit.emitBound`, handed
+the tail's padded length so the call sends exactly the canonical calldata size. This is not a
+third result-policy interpreter. `NativeFx.sendEth` is not lowered through this module.
 -/
 
 private def nl : String := "\n"
@@ -42,31 +44,65 @@ private def materializeParts (context : Context σ) (parts : Array Ops.Val) (st 
     st := st'
   return (prelude, exprs, st)
 
-/-- Store one ABI argument word at `memory[offset, offset+32)`. -/
-private def storeArg (context : Context σ) (offset : Nat) (arg : OpenCall.Arg Ops.Val)
+/-- Store one ABI head word at `memory[offset, offset+32)`: the scalar value, or for a `bytes`
+argument its tail offset, which is the head length measured from the first argument word. -/
+private def storeArg (context : Context σ) (offset headWords : Nat) (arg : OpenCall.Arg Ops.Val)
     (st : σ) : Except String (String × σ) := do
   let indent := context.indent
+  let .scalar type := arg.type
+    | return (indent ++ "mstore(" ++ toString offset ++ ", " ++
+        toString (CallResult.abiWordBytes * headWords) ++ ")" ++ nl, st)
   let (prelude, parts, st) ← materializeParts context arg.parts st
   if parts.isEmpty then
     throw "extract/unsupported: open-call argument has no limbs"
-  if Codec.isAddressCarrier arg.type then
+  if Codec.isAddressCarrier type then
     return (prelude ++
       indent ++ "pf_store_addr20(" ++ toString offset ++ ", " ++ parts[0]! ++ ", " ++
         (parts[1]?).getD "0" ++ ", " ++ (parts[2]?).getD "0" ++ ")" ++ nl, st)
-  else if Codec.isFixedBytesCarrier arg.type then
+  else if Codec.isFixedBytesCarrier type then
     return (prelude ++
       indent ++ "pf_store_fixed_bytes(" ++ toString offset ++ ", " ++
         (parts[0]?).getD "0" ++ ", " ++ (parts[1]?).getD "0" ++ ", " ++
         (parts[2]?).getD "0" ++ ", " ++ (parts[3]?).getD "0" ++ ", " ++
-        toString arg.type.byteWidth ++ ")" ++ nl, st)
-  else if Codec.isWideIntegerCarrier arg.type then
+        toString type.byteWidth ++ ")" ++ nl, st)
+  else if Codec.isWideIntegerCarrier type then
     let packed := packU256 (parts[0]!) ((parts[1]?).getD "0") ((parts[2]?).getD "0")
       ((parts[3]?).getD "0")
     return (prelude ++ indent ++ "mstore(" ++ toString offset ++ ", " ++ packed ++ ")" ++ nl, st)
-  else if Codec.isNarrowIntegerCarrier arg.type && parts.size == 1 then
+  else if Codec.isNarrowIntegerCarrier type && parts.size == 1 then
     return (prelude ++ indent ++ "mstore(" ++ toString offset ++ ", " ++ parts[0]! ++ ")" ++ nl, st)
   else
     throw "extract/unsupported: open-call argument type has no EVM word carrier"
+
+/-- Write the tail of one `bytes` argument at `memory[tailAt, tailAt + 32 + ceil32(capacity))`:
+the runtime length, then only the first `length` bytes over a zeroed region, so the calldata is
+canonical however the inactive source slots read. Every byte limb is materialized in the
+enclosing scope so a memoized limb stays visible after its guard. Returns the Yul name bound to
+the padded payload length. -/
+private def storeBytesTail (context : Context σ) (tailAt capacity : Nat)
+    (parts : Array Ops.Val) (st : σ) : Except String (String × String × σ) := do
+  let indent := context.indent
+  unless parts.size == 1 + capacity do
+    throw "extract/unsupported: open-call bytes argument limbs do not match its capacity"
+  let (lengthPre, lengthExpr, st0) ← context.materialize parts[0]! st
+  let (len, st1) := context.fresh st0
+  let dataAt := tailAt + CallResult.abiWordBytes
+  let mut txt := lengthPre ++
+    indent ++ "let " ++ len ++ " := " ++ lengthExpr ++ nl ++
+    indent ++ "if gt(" ++ len ++ ", " ++ toString capacity ++ ") { " ++ revert0 ++ " }" ++ nl ++
+    indent ++ "mstore(" ++ toString tailAt ++ ", " ++ len ++ ")" ++ nl
+  for word in [0:(capacity + 31) / 32] do
+    txt := txt ++ indent ++ "mstore(" ++ toString (dataAt + word * 32) ++ ", 0)" ++ nl
+  let mut st := st1
+  for i in [0:capacity] do
+    let (pre, byteExpr, st') ← context.materialize parts[1 + i]! st
+    st := st'
+    txt := txt ++ pre ++
+      indent ++ "if gt(" ++ len ++ ", " ++ toString i ++ ") { mstore8(" ++
+        toString (dataAt + i) ++ ", " ++ byteExpr ++ ") }" ++ nl
+  let (padded, st2) := context.fresh st
+  txt := txt ++ indent ++ "let " ++ padded ++ " := and(add(" ++ len ++ ", 31), not(31))" ++ nl
+  return (txt, padded, st2)
 
 private def planCacheKey (context : Context σ) (plan : OpenCall.Plan Ops.Val) (word : Nat) :
     String :=
@@ -94,8 +130,16 @@ def emitPlan (context : Context σ) (plan : OpenCall.Plan Ops.Val) (st : σ) :
   let mut st := s3
   for i in [0:plan.args.size] do
     let (argTxt, st') ← storeArg context (CallResult.selectorBytes + CallResult.abiWordBytes * i)
-      plan.args[i]! st
+      plan.args.size plan.args[i]! st
     txt := txt ++ argTxt
+    st := st'
+  let mut inSizeTail : Option String := none
+  if let some tail := plan.bytesArgs[0]? then
+    let .bytes capacity := tail.type
+      | throw "extract/unsupported: open-call bytes argument lost its capacity"
+    let (tailTxt, padded, st') ← storeBytesTail context plan.headBytes capacity tail.parts st
+    txt := txt ++ tailTxt
+    inSizeTail := some padded
     st := st'
   let mut valueExpr : Option String := none
   if plan.sendsValue then
@@ -109,7 +153,7 @@ def emitPlan (context : Context σ) (plan : OpenCall.Plan Ops.Val) (st : σ) :
     valueExpr := some amt
     st := stA
   let (callTxt, bound, st') ← CallResult.Emit.emitBound context.callResult
-    plan.request tok valueExpr st
+    plan.request tok valueExpr st inSizeTail
   return (txt ++ callTxt, bound, st')
 
 def emitCall (context : Context σ) (call : OpenCall.Call Ops.Val) (st : σ) :
