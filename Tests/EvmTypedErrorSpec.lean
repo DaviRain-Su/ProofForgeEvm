@@ -118,7 +118,11 @@ inductive Error where
   | ERC1155MissingApprovalForAll (operator : ProofForge.Evm.Runtime.Addr20)
       (owner : ProofForge.Evm.Runtime.Addr20)
   | halfWide (value : ProofForge.Core.Value.UInt128) (flag : Bool)
+  | shortfall (balance : UInt64) (needed : UInt64)
   deriving Repr, DecidableEq, Inhabited, BEq
+
+@[pf_inline] def positions : ProofForge.Evm.Sdk.Storage.U64Map :=
+  ProofForge.Evm.Sdk.Storage.Layout.root.u64Map.handle
 
 @[pf_entry] def init (value : UInt64) : State := ⟨value⟩
 
@@ -135,6 +139,11 @@ inductive Error where
 @[pf_entry] def half (_s : State) (value : ProofForge.Core.Value.UInt128) (flag : Bool) :
     Except Error (State × UInt64) :=
   .error (.halfWide value flag)
+
+/-- A map read inside an error field belongs to the error frame, not to the statement-level
+query scan that once turned this revert into a `uint64` return. -/
+@[pf_entry] def short (_s : State) (key needed : UInt64) : Except Error (State × UInt64) :=
+  .error (.shortfall (positions.get key) needed)
 
 end WideFields
 
@@ -164,6 +173,8 @@ private def expectWideFields (env : Environment) : CommandElabM Unit := do
     throwError s!"approval frame diverged: {repr (← frameOf "approval")}"
   unless frameLimbs (← frameOf "half") == #[("value", .uint128, 2), ("flag", .boolean, 1)] do
     throwError s!"half frame diverged: {repr (← frameOf "half")}"
+  unless frameLimbs (← frameOf "short") == #[("balance", .uint64, 1), ("needed", .uint64, 1)] do
+    throwError s!"short frame diverged: {repr (← frameOf "short")}"
   let evm ←
     match ProofForge.Evm.IR.fromExtracted source with
     | .ok program => pure program

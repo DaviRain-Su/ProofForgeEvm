@@ -4330,6 +4330,10 @@ private partial def isBoundedStringReturn (env : Environment) (fuel : Nat) (e : 
 
 private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.Op) :=
   if isBoundedStringReturn env 32 e then none else
+  -- An `Except.error` head is a terminal the error decoder owns. Without this gate the query
+  -- scan claimed the map reads inside an error field, and a typed
+  -- `ERC1155InsufficientBalance(sender, balanceOf .., ..)` came back as four `returnU64` limbs.
+  if isExceptErrorHead (peelControl 8 e) then none else
   let writes := collectEvmEffectOps env e
   if writes.size ≥ 1 then
     some (writes.push (.returnU64 ((findOkRet env e).getD (retOfEvmOps writes))))
