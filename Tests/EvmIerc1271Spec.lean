@@ -90,6 +90,8 @@ private def expectSignerLink : CommandElabM Unit := do
   -- the check has no code-size branch; any answer other than the left-aligned selector reverts.
   unless yul.contains s!"shl(224, 0x{magic}))) \{ revert(0, 0) }" && !yul.contains "extcodesize(" do
     throwError "SignerLink Yul lost the magic equality gate or grew a code-size guard"
+  unless IR.digestHex evm == "7edf01a87d0a1652" do
+    throwError s!"SignerLink digest drifted: {IR.digestHex evm}"
   logInfo m!"signerlink: digest={IR.digestHex evm} plan-ok abi-ok"
 
 elab "#pf_guard_evm_ierc1271" : command => expectSignerLink
