@@ -113,9 +113,14 @@ private def isEvmOpenCallValueApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
     endsWith e ".evmOpenCallValue"
 
+private def isEvmOpenCallMagicApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallMagic ||
+    endsWith e ".evmOpenCallMagic"
+
 /-- Any CALL-kind open-call stub: the effect carriers, as opposed to the STATICCALL reads. -/
 private def isOpenCallPlanApp (e : Expr) : Bool :=
-  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e
+  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
+    isEvmOpenCallMagicApp e
 
 /-- Runtime stub behind each typed STATICCALL read shape. -/
 private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
@@ -1357,8 +1362,14 @@ private partial def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedO
               else .contractSuccess
             valueParts
           }
-          if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
-          else .unsupported "malformed open-call plan"
+          if !plan.wellFormed (·.wellFormed IR.ValKind.arity) then
+            .unsupported "malformed open-call plan"
+          else if isEvmOpenCallMagicApp e then
+            -- The hook convention: the callee answers with the selector it was called by.
+            match plan.selectorHex (·.wellFormed IR.ValKind.arity) with
+            | .ok selector => .plan { plan with policy := .magicBytes4 selector }
+            | .error reason => .unsupported reason
+          else .plan plan
     | _, _, _ => .unsupported "open-call lost target or payload"
 
 /-- A typed STATICCALL read in value position: limb `limb` of its result word, accepted only
@@ -3255,8 +3266,9 @@ private inductive CarrierSlot where
   | operand
 
 private def carrierMisuseReason : String :=
-  "CALL carrier out of place: the `UInt64` from `OpenCall.call`, `callSuccess`, or `callValue` \
-  is a sequencing carrier the call policy already decided, not the callee's word; it may stand \
+  "CALL carrier out of place: the `UInt64` from `OpenCall.call`, `callSuccess`, `callValue`, or \
+  `callMagic` is a sequencing carrier the call policy already decided, not the callee's word; it \
+  may stand \
   only as the entry's result word, alone or under `Effect.thenTrue` (`Effect.abort`, \
   `Effect.ensure`); computing with it, branching on it, or binding it with `let` and dropping \
   it is refused; read the callee through a STATICCALL"

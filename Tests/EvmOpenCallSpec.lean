@@ -429,7 +429,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "9d3084c62ce8260a"
+#guard Registry.digestOf "EvmOpenCall" == some "51c5a865c623b474"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -585,6 +585,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost markThenPing"
   let some sink := source.methods.find? (·.ixName == "sinkBytes")
     | throwError "open-call example lost sinkBytes"
+  let some hook := source.methods.find? (·.ixName == "notifyReceiver")
+    | throwError "open-call example lost notifyReceiver"
   let pingPlans := sourceOpenCalls ping.ops
   let storedPlans := sourceOpenCalls stored.ops
   let xferPlans := sourceOpenCalls xfer.ops
@@ -617,6 +619,19 @@ elab "#pf_guard_evm_open_call_source" : command => do
       sinkPlans[0]!.args[1]!.parts.size == 9 &&
       sinkPlans[0]!.inSize == 100 && sinkPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
     throwError s!"sinkBytes plan diverged: {repr sinkPlans}"
+  -- The hook's magic is the plan's own selector, computed from the constructor, never written
+  -- by the author.
+  let hookPlans := sourceOpenCalls hook.ops
+  let hookSelector := ProofForge.Evm.Keccak.selector "onERC721Received"
+    #["address", "address", "uint256", "bytes"]
+  unless hookSelector == "150b7a02" do
+    throwError s!"onERC721Received selector is {hookSelector}"
+  unless hookPlans.size == 1 && hookPlans[0]!.name == "onERC721Received" &&
+      hookPlans[0]!.kind == .call && hookPlans[0]!.policy == .magicBytes4 hookSelector &&
+      hookPlans[0]!.args.size == 4 && hookPlans[0]!.args[3]!.type == .bytes 8 &&
+      hookPlans[0]!.policy.copiedWordCount == 1 &&
+      hookPlans[0]!.policy.wordKinds == #[.bytes4] do
+    throwError s!"notifyReceiver plan diverged: {repr hookPlans}"
 
   let evm ←
     match ProofForge.Evm.IR.fromExtracted source with
@@ -639,6 +654,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "echo" #["uint256"]})" &&
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "getPair" #[]})" do
     throwError s!"open-call Yul omitted CALL/STATICCALL gates or selectors"
+  unless yul.contains s!"shl(224, 0x{hookSelector}))) \{ revert(0, 0) }" do
+    throwError "notifyReceiver Yul lost the magic equality gate"
 
   -- Queries lower through Component.Query.openCall, not Call.invoke. Each read binds exactly
   -- the limbs its source carrier needs: four for `UInt256`, three for `Address`, one for `Bool`.
@@ -748,6 +765,7 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectUnsupported env ``Tests.EvmOpenCallMisuse.thenTrueCompared "CALL carrier"
   expectUnsupported env ``Tests.EvmOpenCallMisuse.letDropped "CALL carrier"
   expectUnsupported env ``Tests.EvmOpenCallMisuse.letGuarded "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.magicCompared "CALL carrier"
   expectCallKept env ``CarrierWord.asBool
   expectCallKept env ``CarrierWord.ensured
   expectCallKept env ``CarrierWord.named

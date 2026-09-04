@@ -311,6 +311,13 @@ separately accept `msg.value` (`Ether.accept`) when the method is payable. -/
     UInt64 :=
   Runtime.evmOpenCallValue target value payload
 
+/-- Typed external CALL whose callee must answer with exactly one word equal to this call's own
+selector, left-aligned: the receiver-hook convention of `onERC721Received`, `onERC1155Received`,
+`onERC1155BatchReceived`, and ERC-1271 `isValidSignature`. Any other length or word reverts the
+transaction. Reentrancy is application-visible. -/
+@[pf_inline] def callMagic {α : Type} (target : Address) (payload : α) : UInt64 :=
+  Runtime.evmOpenCallMagic target payload
+
 /-- Typed STATICCALL with the exact-one-word policy. The source carrier is `UInt256`. -/
 @[pf_inline] def staticWord {α : Type} (target : Address) (payload : α) : UInt256 :=
   Runtime.evmOpenStaticWord target payload
