@@ -169,8 +169,9 @@ private def pairQuery : OpenCall.Query := {
 #guard echoQuery.arity == 7
 #guard pairQuery.arity == 3
 
-/-- `hashOf(bytes)` read: target limbs, then the tail's length and eight byte limbs. -/
-private def hashQuery : OpenCall.Query := OpenCall.StaticShape.word.query "hashOf" #[.bytes 8]
+/-- `calldataHash(bytes)` read: target limbs, then the tail's length and eight byte limbs. -/
+private def hashQuery : OpenCall.Query :=
+  OpenCall.StaticShape.word.query "calldataHash" #[.bytes 8]
 private def hashOperands : Array Ops.Val := #[lit, lit, lit] ++ Array.replicate 9 lit
 
 #guard hashQuery.wellFormed
@@ -353,7 +354,7 @@ private def mockCallResultCtx : CallResult.Emit.Context Nat :=
 #guard
   match OpenCall.Emit.emitQuery mockOpenCtx hashQuery hashOperands 0 with
   | .ok (txt, name, _) =>
-      txt.contains s!"mstore(0, shl(224, 0x{Keccak.selector "hashOf" #["bytes"]}))" &&
+      txt.contains s!"mstore(0, shl(224, 0x{Keccak.selector "calldataHash" #["bytes"]}))" &&
         txt.contains "  mstore(4, 32)\n" &&
         txt.contains "  mstore(36, v1)\n" &&
         txt.contains "let v3 := staticcall(gas(), v0, 0, add(68, v2), 0, 32)\n" &&
