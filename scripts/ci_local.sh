@@ -121,6 +121,8 @@ run_guards() {
   python3 scripts/check_ownership.py
   python3 scripts/check_sdk_import_closure.py
   python3 scripts/check_artifact_manifest.py --self-test
+  python3 scripts/check_anvil_suite.py --self-test
+  python3 scripts/check_anvil_suite.py
   python3 scripts/check_no_sorry.py
 }
 

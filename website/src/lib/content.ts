@@ -351,7 +351,7 @@ export const DOCS: Record<
       blocks: [
         "CLI 表面只有 pf build / pf init / pf --version。没有 doctor / install / artifacts / local，也没有本仓 MCP server。",
         "有 v* tag 时，GitHub Release 提供 pf-linux-x86_64 与 pf-macos-aarch64。Lake 可用 require … @ \"v0.1.0\"。没有独立安装包，也没有 curl|sh。pf init 仍需要 checkout 才能复制模板。从 checkout 运行时，它把 git-tag require 改写成 path require。",
-        "明确不做：动态 callee、delegatecall、create2、proxy、无界循环、主网部署声明、bytecode refinement。",
+        "明确不做：delegatecall、proxy 升级、create2、任意 calldata、无界循环、主网部署声明、bytecode refinement。调用其他合约不需要 proxy：OpenCall 是对运行时 Address 的类型化 CALL/STATICCALL。",
         "官网 Forge 面板里的 Yul/ABI 摘录是示意形状，不是每次构建的实时产物。",
       ],
     },
@@ -360,7 +360,7 @@ export const DOCS: Record<
       blocks: [
         "The CLI surface is pf build / pf init / pf --version only. There is no doctor / install / artifacts / local, and no in-repo MCP server.",
         "When a v* tag exists, a GitHub Release ships pf-linux-x86_64 and pf-macos-aarch64. Lake can require … @ \"v0.1.0\". There is no standalone installer and no curl|sh. pf init still needs a checkout for templates. From a checkout it rewrites the git-tag require to a path require.",
-        "Explicitly out of scope: dynamic callee, delegatecall, create2, proxy, unbounded loops, mainnet deployment claims, bytecode refinement.",
+        "Explicitly out of scope: delegatecall, upgrade proxies, create2, raw calldata, unbounded loops, mainnet deployment claims, bytecode refinement. Calling another contract needs no proxy. OpenCall is a typed CALL/STATICCALL to a runtime Address.",
         "Yul/ABI excerpts in the website Forge panel are illustrative shapes, not live build artifacts.",
       ],
     },

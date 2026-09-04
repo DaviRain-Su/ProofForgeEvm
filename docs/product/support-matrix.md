@@ -32,10 +32,10 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 | Checked arithmetic, `ite`, bounded `for`, bit ops, narrow ABI, tuples | Supported |
 | Env / Addr20 / payable / closed ETH send / typed errors / typed events (`Event.emit`) | Supported. Product typed events are **named ABI events** (LOG1–4: signature topic is always topic0; ABI `"anonymous": false`). Anonymous LOG0 is a plan-layer geometry only; it is not a source `Event.emit` shape. |
 | Hashed maps + closed ERC-20 / WETH / UniswapV2 / Permit calls | Supported |
-| Typed OpenCall (`OpenCall.call` / `callSuccess` / `callValue` / `staticWord` / `staticWords2`) | **Supported** (S3, on `main` as #10): CALL/STATICCALL to a typed `Address` target with a compile-time constructor ABI (≤8 static one-word args). Result gates are S2 `CallResult` policies. No raw calldata, selector string, return-buffer length, opcode, `delegatecall`, CREATE2, or proxy. Reentrancy is application-visible. |
+| Typed OpenCall (`OpenCall.call` / `callSuccess` / `callValue` / `staticWord` / `staticWords2`) | **Supported** (S3, on `main` as #10): CALL/STATICCALL to a typed `Address` target with a compile-time constructor ABI (≤8 static one-word args). Result gates are S2 `CallResult` policies. No raw calldata, selector string, return-buffer length, opcode, `delegatecall`, CREATE2, or proxy. Reentrancy is application-visible. Calling another contract needs no proxy: `runtime-tests/evm/anvil_compose.sh` moves tokens from one `pf`-compiled contract into another through `OpenCall.call`. See [writing-contracts.md](writing-contracts.md#call-another-contract). |
 | CallResult S2 (`exactWords n`, `strictBool`, `magicBytes4`, typed `words`) | **Supported** (S2, on `main` as #9): ≤4 ABI words. ClosedCall still uses the original three policies. OpenCall consumes `canonicalTrueOrCodeBackedEmpty` / `contractSuccess` / `exactWord` / `exactWords 2` via the five helpers above. Default fail mode is `revert(0, 0)` |
 | Effect ergonomics without `dummy` / `hold` / fake guards | **Debt** (see roadmap) |
-| `delegatecall` / CREATE2 / proxy / arbitrary calldata / unbounded loops | **Out of scope** |
+| `delegatecall` / CREATE2 / proxy / arbitrary calldata / unbounded loops | **Out of scope**. These are upgrade, creation, and raw-payload mechanisms. They are not required to call another contract (see the OpenCall row) |
 
 ## SDK naming honesty
 

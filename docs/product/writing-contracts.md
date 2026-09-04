@@ -24,11 +24,56 @@ See `templates/evm-counter/MyContract/Counter.lean`, `Examples/Evm/TipJar.lean`,
 - Checked math / bit ops / bounded loops / narrow + wide ABI
 - Ownable / roles / pause / reentrancy helpers
 - Closed ETH + ERC-20/WETH calls, plus `SafeErc20` fail-closed transfer/approve/allowance helpers
-- Typed OpenCall to a dynamic `Address` with a static ABI constructor (see sharp edge 5)
+- Typed OpenCall to a dynamic `Address` with a static ABI constructor (see [Call another contract](#call-another-contract))
 - BoundedString returns as ABI `string` (see `Erc20Meta.name` / `symbol`)
 - Static ERC-2981 `royaltyInfo` (see `Examples.Evm.RoyaltyArt`)
 - Bounded nonce consumption + fixed-window rate limit (`Sdk.Nonces`, `Sdk.RateLimit`; see `Examples.Evm.EvmQuota`)
 - Kernel proofs about the Lean `def` (not about bytecode)
+
+## Call another contract
+
+You do not need a proxy to call another contract. A proxy is an upgrade pattern: `delegatecall`
+into a replaceable implementation behind an ERC-1967 slot. ProofForge does not ship proxies.
+Calling a contract at a runtime `Address` is a different thing, and `OpenCall` does it today.
+
+1. Declare the remote ABI as an inductive. Each constructor is one function. Its fields are the
+   arguments in declaration order.
+2. Call it with the helper whose result gate matches the callee.
+
+```lean
+inductive Remote where
+  | transfer (to : Address) (amount : UInt256)
+  | balanceOf (who : Address)
+
+-- ERC-20 `transfer(address,uint256)`: true, or empty returndata from an address with code.
+OpenCall.call token (Remote.transfer dest amt)
+-- STATICCALL `balanceOf(address)` that must return exactly one word.
+OpenCall.staticWord token (Remote.balanceOf who)
+```
+
+| Helper | Opcode | `CallResult.Policy` |
+|---|---|---|
+| `OpenCall.call` | CALL | `canonicalTrueOrCodeBackedEmpty` |
+| `OpenCall.callSuccess` | CALL | `contractSuccess` |
+| `OpenCall.callValue` | CALL with `msg.value` | `contractSuccess` |
+| `OpenCall.staticWord` | STATICCALL | `exactWord` |
+| `OpenCall.staticWords2` | STATICCALL | `exactWords 2` |
+
+The target may be a parameter or a stored `Address`. Arguments are at most eight one-word
+scalars (integers, `Address`, fixed bytes). `bytes`, `string`, and arrays are not accepted as
+arguments yet. If the callee reverts, your transaction reverts with `revert(0, 0)`, so no partial
+state remains. Reentrancy is visible to the callee. Add `Sdk.Reentrancy` yourself.
+
+Evidence: `runtime-tests/evm/anvil_compose.sh` deploys `Erc20Meta` and `EvmOpenCall`, both
+compiled by `pf`, and moves tokens through `EvmOpenCall.openTransfer`. It checks both balances,
+the callee `Transfer` log inside the caller transaction, and that an over-balance callee revert
+leaves no partial state. `runtime-tests/evm/anvil_opencall.sh` covers the same helpers against a
+Solidity callee, including malformed returndata and effect order.
+
+Out of scope, and not needed for the call above: `delegatecall`, proxies (ERC-1967, UUPS,
+beacons, clones), CREATE and CREATE2 factories, raw calldata, and receiving callbacks such as
+`onERC721Received`. The list lives in [oz-sdk-backlog.md](oz-sdk-backlog.md) under permanent
+non-goals.
 
 ## Known sharp edges (be honest in examples)
 

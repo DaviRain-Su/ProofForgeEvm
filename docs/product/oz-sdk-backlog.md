@@ -67,6 +67,26 @@ W5 slice 5b is also stacked on the completion branch: `Sdk.Ierc5313`/`OwnerLink`
 `Sdk.Ierc6372`/`ClockLink`, and public typed `Sdk.Ecdsa.recover`/`RecoverLink`, with focused Lean
 and Anvil gates.
 
+## Expansion phases after W5
+
+W5 closed the audit: every row is DONE, a named PARTIAL profile, or blocked by a documented
+non-goal, and `temporaryGapCount` is 0. The phases below widen the PARTIAL profiles toward the
+contract shapes people build most often. Each phase lands as its own PR with a Lean spec, an
+Anvil gate listed in `runtime-tests/evm/anvil.sh`, and a row edit in the coverage table. The
+`Sdk.OzAudit` counters must equal the coverage table at every commit.
+
+Reopening a line under § Permanent non-goals takes one PR that edits that line, changes the
+matching `Sdk.OzAudit` row or tag with new `Tests.EvmOzAuditSpec` pins, and ships the Anvil gate.
+A phase that only widens a PARTIAL profile does not touch that section.
+
+| Phase | Goal | What changes | Evidence | Non-goal touched |
+|---|---|---|---|---|
+| 0 | Prove and document that one contract calls another without a proxy. Close the gate drift. | `anvil.sh` runs `clocklink`, `ownerlink`, `recoverlink`, and the new `anvil_compose.sh` (`EvmOpenCall` CALLs `Erc20Meta`, both `pf`-compiled). `scripts/check_anvil_suite.py` fails CI when a committed gate is not run. `writing-contracts.md` § Call another contract. Website Limits copy no longer says "dynamic callee". | `anvil_compose.sh` ok; `check_anvil_suite.py` ok (75 gates); counters unchanged | None |
+| 1 | Richer typed call shapes for composition: STATICCALL returns typed as `Bool` and `Address`, three and four exact words, and one bounded `bytes` argument. | New `Runtime` stubs and `OpenCall.Source` helpers, `Decode` recognition, `OpenCall/Emit.lean` calldata tail for `BoundedBytes n`. `argScalarSupported` grows one bounded-bytes carrier. | `Tests.EvmOpenCallSpec` plan pins; `anvil_opencall.sh` and `anvil_compose.sh` read a balance and an owner through STATICCALL | None. Arbitrary calldata stays out; the tail is one typed bounded argument |
+| 2 | Bounded ERC-1155 batch: `safeBatchTransferFrom` and `balanceOfBatch` over `BoundedVec UInt256 n`, and a bounded `TransferBatch` event. | `Sdk.Erc1155` batch predicates and effects; `MultiToken` gains the two entries. `NativeFx.eventScalarSupported` admits a bounded array field, `LogError.maxLogDataWords` grows to hold two offsets, two lengths, and `2n` elements, and topic0 renders `uint256[]`. A throwaway spike on 2026-09-04 showed `pf` already compiles an entry `(BoundedVec Address 4) (BoundedVec UInt256 4) : BoundedVec UInt256 4` to ABI `balanceOfBatch(address[],uint256[]) returns (uint256[])`, so the view needs no codec change. The result must be built as `{ length, values := #v[...] }`; a `{ v with length := ... }` update is refused. The event is the compiler work. | `Tests.EvmErc1155Spec`; `anvil_multitoken.sh` decodes `TransferBatch` and `balanceOfBatch` | Yes. The "ERC-1155 dynamic batches" line becomes "bounded batches of at most `n`"; rows 10 and 21 stay PARTIAL with a narrower gap |
+| 3 | Outbound receiver and signer checks through typed CALL with the `magicBytes4` policy: `onERC721Received`, `onERC1155Received`, and ERC-1271 `isValidSignature` with a `BoundedBytes 65` signature. | Depends on Phase 1. `Sdk.Erc721`/`Sdk.Erc1155` safe-transfer decisions; `Sdk.Ierc1271` bounded check. | Anvil gates against a Solidity receiver and a Solidity ERC-1271 wallet | Yes. Row 12 flips ABSENT to PARTIAL (`absentCount` 9, `blockedCount` 9, `partialCount` 21). The callback line narrows to "receiving hooks"; calling a known hook with a fixed ABI is in |
+| Never | Delegatecall proxies, CREATE and CREATE2 factories, account abstraction, Governor, raw calldata | | | Stay listed below |
+
 ## Permanent non-goals
 
 The following do not become supported merely because OZ has a module with a similar name:
