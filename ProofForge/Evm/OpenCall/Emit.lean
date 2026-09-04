@@ -31,6 +31,9 @@ structure Context (σ : Type) where
   rememberWide : σ → String → String → σ
   lookupWide : σ → String → Option String
   valKey : Ops.Val → String
+  /-- The calldata payload offset when these limbs are one packed `bytes` entry parameter, so
+  the tail is one `calldatacopy` instead of one store per byte. -/
+  calldataBytes : Array Ops.Val → Option String := fun _ => none
   indent : String
 
 private def Context.callResult (context : Context σ) : CallResult.Emit.Context σ :=
@@ -75,12 +78,14 @@ private def storeArg (indent : String) (offset headWords : Nat) (type : ArgType)
   else
     throw "extract/unsupported: open-call argument type has no EVM word carrier"
 
-/-- Write the tail of one `bytes` argument at `memory[tailAt, tailAt + 32 + ceil32(capacity))`
-from its materialized limbs, the runtime length then `capacity` bytes: the length, then only the
-first `length` bytes over a zeroed region, so the calldata is canonical however the inactive
-source slots read. Returns the Yul name bound to the padded payload length. -/
-private def storeBytesTail (context : Context σ) (tailAt capacity : Nat) (parts : Array String)
-    (st : σ) : Except String (String × String × σ) := do
+/-- Write the tail of one `bytes` argument at `memory[tailAt, tailAt + 32 + ceil32(capacity))`:
+the runtime length, then the payload padded to a word. Limbs that are exactly one packed-bytes
+entry parameter copy its padded payload from calldata, whose padding the entry decoder proved
+zero. Any other limbs store only the first `length` bytes over a zeroed region, so the calldata
+is canonical however the inactive source slots read. Returns the Yul name bound to the padded
+payload length. -/
+private def storeBytesTail (context : Context σ) (tailAt capacity : Nat) (limbs : Array Ops.Val)
+    (parts : Array String) (st : σ) : Except String (String × String × σ) := do
   let indent := context.indent
   unless parts.size == 1 + capacity do
     throw "extract/unsupported: open-call bytes argument limbs do not match its capacity"
@@ -90,15 +95,20 @@ private def storeBytesTail (context : Context σ) (tailAt capacity : Nat) (parts
     indent ++ "let " ++ len ++ " := " ++ parts[0]! ++ nl ++
     indent ++ "if gt(" ++ len ++ ", " ++ toString capacity ++ ") { " ++ revert0 ++ " }" ++ nl ++
     indent ++ "mstore(" ++ toString tailAt ++ ", " ++ len ++ ")" ++ nl
+  let (padded, st) := context.fresh st
+  let paddedLet :=
+    indent ++ "let " ++ padded ++ " := and(add(" ++ len ++ ", 31), not(31))" ++ nl
+  if let some payload := context.calldataBytes limbs then
+    txt := txt ++ paddedLet ++
+      indent ++ "calldatacopy(" ++ toString dataAt ++ ", " ++ payload ++ ", " ++ padded ++ ")" ++ nl
+    return (txt, padded, st)
   for word in [0:(capacity + 31) / 32] do
     txt := txt ++ indent ++ "mstore(" ++ toString (dataAt + word * 32) ++ ", 0)" ++ nl
   for i in [0:capacity] do
     txt := txt ++
       indent ++ "if gt(" ++ len ++ ", " ++ toString i ++ ") { mstore8(" ++
         toString (dataAt + i) ++ ", " ++ parts[1 + i]! ++ ") }" ++ nl
-  let (padded, st) := context.fresh st
-  txt := txt ++ indent ++ "let " ++ padded ++ " := and(add(" ++ len ++ ", 31), not(31))" ++ nl
-  return (txt, padded, st)
+  return (txt ++ paddedLet, padded, st)
 
 private def planCacheKey (context : Context σ) (plan : OpenCall.Plan Ops.Val) (word : Nat) :
     String :=
@@ -143,7 +153,8 @@ def emitPlan (context : Context σ) (plan : OpenCall.Plan Ops.Val) (st : σ) :
   if let some i := plan.args.findIdx? (·.type.isDynamic) then
     let .bytes capacity := plan.args[i]!.type
       | throw "extract/unsupported: open-call bytes argument lost its capacity"
-    let (tailTxt, padded, st') ← storeBytesTail context plan.headBytes capacity args[i]! st
+    let (tailTxt, padded, st') ←
+      storeBytesTail context plan.headBytes capacity plan.args[i]!.parts args[i]! st
     txt := txt ++ tailTxt
     inSizeTail := some padded
     st := st'

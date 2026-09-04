@@ -176,9 +176,48 @@ private def renderUtf8Guard (namePrefix indent lengthName : String)
   indent ++ "}" ++ nl ++
   indent ++ "if " ++ need ++ " { " ++ revert0 ++ " }" ++ nl
 
+/-- A packed `bytes` / `string` entry parameter stays in calldata. The decoder binds its length
+to the local `arg{lengthWord}` and its payload offset to `abi_bytes{lengthWord}`; the
+`capacity` byte words that follow the length in the local frame are never bound. Binding them
+cost one local plus one guarded load per byte at the entry and one guarded store per byte at
+every forward, about 3.5 KB of runtime code for a 65-byte signature. -/
+structure PackedBytesFrame where
+  lengthWord : Nat
+  capacity : Nat
+  deriving Repr, BEq
+
+namespace PackedBytesFrame
+
+def dataName (frame : PackedBytesFrame) : String :=
+  "abi_bytes" ++ toString frame.lengthWord
+
+def holdsByte (frame : PackedBytesFrame) (word : Nat) : Bool :=
+  frame.lengthWord < word && word ≤ frame.lengthWord + frame.capacity
+
+/-- Byte word `word` read in place. The decoder proved the padding zero, but another dynamic
+tail may follow the padded payload, so a slot at or past the length reads as zero by the guard
+rather than by position. -/
+def byteExpr (frame : PackedBytesFrame) (word : Nat) : String :=
+  let slot := toString (word - frame.lengthWord - 1)
+  "mul(lt(" ++ slot ++ ", arg" ++ toString frame.lengthWord ++ "), byte(0, calldataload(add(" ++
+    frame.dataName ++ ", " ++ slot ++ "))))"
+
+end PackedBytesFrame
+
+/-- The packed-bytes frames of an entry, in plan order over the local frame. -/
+def packedBytesFrames (plans : Array Codec.AbiInputPlan) : Array PackedBytesFrame := Id.run do
+  let mut frames : Array PackedBytesFrame := #[]
+  let mut localWord := 0
+  for plan in plans do
+    if let some bytes := plan.packedBytes then
+      frames := frames.push { lengthWord := localWord, capacity := bytes.capacity }
+    localWord := localWord + plan.wordCount
+  return frames
+
 /-- Interpret EVM input plans into one fixed local frame. Static values load from the top-level
 head. Dynamic plans require canonical contiguous tails, cap their runtime length, zero inactive
-locals, and validate packed bytes or every active array word before contract CFG execution. -/
+array locals, and validate packed bytes or every active array word before contract CFG
+execution. Packed bytes bind only their length and payload offset (`PackedBytesFrame`). -/
 def renderEntryArgs (plans : Array Codec.AbiInputPlan)
     (paramTypes : Array Core.Codec.Scalar) : Except String String := do
   let localWords := plans.foldl (init := 0) fun count plan => count + plan.wordCount
@@ -260,6 +299,7 @@ def renderEntryArgs (plans : Array Codec.AbiInputPlan)
           throw "evm/codec: malformed packed bytes v1 input plan"
         let dataName := "abi_data" ++ toString dynamicIndex
         let lengthName := "arg" ++ toString localWord
+        let payloadName := PackedBytesFrame.dataName { lengthWord := localWord, capacity := bytes.capacity }
         let paddedName := "abi_padded" ++ toString dynamicIndex
         let paddingIndex := "abi_padding_i" ++ toString dynamicIndex
         out := out ++
@@ -269,10 +309,8 @@ def renderEntryArgs (plans : Array Codec.AbiInputPlan)
           "        if gt(add(" ++ dataName ++ ", 32), abi_size) { " ++ revert0 ++ " }" ++ nl ++
           "        let " ++ lengthName ++ " := calldataload(add(4, " ++ dataName ++ "))" ++ nl ++
           "        if gt(" ++ lengthName ++ ", " ++ toString bytes.capacity ++ ") { " ++
-            revert0 ++ " }" ++ nl
-        for i in [1:plan.wordCount] do
-          out := out ++ "        let arg" ++ toString (localWord + i) ++ " := 0" ++ nl
-        out := out ++
+            revert0 ++ " }" ++ nl ++
+          "        let " ++ payloadName ++ " := add(add(4, " ++ dataName ++ "), 32)" ++ nl ++
           "        let " ++ paddedName ++ " := and(add(" ++ lengthName ++
             ", 31), not(31))" ++ nl ++
           "        abi_tail := add(abi_tail, add(32, " ++ paddedName ++ "))" ++ nl ++
@@ -280,19 +318,13 @@ def renderEntryArgs (plans : Array Codec.AbiInputPlan)
           "        for { let " ++ paddingIndex ++ " := " ++ lengthName ++ " } lt(" ++
             paddingIndex ++ ", " ++ paddedName ++ ") { " ++ paddingIndex ++ " := add(" ++
             paddingIndex ++ ", 1) } {" ++ nl ++
-          "          if byte(0, calldataload(add(add(add(4, " ++ dataName ++ "), 32), " ++
-            paddingIndex ++ "))) { " ++ revert0 ++ " }" ++ nl ++
+          "          if byte(0, calldataload(add(" ++ payloadName ++ ", " ++ paddingIndex ++
+            "))) { " ++ revert0 ++ " }" ++ nl ++
           "        }" ++ nl
         if bytes.validateUtf8 then
           out := out ++ renderUtf8Guard "abi_utf8_" "        " lengthName (fun i =>
-            "byte(0, calldataload(add(add(add(4, " ++ dataName ++ "), 32), " ++ i ++ ")))"
+            "byte(0, calldataload(add(" ++ payloadName ++ ", " ++ i ++ ")))"
           ) dynamicIndex
-        for i in [0:bytes.capacity] do
-          out := out ++ "        if gt(" ++ lengthName ++ ", " ++ toString i ++ ") {" ++ nl ++
-            "          arg" ++ toString (localWord + 1 + i) ++
-              " := byte(0, calldataload(add(add(add(4, " ++ dataName ++ "), 32), " ++
-              toString i ++ ")))" ++ nl ++
-            "        }" ++ nl
         headWord := headWord + 1
         localWord := localWord + plan.wordCount
         dynamicIndex := dynamicIndex + 1
