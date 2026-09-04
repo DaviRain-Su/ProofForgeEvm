@@ -74,4 +74,24 @@ contract OpenCallTarget {
     }
 
     function deposit() external payable {}
+
+    /// What a bounded `bytes` argument decodes to, plus the keccak of the whole calldata so
+    /// the gate can compare the caller's encoding byte for byte with `cast calldata`.
+    uint256 public sunkTag;
+    uint256 public sunkLength;
+    bytes32 public sunkHash;
+    bytes32 public sunkCalldataHash;
+
+    function sink(uint256 tag, bytes calldata data) external {
+        sunkTag = tag;
+        sunkLength = data.length;
+        sunkHash = keccak256(data);
+        sunkCalldataHash = keccak256(msg.data);
+    }
+
+    /// Keccak of the whole calldata, so a STATICCALL read proves its selector, head, tail,
+    /// and size at once against `cast calldata`.
+    function calldataHash(bytes calldata) external pure returns (bytes32) {
+        return keccak256(msg.data);
+    }
 }

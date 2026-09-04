@@ -2880,6 +2880,30 @@ private def decodeLogTail (env : Environment) (name : String) (elementType : Exp
     elements := elements ++ parts
   return { name, elementType := scalar, capacity, length, elements }
 
+/-- Literal capacity of a `BoundedBytes n` field type. -/
+private def boundedBytesFieldType? (ty : Expr) : Option Nat := do
+  let ty := ty.consumeMData
+  guard (ty.getAppFn.constName? == some boundedBytesName)
+  let args := ty.getAppArgs
+  guard (args.size == 1)
+  natLiteral? args[0]!
+
+/-- The limbs of a `BoundedBytes` open-call argument: the runtime length leaf, then
+`field.values[slot]` for every slot, read through the same `GetElem` path a source
+`bytes.values[0].toUInt64` takes. -/
+private def decodeBytesArgParts (env : Environment) (capacity : Nat) (field : Expr) :
+    Option (Array Ops.Val) := do
+  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.length)
+    #[mkNatLit capacity, field])
+  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.values)
+    #[mkNatLit capacity, field]
+  let mut parts : Array Ops.Val := #[length]
+  for slot in [0:capacity] do
+    let byte ← val env
+      (mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro])
+    parts := parts.push byte
+  return parts
+
 private def isEvmLogTypedApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped || endsWith e ".evmLogTyped"
 
@@ -3062,8 +3086,9 @@ private def isAnyOpenCallApp (e : Expr) : Bool :=
   isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
     (openStaticShapeOf e).isSome
 
-/-- Preserve a typed open-call constructor as one ABI plan. Names and closed scalar types stay
-structured; unsupported shapes must not degrade to raw calldata. -/
+/-- Preserve a typed open-call constructor as one ABI plan. Names, closed scalar types, and the
+literal capacity of a `BoundedBytes` field stay structured; unsupported shapes must not degrade
+to raw calldata. -/
 private def decodeOpenCallArgs (env : Environment) (applied : Expr) :
     Except String (String × Array (Evm.OpenCall.Arg Ops.Val)) :=
   let applied := peelLets (strip applied)
@@ -3095,20 +3120,34 @@ private def decodeOpenCallArgs (env : Environment) (applied : Expr) :
                 | return .error "open-call lost field metadata"
               unless explicitEventFieldBinder fieldName binderInfo do
                 return .error "open-call fields must be explicitly named"
-              let some scalar := eventScalarOfLeanType domain
-                | return .error "open-call field type is not a closed EVM scalar"
-              unless Evm.OpenCall.argScalarSupported scalar do
-                return .error "open-call field type is not a closed EVM scalar"
               let fieldName := fieldName.toString
               if fieldName.isEmpty || names.contains fieldName then
                 return .error "open-call field names must be unique"
               let some fieldExpr :=
                   applied.getAppArgs[applied.getAppArgs.size - ctor.numFields + fieldIndex]?
                 | return .error "open-call lost field value"
-              let some parts := eventPartsOf env scalar (peelLets (strip fieldExpr))
-                | return .error "open-call field is not a scalar value"
+              let fieldExpr := peelLets (strip fieldExpr)
+              let arg : Evm.OpenCall.Arg Ops.Val ←
+                match boundedBytesFieldType? domain with
+                | some capacity =>
+                  let argType := Evm.OpenCall.ArgType.bytes capacity
+                  unless argType.supported do
+                    return .error "open-call bytes argument exceeds the bounded bytes capacity"
+                  unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxBytesArgs do
+                    return .error "open-call supports at most one bytes argument"
+                  let some parts := decodeBytesArgParts env capacity fieldExpr
+                    | return .error "open-call bytes argument is not a bounded bytes value"
+                  pure { name := fieldName, type := argType, parts }
+                | none =>
+                  let some scalar := eventScalarOfLeanType domain
+                    | return .error "open-call field type is not a closed EVM scalar"
+                  unless Evm.OpenCall.argScalarSupported scalar do
+                    return .error "open-call field type is not a closed EVM scalar"
+                  let some parts := eventPartsOf env scalar fieldExpr
+                    | return .error "open-call field is not a scalar value"
+                  pure { name := fieldName, type := .scalar scalar, parts }
               names := names.push fieldName
-              args := args.push { name := fieldName, type := scalar, parts }
+              args := args.push arg
               type := body
             if !Evm.OpenCall.isIdent name then
               return .error "open-call constructor name must be a Solidity identifier"
