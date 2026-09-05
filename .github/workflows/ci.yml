@@ -166,6 +166,9 @@ jobs:
       - name: Check ERC-20 vesting honesty
         run: python3 scripts/check_vest20_honesty.py
 
+      - name: Check vesting rotation honesty
+        run: python3 scripts/check_vest_rotate_honesty.py
+
       - name: Check ERC-721 3-arg safeTransferFrom honesty
         run: python3 scripts/check_safe3_honesty.py
 

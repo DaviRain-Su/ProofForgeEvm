@@ -4,8 +4,9 @@ import ProofForge.Evm.Emit
 import Examples.Evm.VestLink
 
 /-!
-W4 slice 3: bounded single-beneficiary native-ETH vesting — linear schedule, constrained
-partial release, ordered reentrancy lock, fail-closed schedule gates, EtherReleased typed event.
+Bounded native-ETH vesting: linear schedule, stored beneficiary with one-step
+`transferOwnership`, OZ `release()` plus partial `release(uint256)`, ordered reentrancy lock,
+fail-closed schedule gates, EtherReleased typed event. `temporaryGapCount` stays 0.
 -/
 
 namespace Tests.EvmVestingSpec
@@ -26,8 +27,8 @@ private def expectVestLink : CommandElabM Unit := do
     | .ok source => pure source
     | .error reason => throwError reason
   for ixName in
-      #["beneficiary", "start", "duration", "endTime", "releasedOf", "releasable", "vestedAmount",
-        "release", "receive"] do
+      #["beneficiary", "owner", "start", "duration", "endTime", "releasedOf", "releasable",
+        "vestedAmount", "transferOwnership", "release", "receive"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"VestLink is missing {ixName}"
   let program ←
@@ -38,10 +39,17 @@ private def expectVestLink : CommandElabM Unit := do
     | throwError "VestLink EVM IR lost releasable"
   unless releasableEntry.retTypes == #[.uint 256] do
     throwError s!"releasable return types drifted: {repr releasableEntry.retTypes}"
-  let some releaseEntry := program.entries.find? (·.ixName == "release")
-    | throwError "VestLink EVM IR lost release"
-  unless releaseEntry.selector == ProofForge.Crypto.Keccak.selector "release" #["uint256"] do
-    throwError s!"release selector drifted: {releaseEntry.selector}"
+  let releaseSelectors :=
+    (program.entries.filter (·.ixName == "release")).map (·.selector)
+  unless releaseSelectors.contains (ProofForge.Crypto.Keccak.selector "release" #["uint256"]) &&
+      releaseSelectors.contains (ProofForge.Crypto.Keccak.selector "release" #[]) &&
+      releaseSelectors.size == 2 do
+    throwError s!"release selectors drifted: {releaseSelectors}"
+  let some transferEntry := program.entries.find? (·.ixName == "transferOwnership")
+    | throwError "VestLink EVM IR lost transferOwnership"
+  unless transferEntry.selector ==
+      ProofForge.Crypto.Keccak.selector "transferOwnership" #["address"] do
+    throwError s!"transferOwnership selector drifted: {transferEntry.selector}"
   let abi ←
     match Emit.emitAbiChecked program with
     | .ok abi => pure abi
@@ -54,6 +62,9 @@ private def expectVestLink : CommandElabM Unit := do
       abi.contains "\"name\":\"releasable\"" &&
       abi.contains "\"name\":\"vestedAmount\"" &&
       abi.contains "\"name\":\"release\"" &&
+      abi.contains "\"name\":\"owner\"" &&
+      abi.contains "\"name\":\"transferOwnership\"" &&
+      abi.contains "\"name\":\"OwnershipTransferred\"" &&
       abi.contains "\"type\":\"receive\"" &&
       abi.contains "\"name\":\"EtherReleased\"" do
     throwError s!"VestLink ABI lost vesting surface:\n{abi}"
@@ -68,7 +79,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "5d69d8c33919f012" do
+  unless IR.digestHex program == "98d9e9f0644d9029" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

@@ -43,6 +43,8 @@ bytecode="$(tr -d '\n\r ' < "$bin")"
 mock_hex="$(tr -d '\n\r ' < "$mock_out")"
 
 beneficiary="$("$cast" wallet address --private-key "$private_key")"
+other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+other="$("$cast" wallet address --private-key "$other_key")"
 now_block="$(pf_evm_to_dec "$("$cast" block --rpc-url "$rpc" latest --json | "$python" -I -S -c 'import json,sys; print(json.load(sys.stdin)["timestamp"])')")"
 start_ts=$((now_block + 100))
 duration=1000
@@ -110,6 +112,16 @@ token_lc="$("$python" -I -S -c "print('$token'.lower())")"
 pf_evm_typed_event_check "$abi" "$release_receipt" ERC20Released "$topic0" \
   "{\"token\": \"$token_lc\", \"amount\": 250}" "quarter ERC-20 release"
 
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'transferOwnership(address)' "$other" >/dev/null 2>&1; then
+  echo "FAIL: non-owner transferOwnership unexpectedly succeeded" >&2
+  exit 1
+fi
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'transferOwnership(address)' "$other" >/dev/null
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'beneficiary()(address)')" \
+  "$other" "ERC-20 beneficiary rotated"
+
 after_end=$((start_ts + duration + 1))
 "$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$after_end" >/dev/null
 "$cast" rpc --rpc-url "$rpc" evm_mine >/dev/null
@@ -118,13 +130,15 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasable(address
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'release(address)' "$token" >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$beneficiary")" \
-  1000 "beneficiary received the full token A allocation"
+  250 "original beneficiary kept the quarter"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$other")" \
+  750 "rotated beneficiary received the remainder"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$addr")" \
   0 "vesting wallet empty of token A"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'release(address)' "$token_b" >/dev/null
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token_b" 'balanceOf(address)(uint256)' "$beneficiary")" \
-  400 "beneficiary received the full token B allocation"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token_b" 'balanceOf(address)(uint256)' "$other")" \
+  400 "rotated beneficiary received the full token B allocation"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address)(uint256)' "$token_b")" \
   400 "released map credits token B"
 
@@ -175,6 +189,6 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   exit 1
 fi
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$beneficiary")" \
-  1000 "STATICCALL mutation left the real beneficiary token A balance unchanged"
+  250 "STATICCALL mutation left the original beneficiary token A balance unchanged"
 
-echo "evm-anvil-vest20link: ok (ERC-20 map release + ERC20Released + two-token independence + CALL mutation, $runtime_bytes bytes)"
+echo "evm-anvil-vest20link: ok (ERC-20 map release + rotation + ERC20Released + two-token independence + CALL mutation, $runtime_bytes bytes)"
