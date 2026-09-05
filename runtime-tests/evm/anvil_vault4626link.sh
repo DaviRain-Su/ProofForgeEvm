@@ -66,6 +66,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint
 # 2^128 * 2^128 overflows checked 256-bit mul; mulDiv keeps a 512-bit intermediate.
 two128=340282366920938463463374607431768211456
 two128_plus_8=340282366920938463463374607431768211464
+two128_plus_9=340282366920938463463374607431768211465
 two128_minus_8=340282366920938463463374607431768211448
 two128_minus_9=340282366920938463463374607431768211447
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
@@ -81,7 +82,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(ui
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewMint(uint256)(uint256)' "$two128")" \
   "$two128_minus_8" "full-precision previewMint(2^128) is 2^128-8"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewWithdraw(uint256)(uint256)' "$two128")" \
-  "$two128" "full-precision previewWithdraw(2^128) is 2^128"
+  "$two128_plus_9" "full-precision previewWithdraw(2^128) is 2^128+9"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
   'redeem(uint256,address,address)' "$two128" "$sender" "$sender" >/dev/null
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
