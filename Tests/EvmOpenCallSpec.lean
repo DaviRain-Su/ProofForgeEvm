@@ -155,7 +155,7 @@ private def labelPlan : OpenCall.Plan Ops.Val := {
   | .ok sel => sel == Keccak.selector "label" #["string"] &&
       sel != Keccak.selector "label" #["bytes"]
   | .error _ => false
-#guard (labelPlan.canonical fun _ => "x").endsWith ",text:string8(x,x,x,x,x,x,x,x,x))"
+#guard (labelPlan.canonical fun _ => "x").endsWith ";text:string8(x,x,x,x,x,x,x,x,x))"
 
 private def mixedPacked : OpenCall.Plan Ops.Val :=
   { sinkPlan with args := #[bytesArg "a" 4, stringArgPlan "b" 4] }
@@ -540,7 +540,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "1ad6b5bb1eea81d4"
+#guard Registry.digestOf "EvmOpenCall" == some "1142d3c26257ecb1"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
