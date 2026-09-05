@@ -13,8 +13,9 @@ it, `checkNow` is the combined fail-closed `isValidSignatureNow` gate, and `vali
 path over `OpenCall.staticTryMagic`. No row
 is a temporary gap. The witness still exposes `isTemporaryGap` / `temporaryGapCount` so the
 next reopened row has a home. IERC1155 `DuplicateId()` is a named PARTIAL bound, not a
-temporary gap. Row 5 VestLink ETH-only is the same kind of named restriction:
-`temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PARTIAL / 9 ABSENT /
+temporary gap. Row 5 VestLink ETH-only is the same kind of named restriction.
+Row 12 remaining named restriction is that the receiving side stays a permanent non-goal,
+plus wider payloads. `temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PARTIAL / 9 ABSENT /
 9 blocked / 0 gap. Rows 8 and 19 stay PARTIAL after issuer `permit` on `Erc20Meta`.
 Row 16 stays PARTIAL after `cancelAuthorization`.
 -/
