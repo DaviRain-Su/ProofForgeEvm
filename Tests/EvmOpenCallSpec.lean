@@ -542,7 +542,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "31027ffbd5535bb0"
+#guard Registry.digestOf "EvmOpenCall" == some "fc3e7d9256bdf997"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
