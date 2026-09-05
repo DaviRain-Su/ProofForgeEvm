@@ -5,10 +5,11 @@ namespace ProofForge.Evm.Sdk.Vesting
 /-!
 # EVM SDK bounded single-beneficiary vesting schedule
 
-Compile-time beneficiary plus constructor immutables for `start` and `duration`, one native-ETH
-`released` counter, and a linear vesting curve over `Context.timestamp`. There is no ERC-20 token
-map, beneficiary rotation, or arbitrary schedule mutation. Consumers must validate `canSchedule`
-before advertising schedule views or `release`.
+Compile-time beneficiary plus constructor immutables for `start` and `duration`, a linear vesting
+curve over `Context.timestamp`, and typed `EtherReleased` / `ERC20Released` logs. Native-ETH
+accounting is one `released` counter on `VestLink`. ERC-20 accounting is a hashed `token → paid`
+map on `Vest20Link`. There is no beneficiary rotation or arbitrary schedule mutation. Consumers
+must validate `canSchedule` before advertising schedule views or `release`.
 
 Fail-closed gates:
 - Zero beneficiary or overflowing `start + duration` should yield zero views and no release.
@@ -24,6 +25,11 @@ def u64Max : UInt64 := ~~~(0 : UInt64)
 /-- True when the beneficiary address is nonzero. -/
 @[pf_inline] def wellFormedBeneficiary (beneficiary : Address) : Bool :=
   !Address.isZero beneficiary
+
+/-- True when an ERC-20 token address is nonzero. Zero is refused by the consumer, not by the
+closed CALL. -/
+@[pf_inline] def wellFormedToken (token : Address) : Bool :=
+  !Address.isZero token
 
 /-- True when `start + duration` fits in `UInt64`. Duration zero is always well-formed. -/
 @[pf_inline] def wellFormedDuration (start duration : UInt64) : Bool :=
@@ -72,5 +78,18 @@ namespace Log
   Event.emit (Notice.EtherReleased amount)
 
 end Log
+
+/-- Canonical OpenZeppelin `ERC20Released` typed event. -/
+inductive TokenNotice where
+  | ERC20Released (token : Event.Indexed Address) (amount : UInt256)
+  deriving Repr, DecidableEq, Inhabited
+
+namespace TokenLog
+
+/-- LOG2 `ERC20Released(address indexed token, uint256 amount)`. -/
+@[pf_inline] def erc20Released (token : Address) (amount : UInt256) : UInt64 :=
+  Event.emit (TokenNotice.ERC20Released (Event.indexed token) amount)
+
+end TokenLog
 
 end ProofForge.Evm.Sdk.Vesting

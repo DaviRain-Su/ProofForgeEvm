@@ -48,6 +48,7 @@ import Examples.Evm.Erc20Meta
 import Examples.Evm.SafePay
 import Examples.Evm.RoyaltyArt
 import Examples.Evm.VestLink
+import Examples.Evm.Vest20Link
 import Examples.Evm.ProofLink
 import Examples.Evm.HeaderLink
 import Examples.Evm.AdminDelayLink

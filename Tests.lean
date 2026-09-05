@@ -28,6 +28,7 @@ import Tests.EvmReceiverSpec
 import Tests.EvmIerc6372Spec
 import Tests.EvmEcdsaSpec
 import Tests.EvmVestingSpec
+import Tests.EvmVest20Spec
 import Tests.EvmMerkleProofSpec
 import Tests.EvmBlockHeaderSpec
 import Tests.EvmCanPublishSpec
