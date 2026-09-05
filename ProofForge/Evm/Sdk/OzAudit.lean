@@ -28,7 +28,7 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   only-owner reverts `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`, and
   `Vest20Link` as the dual-asset wallet (`release()` native ETH plus `release(address)` ERC-20),
   and Ownable2Step `transferOwnership` / `acceptOwnership` / `pendingOwner`.
-  Remaining named gap on that row is VestLink remains ETH-only.
+  Remaining named restriction on that row is VestLink is the ETH-only smaller profile (Vest20Link is dual-asset).
   Row 1 (`access/Ownable`, `Ownable2Step`) stays PARTIAL after TwoStepCounter/Credits CREATE
   reverts `OwnableInvalidOwner(address)` and logs `OwnershipTransferred(address(0), owner)`.
   Remaining named gap on that row is nominate-zero still `ZeroAddress()`.

@@ -106,6 +106,15 @@ private def expectVestLink : CommandElabM Unit := do
     throwError "VestLink must not advertise Unauthorized"
   unless !abi.contains "\"name\":\"releasedOf\"" do
     throwError "VestLink must not advertise releasedOf"
+  unless !program.entries.any (fun e =>
+      e.ixName == "release" && e.selector == ProofForge.Crypto.Keccak.selector "release" #["address"]) do
+    throwError "VestLink must not advertise release(address)"
+  unless !program.entries.any (fun e =>
+      e.ixName == "released" &&
+        e.selector == ProofForge.Crypto.Keccak.selector "released" #["address"]) do
+    throwError "VestLink must not advertise released(address)"
+  unless !abi.contains "\"name\":\"ERC20Released\"" do
+    throwError "VestLink must not advertise ERC20Released"
   unless ctorHasOwnableInvalidOwner program.constructor.ops do
     throwError "VestLink constructor lost OwnableInvalidOwner revert"
   unless ctorHasConstructorTransferred program.constructor.ops do

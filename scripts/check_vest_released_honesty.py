@@ -3,7 +3,7 @@
 
 VestLink and Vest20Link publish OZ released() / released(address). Sdk.OzAudit.temporaryGapCount
 stays 0. A doc that still lists releasedOf as the current remainder is a lying inventory.
-Remaining remainder is VestLink remains ETH-only.
+Remaining named restriction is VestLink is the ETH-only smaller profile (Vest20Link is dual-asset).
 
 Usage:
     python3 scripts/check_vest_released_honesty.py
@@ -39,7 +39,7 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
-        "Remaining named gap on that row is VestLink remains ETH-only.",
+        "Remaining named restriction on that row is VestLink is the ETH-only smaller profile (Vest20Link is dual-asset).",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Vesting.lean",

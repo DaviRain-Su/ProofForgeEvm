@@ -12,7 +12,8 @@ signature could not enter a frame. `Sdk.Ierc1271.checkSignature` over `OpenCall.
 it, and `checkNow` is the combined `isValidSignatureNow` gate on the same PARTIAL row. No row
 is a temporary gap. The witness still exposes `isTemporaryGap` / `temporaryGapCount` so the
 next reopened row has a home. IERC1155 `DuplicateId()` is a named PARTIAL bound, not a
-temporary gap: `temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PARTIAL / 9 ABSENT /
+temporary gap. Row 5 VestLink ETH-only is the same kind of named restriction:
+`temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PARTIAL / 9 ABSENT /
 9 blocked / 0 gap.
 -/
 
@@ -74,6 +75,11 @@ open Lean Elab Command
 #guard !OzAudit.isBlocked 16
 #guard !OzAudit.isAbsent 16
 #guard OzAudit.blockedRowTagged 16
+#guard OzAudit.pathTagOf 5 == OzAudit.tagFinanceVesting
+#guard OzAudit.statusOf 5 == OzAudit.statusPartial
+#guard !OzAudit.isBlocked 5
+#guard !OzAudit.isTemporaryGap 5
+#guard OzAudit.nonGoalTagOf 5 == OzAudit.nonGoalNone
 #guard OzAudit.pathTagOf 12 == OzAudit.tagIface1271
 #guard OzAudit.statusOf 12 == OzAudit.statusPartial
 #guard !OzAudit.isAbsent 12

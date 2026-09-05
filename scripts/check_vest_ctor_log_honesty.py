@@ -5,7 +5,8 @@ VestLink and Vest20Link emit OwnershipTransferred(address(0), owner) at CREATE.
 That log is the else-arm of the OwnableInvalidOwner dropped-let plus Emit
 ctorOpIsAllowedPrelude. Sdk.OzAudit.temporaryGapCount stays 0. A doc that still
 lists the constructor log as the VestingWallet gap is a lying inventory.
-The remaining named gap is VestLink remains ETH-only.
+The remaining named restriction is VestLink is the ETH-only smaller profile
+(Vest20Link is dual-asset).
 Only-owner reverts are OwnableUnauthorizedAccount(address).
 
 Usage:
