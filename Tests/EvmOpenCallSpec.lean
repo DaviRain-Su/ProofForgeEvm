@@ -115,6 +115,8 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 #guard !(OpenCall.ArgType.string 66).supported
 #guard OpenCall.ArgType.supported (.string Codec.maxPackedBytesCapacity)
 #guard (OpenCall.ArgType.string 8).isPacked
+#guard (OpenCall.ArgType.string 8).validateUtf8
+#guard !(OpenCall.ArgType.bytes 8).validateUtf8
 #guard !(OpenCall.ArgType.bytes 8).isString
 #guard (OpenCall.ArgType.array 4 .uint256).limbCount == 17
 #guard (OpenCall.ArgType.array 4 .uint256).abiType matches .ok "uint256[]"
@@ -540,7 +542,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "1142d3c26257ecb1"
+#guard Registry.digestOf "EvmOpenCall" == some "31027ffbd5535bb0"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -702,6 +704,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost sinkString"
   let some _hashString := source.methods.find? (·.ixName == "hashString")
     | throwError "open-call example lost hashString"
+  let some badUtf8 := source.methods.find? (·.ixName == "sinkBadUtf8")
+    | throwError "open-call example lost sinkBadUtf8"
   let some hook := source.methods.find? (·.ixName == "notifyReceiver")
     | throwError "open-call example lost notifyReceiver"
   let some batchHook := source.methods.find? (·.ixName == "notifyBatchReceiver")
@@ -743,9 +747,20 @@ elab "#pf_guard_evm_open_call_source" : command => do
       labelPlans[0]!.kind == .call && labelPlans[0]!.policy == .contractSuccess &&
       labelPlans[0]!.args.size == 1 &&
       labelPlans[0]!.args[0]!.name == "text" && labelPlans[0]!.args[0]!.type == .string 8 &&
+      labelPlans[0]!.args[0]!.type.validateUtf8 &&
       labelPlans[0]!.args[0]!.parts.size == 9 &&
       labelPlans[0]!.inSize == 68 && labelPlans[0]!.abiTypes matches .ok #["string"] do
     throwError s!"sinkString plan diverged: {repr labelPlans}"
+  let badPlans := sourceOpenCalls badUtf8.ops
+  unless badPlans.size == 1 && badPlans[0]!.name == "label" &&
+      badPlans[0]!.kind == .call && badPlans[0]!.policy == .contractSuccess &&
+      badPlans[0]!.args.size == 1 &&
+      badPlans[0]!.args[0]!.type == .string 8 &&
+      badPlans[0]!.args[0]!.type.validateUtf8 &&
+      badPlans[0]!.args[0]!.parts ==
+        #[.lit 2, .lit 0xc0, .lit 0x80, .lit 0, .lit 0, .lit 0, .lit 0, .lit 0, .lit 0] &&
+      badPlans[0]!.abiTypes matches .ok #["string"] do
+    throwError s!"sinkBadUtf8 plan diverged: {repr badPlans}"
   -- The hook's magic is the plan's own selector, computed from the constructor, never written
   -- by the author.
   let hookPlans := sourceOpenCalls hook.ops
@@ -836,8 +851,10 @@ elab "#pf_guard_evm_open_call_source" : command => do
     throwError "open-call Yul omitted the bytes tail offset, size, or selector"
   unless yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "label" #["string"]})" &&
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "stringHash" #["string"]})" &&
-      !yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "label" #["bytes"]})" do
-    throwError "open-call Yul omitted the string selector or used the bytes selector"
+      !yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "label" #["bytes"]})" &&
+      yul.contains "let oc_utf8_need0 := 0" &&
+      yul.contains "if oc_utf8_need0 { revert(0, 0) }" do
+    throwError "open-call Yul omitted the string selector, used the bytes selector, or lost the UTF-8 guard"
   unless yul.contains "if iszero(eq(returndatasize(), 96))" &&
       yul.contains "if iszero(eq(returndatasize(), 128))" &&
       yul.contains ", 1) { revert(0, 0) }" &&

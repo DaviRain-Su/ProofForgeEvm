@@ -219,6 +219,19 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'hashString(address,string)(bytes32)' \
   echo "FAIL: nine-char string passed the BoundedString 8 entry" >&2
   exit 1
 fi
+# A source-built malformed UTF-8 string must revert at the emit scanner, before CALL.
+# The last successful `string_case` left labeledLength at 8.
+sender="$("$cast" wallet address --private-key "$private_key")"
+pf_evm_require_empty_revert "$addr" "$sender" \
+  "$("$cast" calldata 'sinkBadUtf8(address)' "$target")" \
+  "constructed malformed UTF-8 reverts empty before CALL"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'sinkBadUtf8(address)' "$target" >/dev/null 2>&1; then
+  echo "FAIL: constructed malformed UTF-8 reached the callee" >&2
+  exit 1
+fi
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'labeledLength()(uint256)')" 8 \
+  "malformed UTF-8 never reached label"
 
 # Reads in value position. Each guard is observed on both sides against the mock's state, the
 # call inside an untaken branch is proven absent through echo(0)'s two-word frame, and the

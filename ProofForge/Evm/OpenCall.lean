@@ -72,6 +72,11 @@ def ArgType.isPacked : ArgType → Bool
   | .bytes _ | .string _ => true
   | _ => false
 
+/-- Packed ABI `string` validates UTF-8 at the emit boundary. `bytes` does not. -/
+def ArgType.validateUtf8 : ArgType → Bool
+  | .string _ => true
+  | _ => false
+
 def ArgType.isArray : ArgType → Bool
   | .array .. => true
   | _ => false

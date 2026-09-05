@@ -170,6 +170,19 @@ calldata the callee received. -/
 def hashString (_s : State) (target : Address) (text : BoundedString 8) : UInt256 :=
   OpenCall.staticWord target (Remote.stringHash text)
 
+/-- Source-built `BoundedString` from scalar bytes. The emit path must revert before CALL when
+the bytes are not UTF-8; forwarding an ABI-decoded `string` already passed the entry scanner. -/
+@[pf_entry]
+def sinkBadUtf8 (_s : State) (target : Address) : Except Error (State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ dummy := 0, flag := _s.flag, target := _s.target },
+      OpenCall.callSuccess target (Remote.label {
+        length := 2,
+        values := #v[0xc0, 0x80, 0, 0, 0, 0, 0, 0]
+      }))
+  else
+    .error .overflow
+
 /-- A STATICCALL read as a guard: `ping()` runs only when the callee's `isOn()` answers true.
 The read is materialized before the branch, so a false word never reaches the CALL. -/
 @[pf_entry]

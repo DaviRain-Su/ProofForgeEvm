@@ -133,8 +133,9 @@ def renderTaggedGuards (indent argPrefix : String)
   return out
 
 /-- Render one strict Unicode-scalar UTF-8 scanner over a target-owned byte accessor. Input
-calldata and output memory supply different accessors without duplicating the validation policy. -/
-private def renderUtf8Guard (namePrefix indent lengthName : String)
+calldata, OpenCall string tails, and output memory supply different accessors without duplicating
+the validation policy. -/
+def renderUtf8Guard (namePrefix indent lengthName : String)
     (byteAt : String → String) (index : Nat) : String :=
   let i := namePrefix ++ "i" ++ toString index
   let need := namePrefix ++ "need" ++ toString index

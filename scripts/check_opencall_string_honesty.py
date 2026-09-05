@@ -3,6 +3,7 @@
 
 ArgType.string is ABI string. The packed limb frame is shared with bytes.
 A second packed field stays refused. { v with length } stays fail closed.
+A source-built malformed UTF-8 string reverts at emit before CALL.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -26,6 +27,8 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "OpenCall.lean", "| string (capacity : Nat)"),
     (ROOT / "ProofForge" / "Evm" / "OpenCall.lean", '| .string _ => pure "string"'),
     (ROOT / "ProofForge" / "Evm" / "OpenCall.lean", "def ArgType.isPacked : ArgType → Bool"),
+    (ROOT / "ProofForge" / "Evm" / "OpenCall.lean", "def ArgType.validateUtf8 : ArgType → Bool"),
+    (ROOT / "ProofForge" / "Evm" / "OpenCall" / "Emit.lean", 'Codec.Emit.renderUtf8Guard "oc_utf8_"'),
     (
         ROOT / "ProofForge" / "Extract" / "Decode.lean",
         "let argType := Evm.OpenCall.ArgType.string capacity",
@@ -33,13 +36,17 @@ REQUIRED = (
     (ROOT / "Examples" / "Evm" / "EvmOpenCall.lean", "| label (text : BoundedString 8)"),
     (ROOT / "Examples" / "Evm" / "EvmOpenCall.lean", "def sinkString"),
     (ROOT / "Examples" / "Evm" / "EvmOpenCall.lean", "def hashString"),
+    (ROOT / "Examples" / "Evm" / "EvmOpenCall.lean", "def sinkBadUtf8"),
     (ROOT / "Tests" / "EvmOpenCallSpec.lean", "(OpenCall.ArgType.string 8).abiType matches .ok \"string\""),
     (ROOT / "Tests" / "EvmOpenCallSpec.lean", "sel != Keccak.selector \"label\" #[\"bytes\"]"),
     (ROOT / "Tests" / "EvmOpenCallSpec.lean", "labelPlans[0]!.args[0]!.type == .string 8"),
+    (ROOT / "Tests" / "EvmOpenCallSpec.lean", 'yul.contains "let oc_utf8_need0 := 0"'),
+    (ROOT / "Tests" / "EvmOpenCallSpec.lean", "source.methods.find? (·.ixName == \"sinkBadUtf8\")"),
     (ROOT / "runtime-tests" / "evm" / "OpenCallTarget.sol", "function label(string calldata text) external"),
     (ROOT / "runtime-tests" / "evm" / "OpenCallTarget.sol", "function stringHash(string calldata) external pure returns (bytes32)"),
     (ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh", "sinkString(address,string)"),
     (ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh", "hashString(address,string)(bytes32)"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh", "sinkBadUtf8(address)"),
     (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "BoundedString OpenCall args as ABI `string`"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
 )
