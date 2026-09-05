@@ -1575,7 +1575,7 @@ private partial def openStaticRead? (env : Environment) (e : Expr) (carrier limb
       else none
   | _ => none
 
-private def authorizationStateRead? (env : Environment) (e : Expr) : Option Ops.Val :=
+private partial def authorizationStateRead? (env : Environment) (e : Expr) : Option Ops.Val :=
   let args := e.getAppArgs
   match nthFromEnd args 1, nthFromEnd args 0 with
   | some authorizer, some nonce =>

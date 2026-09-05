@@ -47,6 +47,8 @@ REQUIRED = (
         ROOT / "ProofForge" / "Evm" / "ClosedCall/Emit.lean",
         "iszero(iszero(sload(",
     ),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "aa7369d7796f83fc"'),
+    (ROOT / "Tests" / "EvmErc3009Spec.lean", '"aa7369d7796f83fc"'),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
