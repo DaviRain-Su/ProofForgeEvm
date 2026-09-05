@@ -128,6 +128,7 @@ run_guards() {
   python3 scripts/check_product_honesty.py
   python3 scripts/check_vest20_honesty.py
   python3 scripts/check_safe3_honesty.py
+  python3 scripts/check_erc721_enum_honesty.py
 }
 
 run_lean() {

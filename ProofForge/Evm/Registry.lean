@@ -49,6 +49,7 @@ def entries : Array Entry := #[
   { name := "Vault4626Link", digest := "c41f3a3daa52f335" },
   { name := "NineLink", digest := "62828ef440d0ecdb" },
   { name := "Collectible", digest := "19250482fbd80a03" },
+  { name := "Gallery", digest := "9fdfc61d00414718" },
   { name := "Badge", digest := "bdb4d1d1a4e9baa7" },
   { name := "TipJar", digest := "33bcabf27f5b9523" },
   { name := "Lang", digest := "d2a43e6bf208bff0" },
