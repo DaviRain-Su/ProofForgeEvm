@@ -3,8 +3,8 @@
 
 A shipped bounded profile leaves blocked remainders, not a Yes cell.
 Coverage table rows 3, 16, and 22 (OzAudit 2, 16, 22) were the liars that
-closed blocked work. Row 13 names virtual-offset inflation defense and
-flash/777/1363 as remainders rather than starting with Yes. DONE rows may
+closed blocked work. Row 13 names flash/777/1363 as remainders rather
+than starting with Yes. DONE rows may
 still say Yes.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
@@ -53,7 +53,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
-        "There is no virtual-offset inflation defense, fee accrual, flash-loan",
+        "There is no fee accrual, flash-loan",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc6909.lean",
@@ -90,7 +90,7 @@ REQUIRED = (
     ),
     (
         BACKLOG,
-        "Named remainder: virtual-offset inflation defense and flash/777/1363",
+        "Named remainder: flash/777/1363. This expansion shipped floor",
     ),
     (
         BACKLOG,

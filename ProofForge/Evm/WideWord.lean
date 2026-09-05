@@ -54,6 +54,9 @@ inductive Query where
   /-- Floor `(a * b) / denom` with a 512-bit intermediate; `limb` is 0..3.
   Twelve operands: a0..a3, b0..b3, d0..d3. -/
   | mulDiv256 (limb : Nat)
+  /-- Floor `(a * (b + 1)) / (denom + 1)` (OZ virtual offset 0); `limb` is 0..3.
+  Twelve operands: a0..a3, b0..b3, d0..d3. -/
+  | mulDivOffset256 (limb : Nat)
   /-- Sorted commutative `keccak256` of two `bytes32` values; `limb` is 0..3 (w0 lowest). -/
   | keccak256Pair32 (limb : Nat)
   /-- Fold a length plus leaf and eight siblings, then compare with a root; 41 operands. -/
@@ -67,7 +70,7 @@ inductive Query where
 def Query.arity : Query → Nat
   | .ge256 | .compare256 _ | .bitwise256 _ _ | .checkedDivMod256 _ _ | .arith256 _ _
   | .keccak256Pair32 _ | .eqBytes32 => 8
-  | .mulmod256 _ | .mulDiv256 _ => 12
+  | .mulmod256 _ | .mulDiv256 _ | .mulDivOffset256 _ => 12
   | .merkleVerify256 => 41
   | .ecrecover20 _ => 13
   | .not256 _ => 4
@@ -80,7 +83,7 @@ def Query.wellFormed : Query → Bool
   | .bitwise256 _ limb | .not256 limb | .shift256 _ limb |
       .checkedDivMod256 _ limb => limb ≤ 3
   | .arith256 op limb => op ≤ 4 && limb ≤ 3
-  | .mulmod256 limb | .mulDiv256 limb => limb ≤ 3
+  | .mulmod256 limb | .mulDiv256 limb | .mulDivOffset256 limb => limb ≤ 3
   | .keccak256Pair32 limb => limb ≤ 3
   | .merkleVerify256 | .eqBytes32 => true
   | .ecrecover20 limb => limb ≤ 2
@@ -119,6 +122,9 @@ def Query.canonical (renderValue : V → String) (operands : Array V) : Query �
         s!"({renderOperands renderValue operands})"
   | .mulDiv256 limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.mulDiv256 {limb}" ++
+        s!"({renderOperands renderValue operands})"
+  | .mulDivOffset256 limb =>
+      s!"ext.ProofForge.Evm.Ops.ValKind.mulDivOffset256 {limb}" ++
         s!"({renderOperands renderValue operands})"
   | .keccak256Pair32 limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.keccak256Pair32 {limb}" ++
