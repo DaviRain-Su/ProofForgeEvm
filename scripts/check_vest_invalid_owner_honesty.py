@@ -2,9 +2,9 @@
 """Fail when product docs still list Vest CREATE OwnableInvalidOwner as missing.
 
 VestLink and Vest20Link revert OwnableInvalidOwner(address) on CREATE of
-address(0) and on transferOwnership(address(0)). Sdk.OzAudit.temporaryGapCount
-stays 0. A doc that still lists that selector as the VestingWallet gap is a
-lying inventory. Remaining remainder is no Ownable2Step.
+address(0). transferOwnership(address(0)) now reverts ZeroAddress(), matching Ownable2Step.
+Sdk.OzAudit.temporaryGapCount stays 0. A doc that still lists CREATE OwnableInvalidOwner as the
+VestingWallet gap is a lying inventory. Remaining remainder is VestLink remains ETH-only.
 
 Usage:
     python3 scripts/check_vest_invalid_owner_honesty.py
@@ -36,8 +36,6 @@ STALE_PHRASES = (
 REQUIRED = (
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner beneficiary"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner beneficiary"),
-    (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner newOwner"),
-    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner newOwner"),
     (ROOT / "ProofForge" / "Evm" / "NativeFx.lean", "revertOwnableInvalidOwner"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "Base.lean", "def ownableInvalidOwner"),
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "evmRevertOwnableInvalidOwner"),

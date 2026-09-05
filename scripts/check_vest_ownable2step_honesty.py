@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Fail when product docs still list ABI releasedOf as the VestingWallet gap.
+"""Fail when product docs still list Vest Ownable2Step as the VestingWallet gap.
 
-VestLink and Vest20Link publish OZ released() / released(address). Sdk.OzAudit.temporaryGapCount
-stays 0. A doc that still lists releasedOf as the current remainder is a lying inventory.
-Remaining remainder is VestLink remains ETH-only.
+VestLink and Vest20Link transferOwnership nominates and logs OwnershipTransferStarted.
+acceptOwnership rotates the stored beneficiary. Nominate-zero reverts ZeroAddress().
+Sdk.OzAudit.temporaryGapCount stays 0. A doc that still lists no Ownable2Step as the
+current remainder is a lying inventory. Remaining remainder is VestLink remains ETH-only.
 
 Usage:
-    python3 scripts/check_vest_released_honesty.py
+    python3 scripts/check_vest_ownable2step_honesty.py
 """
 
 from __future__ import annotations
@@ -24,14 +25,20 @@ SCAN_ROOTS = (
 )
 
 STALE_PHRASES = (
-    "no Ownable2Step and ABI `releasedOf`",
-    "Remaining named gap on that row is no Ownable2Step and ABI `releasedOf`",
+    "Remaining named gap on that row is no Ownable2Step.",
+    "no Ownable2Step; VestLink remains ETH-only",
+    "is one-step Ownable rotation",
 )
 
 REQUIRED = (
-    (ROOT / "Examples" / "Evm" / "VestLink.lean", "def released (s : State) : UInt256"),
-    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def released__eth"),
-    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def released__token"),
+    (ROOT / "Examples" / "Evm" / "VestLink.lean", "def acceptOwnership"),
+    (ROOT / "Examples" / "Evm" / "VestLink.lean", "def pendingOwner"),
+    (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.zeroAddress"),
+    (ROOT / "Examples" / "Evm" / "VestLink.lean", "Ownable.Log.ownershipTransferStarted"),
+    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def acceptOwnership"),
+    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def pendingOwner"),
+    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.zeroAddress"),
+    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Ownable.Log.ownershipTransferStarted"),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "339e0387add0c97e"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "339e0387add0c97e"'),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "d105175ac1ff37bd"'),
@@ -43,26 +50,27 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Vesting.lean",
-        "ABI `released()` / `released(address)` match OZ",
+        "Nominate-zero on",
     ),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", "Vest20Link lost released()"),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", "Vest20Link lost released(address)"),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", "Vest20Link must not advertise releasedOf"),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", "VestLink must not advertise releasedOf"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "released()(uint256)"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "released()(uint256)"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "released(address)(uint256)"),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", '"acceptOwnership", "pendingOwner"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", "OwnershipTransferStarted"),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", '"acceptOwnership", "pendingOwner"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", "OwnershipTransferStarted"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "acceptOwnership()"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "OwnershipTransferStarted"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "acceptOwnership()"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "OwnershipTransferStarted"),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
-        "ABI `released()` / `released(address)`",
-    ),
-    (
-        ROOT / "docs" / "product" / "writing-contracts.md",
-        "`released()` and `released(address)` are the OZ view names",
+        "Vest Ownable2Step nominate plus accept",
     ),
     (
         ROOT / "docs" / "product" / "support-matrix.md",
-        "`released()` / `released(address)` are the OZ view names",
+        "acceptOwnership",
+    ),
+    (
+        ROOT / "docs" / "product" / "writing-contracts.md",
+        "Ownable2Step `transferOwnership` plus `acceptOwnership`",
     ),
 )
 
@@ -96,11 +104,11 @@ def main() -> int:
         if needle not in path.read_text(encoding="utf-8"):
             failures.append(f"{path.relative_to(ROOT)}: missing {needle!r}")
     if failures:
-        print("check_vest_released_honesty: FAIL", file=sys.stderr)
+        print("check_vest_ownable2step_honesty: FAIL", file=sys.stderr)
         for item in failures:
             print(f"  {item}", file=sys.stderr)
         return 1
-    print("check_vest_released_honesty: ok")
+    print("check_vest_ownable2step_honesty: ok")
     return 0
 
 

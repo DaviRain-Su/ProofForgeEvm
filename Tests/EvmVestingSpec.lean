@@ -5,9 +5,9 @@ import Examples.Evm.VestLink
 
 /-!
 Bounded native-ETH vesting: linear schedule with a constructor-stored OZ cliff, stored
-beneficiary with one-step `transferOwnership`, OZ `release()` plus partial `release(uint256)`,
-ordered reentrancy lock, fail-closed schedule gates, EtherReleased typed event.
-`temporaryGapCount` stays 0.
+beneficiary with Ownable2Step `transferOwnership` plus `acceptOwnership`, OZ `release()` plus
+partial `release(uint256)`, ordered reentrancy lock, fail-closed schedule gates, EtherReleased
+typed event. `temporaryGapCount` stays 0.
 -/
 
 namespace Tests.EvmVestingSpec
@@ -49,7 +49,8 @@ private def expectVestLink : CommandElabM Unit := do
     | .error reason => throwError reason
   for ixName in
       #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "released",
-        "releasable", "vestedAmount", "transferOwnership", "release", "receive"] do
+        "releasable", "vestedAmount", "transferOwnership", "acceptOwnership", "pendingOwner",
+        "release", "receive"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"VestLink is missing {ixName}"
   let program ←
@@ -86,12 +87,17 @@ private def expectVestLink : CommandElabM Unit := do
       abi.contains "\"name\":\"release\"" &&
       abi.contains "\"name\":\"owner\"" &&
       abi.contains "\"name\":\"transferOwnership\"" &&
+      abi.contains "\"name\":\"acceptOwnership\"" &&
+      abi.contains "\"name\":\"pendingOwner\"" &&
       abi.contains "\"name\":\"OwnershipTransferred\"" &&
+      abi.contains "\"name\":\"OwnershipTransferStarted\"" &&
       abi.contains "\"type\":\"receive\"" &&
       abi.contains "\"name\":\"EtherReleased\"" do
     throwError s!"VestLink ABI lost vesting surface:\n{abi}"
   unless !abi.contains "\"name\":\"royaltyInfo\"" do
     throwError "VestLink must not grow a royalty surface"
+  unless abi.contains "\"name\":\"ZeroAddress\"" do
+    throwError "VestLink ABI lost ZeroAddress"
   unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
     throwError "VestLink ABI lost OwnableInvalidOwner"
   unless abi.contains "\"name\":\"OwnableUnauthorizedAccount\"" do
