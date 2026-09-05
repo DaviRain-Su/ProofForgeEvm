@@ -6,10 +6,10 @@ namespace ProofForge.Evm.Sdk.Erc4626
 # EVM SDK bounded ERC-4626 vault profile
 
 Compile-time fixed underlying asset, floor `assets * totalSupply / totalAssets` conversion,
-ceiling `previewMint`, and closed ERC-20 call policy helpers. Empty supply is 1:1 so the first
+ceiling `previewMint`, ceiling `previewWithdraw`, and closed ERC-20 call policy helpers. Empty supply is 1:1 so the first
 depositor is not divided by zero. There is no virtual-offset inflation defense, fee accrual, flash-loan
-callback, or dynamic asset rotation. Ceiling `previewWithdraw` and full-precision
-mulDiv stay out. Consumers pair this module with `Fungible.Balances`
+callback, or dynamic asset rotation. Full-precision
+mulDiv stays out. Consumers pair this module with `Fungible.Balances`
 for share ledger storage, `Sdk.Reentrancy` around external asset movement, and closed
 `ERC20` / `SafeErc20` facades.
 
@@ -52,6 +52,19 @@ Full-precision mulDiv and virtual-offset inflation defense stay out. -/
     if UInt256.eq (UInt256.mod prod totalSupply) UInt256.zero then q
     else UInt256.add q ⟨1, 0, 0, 0⟩
 
+/-- Ceiling `assets * totalSupply / totalAssets` when the vault already has shares.
+Empty supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0,
+because checked `UInt256.div` reverts on a zero divisor. A nonzero remainder adds one share.
+Full-precision mulDiv and virtual-offset inflation defense stay out. -/
+@[pf_inline] def sharesForWithdraw (assets totalSupply totalAssets : UInt256) : UInt256 :=
+  if UInt256.eq totalSupply UInt256.zero then assets
+  else if UInt256.eq totalAssets UInt256.zero then UInt256.zero
+  else
+    let prod := UInt256.mul assets totalSupply
+    let q := UInt256.div prod totalAssets
+    if UInt256.eq (UInt256.mod prod totalAssets) UInt256.zero then q
+    else UInt256.add q ⟨1, 0, 0, 0⟩
+
 /-- Floor `assets * totalSupply / totalAssets` when the vault already has shares. Empty
 supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0. -/
 @[pf_inline] def convertToShares (asset : Address)
@@ -74,7 +87,7 @@ supply answers `shares` (1:1). -/
 
 @[pf_inline] def previewWithdraw (asset : Address)
     (assets totalSupply totalAssets : UInt256) : UInt256 :=
-  convertToShares asset assets totalSupply totalAssets
+  if canVault asset then sharesForWithdraw assets totalSupply totalAssets else UInt256.zero
 
 @[pf_inline] def previewRedeem (asset : Address)
     (shares totalSupply totalAssets : UInt256) : UInt256 :=
