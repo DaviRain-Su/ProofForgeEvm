@@ -59,6 +59,7 @@ import Examples.Evm.NineLink
 import Examples.Evm.OwnerLink
 import Examples.Evm.ClockLink
 import Examples.Evm.RecoverLink
+import Examples.Evm.SignerLink
 import Examples.Evm.Capped
 import Examples.Evm.MultiToken
 import Examples.Evm.CraftToken

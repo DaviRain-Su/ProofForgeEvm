@@ -13,9 +13,9 @@ This is an audit witness, not runtime interface discovery: unknown rows fail clo
 Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - tree SHA `641ba990cad2f7f70878e0d66be1bfbef95710e8`
 - 452 `contracts/` tree paths, 367 Solidity sources
-- 32 backlog coverage rows: 2 DONE, 20 PARTIAL, 10 ABSENT (9 blocked by non-goals, 1 implementable
-  gap: row 12, `interfaces/IERC1271.sol`, whose call/result protocol `OpenCall.callMagic` now is; the
-  65-byte signature entry bound is what remains)
+- 32 backlog coverage rows: 2 DONE, 21 PARTIAL, 9 ABSENT (all 9 blocked by non-goals; no
+  implementable gap since row 12, `interfaces/IERC1271.sol`, shipped as `Sdk.Ierc1271.checkSignature`
+  over `OpenCall.callMagic` with the 65-byte signature bound)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal
@@ -33,16 +33,16 @@ def coverageRows : UInt64 := 32
 def doneCount : UInt64 := 2
 
 /-- Rows marked PARTIAL (named restricted profile). -/
-def partialCount : UInt64 := 20
+def partialCount : UInt64 := 21
 
 /-- Rows marked ABSENT (no profile shipped). -/
-def absentCount : UInt64 := 10
+def absentCount : UInt64 := 9
 
 /-- Rows whose remaining gap is blocked by a documented permanent non-goal. -/
 def blockedCount : UInt64 := 9
 
 /-- Rows marked ABSENT without a permanent non-goal blocker (implementable gap). -/
-def temporaryGapCount : UInt64 := 1
+def temporaryGapCount : UInt64 := 0
 
 /-- Authority snapshot: `contracts/` tree paths. -/
 def authorityTreePaths : UInt64 := 452
@@ -242,7 +242,7 @@ def statusOf (row : UInt64) : UInt8 :=
   else if row == 9 then statusPartial
   else if row == 10 then statusPartial
   else if row == 11 then statusDone
-  else if row == 12 then statusAbsent
+  else if row == 12 then statusPartial
   else if row == 13 then statusPartial
   else if row == 14 then statusAbsent
   else if row == 15 then statusPartial

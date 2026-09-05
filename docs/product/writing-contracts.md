@@ -85,9 +85,12 @@ OpenCall.callMagic receiver (Remote.onERC721Received operator origin tokenId dat
 
 For the two token hooks the SDK ships the OZ check ready-made: `Erc721.checkOnReceived` and
 `Erc1155.checkOnReceived` skip a recipient without code and demand the selector from one with
-code. A CALL result is an effect carrier, so it stands only as the entry's result word; a
-`safeTransferFrom` puts the ledger move and the log in the state word and the check under
-`Effect.thenTrue` as the result, and the stores land before the CALL:
+code. `Ierc1271.checkSignature signer hash signature` is the ERC-1271 signer check with a
+65-byte `BoundedBytes` signature (one ECDSA `r ‖ s ‖ v`); it has no code-size branch, because a
+signer without code answers an empty frame and the magic gate refuses it. A CALL result is an
+effect carrier, so it stands only as the entry's result word; a `safeTransferFrom` puts the
+ledger move and the log in the state word and the check under `Effect.thenTrue` as the result,
+and the stores land before the CALL:
 
 ```lean
 .ok ({ dummy := Erc721.transfer owners approvals balances source to tokenId |||
@@ -95,11 +98,21 @@ code. A CALL result is an effect carrier, so it stands only as the entry's resul
   Effect.thenTrue (Erc721.checkOnReceived to Context.caller source tokenId data))
 ```
 
+A signer check has the same shape. `SignerLink.requireSigner` counts the check in the state
+word and carries it in the result word, so a refused signature reverts with the counter where it
+was (`runtime-tests/evm/anvil_signerlink.sh` drives it against a Solidity ERC-1271 wallet):
+
+```lean
+.ok ({ accepted := s.accepted + 1 },
+  Effect.thenTrue (Ierc1271.checkSignature signer hash signature))
+```
+
 The target may be a parameter or a stored `Address`. Arguments are at most eight one-word
 scalars (integers, `Address`, fixed bytes), and one of them may be a `BoundedBytes n` with
-`n ≤ 63`, sent as ABI `bytes` at its runtime length. `string` and arrays are not accepted as
-arguments yet. A STATICCALL read is a value. It can be the body of a view entry, the condition
-of an `if`, an operand of a comparison, or the argument of another call:
+`n ≤ 65` (the packed `bytes` ceiling, one ECDSA signature), sent as ABI `bytes` at its runtime
+length. `string` and arrays are not accepted as arguments yet. A STATICCALL read is a value. It
+can be the body of a view entry, the condition of an `if`, an operand of a comparison, or the
+argument of another call:
 
 ```lean
 -- Run the CALL only when the callee says so. The read happens once, before the branch.
@@ -156,7 +169,7 @@ non-goals.
 2. **Fake guards** — pure-effect methods may need a trivial branch so Extract treats the method as effectful.
 3. **Constructor effects** — deployment-time map writes / logs / value transfers are tightly constrained.
 4. **Events** — closed LOG helpers (`Event.tipped` / `Event.transfer`) plus typed constructors via `Event.emit` and `Event.Indexed` (S1b; see `Examples.Evm.EvmTypedEvents`). Product typed events are **named ABI events** (LOG1–4): topic0 is always the signature hash; ABI JSON is `"anonymous": false`. That is not anonymous LOG0 (a plan-layer geometry only, not a source `Event.emit` shape). Closed ERC-20 `Transfer`/`Approval` are LOG3. `Collectible` / `Badge` emit canonical ERC-721 `Transfer` / `Approval` / `ApprovalForAll` through `Erc721.Log`. `MultiToken` / `CraftToken` emit canonical ERC-1155 `TransferSingle` / `ApprovalForAll` through `Erc1155.Log`; `MultiToken.batchTransferFrom` also emits `TransferBatch`, whose two `uint256[]` fields are bounded dynamic-array tails. A typed event may end with at most two non-indexed `BoundedVec` fields over a closed scalar (at most 63 elements each); they lower to the ABI head-offset plus length-prefixed tail layout, and an indexed array or a scalar declared after an array fails extraction. `TwoStepCounter` / `Credits` emit Ownable2Step `OwnershipTransferStarted` on `transferOwnership` and Ownable `OwnershipTransferred` on `acceptOwnership`/`renounceOwnership`; renunciation clears owner and pending nominee. They also emit Pausable `Paused`/`Unpaused`; `Capped` emits the pause pair. Constructor init stores the owner argument and empty pending state; it does not log. `EvmStaticCounter` / `EvmStaticRoster` emit canonical AccessControl `RoleGranted` / `RoleRevoked` through `Roles.Log` on actual grant/revoke (no `RoleAdminChanged`); `EvmCrew` extends the same pattern to `Roles.Set4`. `EvmQuota` combines `Nonces` and `RateLimit`; stale nonces revert as `Insufficient(current,provided)` and rate exhaustion uses typed `rateLimitExceeded()` (no quota events). Unbounded event payloads are still refused.
-5. **Typed external CALL** — `OpenCall.call` / `callSuccess` / `callValue` / `callMagic` / `staticWord` / `staticWords2` / `staticWords3` / `staticWords4` / `staticBool` / `staticAddress` take a typed `Address` and an inductive constructor (name = ABI function, fields = args; one field may be a `BoundedBytes n` with `n ≤ 63`, sent as ABI `bytes` at its runtime length). The compiler assembles calldata and applies one `CallResult` policy. This is not raw CALL: no selector string, caller-built calldata buffer, `delegatecall`, or CREATE2. Reentrancy is visible to the callee; OpenCall does not insert a guard (see `Examples.Evm.EvmOpenCall`).
+5. **Typed external CALL** — `OpenCall.call` / `callSuccess` / `callValue` / `callMagic` / `staticWord` / `staticWords2` / `staticWords3` / `staticWords4` / `staticBool` / `staticAddress` take a typed `Address` and an inductive constructor (name = ABI function, fields = args; one field may be a `BoundedBytes n` with `n ≤ 65`, sent as ABI `bytes` at its runtime length). The compiler assembles calldata and applies one `CallResult` policy. This is not raw CALL: no selector string, caller-built calldata buffer, `delegatecall`, or CREATE2. Reentrancy is visible to the callee; OpenCall does not insert a guard (see `Examples.Evm.EvmOpenCall`).
 6. **NFT modules** — bounded cores with the three canonical ERC-721 events on Collectible/Badge and the two canonical single-id ERC-1155 events on MultiToken/CraftToken. These advertise IERC165 only; incomplete ERC-721/1155 method surfaces must not claim the standard token ids. `MultiToken` adds a bounded `balanceOfBatch` and `batchTransferFrom` over at most four slots (OZ-shaped `ERC1155InvalidArrayLength` and `ERC1155InsufficientBalance` reverts, OZ log rule of one `TransferBatch` over the submitted slots or `TransferSingle` for a one-slot batch, no receiver hook). `Collectible.safeTransferFrom` and `CraftToken.safeTransferFrom` run the outbound receiver check (`Erc721.checkOnReceived` / `Erc1155.checkOnReceived` over `OpenCall.callMagic`): the ledger move and the log land first, a recipient without code is not called, and a recipient with code must answer the hook with its own selector or the whole transaction reverts; `data` is at most 32 bytes. Not “ship ERC-721/1155” (no receiving side of the hooks, no `onERC1155BatchReceived`, no unbounded batches).
 7. **`Examples.Evm.Token` metadata** — `name` / `symbol` are packed `bytes32` (Anvil gates use that shape). Prefer `Erc20Meta` when external tools expect ERC-20 `string` metadata.
 8. **ERC-20 consumers** — `SafeErc20` / `SafePay` wrap the closed token CALLs. They are not a raw-calldata escape hatch and do not catch-and-retry a failed CALL. `forceApprove` always emits `approve(0)` then `approve(amount)`.

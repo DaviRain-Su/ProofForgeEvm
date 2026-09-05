@@ -33,7 +33,7 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'classifiedCount()
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'blockedCount()(uint64)')" \
   9 "blocked row count"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'temporaryGapCount()(uint64)')" \
-  1 "temporary gap count"
+  0 "temporary gap count"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'isComplete()(bool)')" \
   true "inventory complete"
 
@@ -83,11 +83,13 @@ for row in $(seq 0 31); do
     [[ "$ngtag" == "0" ]] || { echo "FAIL: row $row DONE/PARTIAL but carries non-goal tag" >&2; exit 1; }
   fi
 done
-pf_evm_require_equal "$gaps" 1 "temporary gaps counted row by row"
+pf_evm_require_equal "$gaps" 0 "temporary gaps counted row by row"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
-  'isTemporaryGap(uint64)(bool)' 12)" true "IERC1271 row is the temporary gap"
+  'statusOf(uint64)(uint8)' 12)" 2 "IERC1271 row is PARTIAL"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
-  'isBlocked(uint64)(bool)' 12)" false "IERC1271 row no longer blocked"
+  'isTemporaryGap(uint64)(bool)' 12)" false "IERC1271 row is no longer a temporary gap"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'isBlocked(uint64)(bool)' 12)" false "IERC1271 row not blocked"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'nonGoalTagOf(uint64)(uint8)' 12)" 0 "IERC1271 row carries no non-goal tag"
 
@@ -109,4 +111,4 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'auditOk(uint64,uint64)(bool)' 451 367)" \
   false "stale tree path count fails closed"
 
-echo "evm-anvil-auditlink: ok (OZ audit table witness + per-row classification + non-goal evidence + one temporary gap + fail-closed auditOk gate)"
+echo "evm-anvil-auditlink: ok (OZ audit table witness + per-row classification + non-goal evidence + no temporary gap + fail-closed auditOk gate)"

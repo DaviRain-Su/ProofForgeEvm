@@ -7,9 +7,10 @@ import Examples.Evm.AuditLink
 W5 slice 3: OZ completion-audit permanent non-goal evidence — per-row nonGoalTagOf aligned with
 `oz-sdk-backlog.md` § Permanent non-goals, fail-closed allBlockedRowsTagged gate.
 
-Phase 3 hooks: row 12 (`interfaces/IERC1271.sol`) is the one temporary gap. `OpenCall.callMagic`
-is the call/result protocol its blocker text used to deny, so the row is ABSENT without a
-permanent non-goal, and the witness exposes `isTemporaryGap` / `temporaryGapCount`.
+Phase 3 hooks: row 12 (`interfaces/IERC1271.sol`) was the one temporary gap while the 65-byte
+signature could not enter a frame. `Sdk.Ierc1271.checkSignature` over `OpenCall.callMagic` closes
+it, so the row is PARTIAL, no row is a temporary gap, and the witness still exposes
+`isTemporaryGap` / `temporaryGapCount` so the next reopened row has a home.
 -/
 
 namespace Tests.EvmOzAuditSpec
@@ -20,10 +21,11 @@ open Lean Elab Command
 
 #guard OzAudit.coverageRows == 32
 #guard OzAudit.doneCount == 2
-#guard OzAudit.partialCount == 20
-#guard OzAudit.absentCount == 10
+#guard OzAudit.partialCount == 21
+#guard OzAudit.absentCount == 9
 #guard OzAudit.blockedCount == 9
-#guard OzAudit.temporaryGapCount == 1
+#guard OzAudit.temporaryGapCount == 0
+#guard OzAudit.absentCount == OzAudit.blockedCount + OzAudit.temporaryGapCount
 #guard OzAudit.classifiedCount == 32
 #guard OzAudit.isComplete
 #guard OzAudit.allRowsClassified
@@ -70,10 +72,10 @@ open Lean Elab Command
 #guard !OzAudit.isAbsent 16
 #guard OzAudit.blockedRowTagged 16
 #guard OzAudit.pathTagOf 12 == OzAudit.tagIface1271
-#guard OzAudit.statusOf 12 == OzAudit.statusAbsent
-#guard OzAudit.isAbsent 12
+#guard OzAudit.statusOf 12 == OzAudit.statusPartial
+#guard !OzAudit.isAbsent 12
 #guard !OzAudit.isBlocked 12
-#guard OzAudit.isTemporaryGap 12
+#guard !OzAudit.isTemporaryGap 12
 #guard OzAudit.nonGoalTagOf 12 == OzAudit.nonGoalNone
 #guard OzAudit.blockedRowTagged 12
 #guard OzAudit.blockedImpliesAbsent 12
@@ -94,8 +96,8 @@ private def countStatus (status : UInt8) : Nat := Id.run do
   return n
 
 #guard countStatus OzAudit.statusDone == 2
-#guard countStatus OzAudit.statusPartial == 20
-#guard countStatus OzAudit.statusAbsent == 10
+#guard countStatus OzAudit.statusPartial == 21
+#guard countStatus OzAudit.statusAbsent == 9
 
 private def countBlocked : Nat := Id.run do
   let mut n : Nat := 0
@@ -113,7 +115,7 @@ private def countTemporaryGap : Nat := Id.run do
       n := n + 1
   return n
 
-#guard countTemporaryGap == 1
+#guard countTemporaryGap == 0
 
 private def auditLinkState : Examples.Evm.AuditLink.State :=
   { dummy := 0 }
@@ -170,7 +172,7 @@ private def expectAuditLink : CommandElabM Unit := do
       abi.contains "\"name\":\"isClassified\"" &&
       abi.contains "\"name\":\"auditOk\"" do
     throwError s!"AuditLink ABI lost audit surface:\n{abi}"
-  unless IR.digestHex program == "62c5b84cc38d9613" do
+  unless IR.digestHex program == "ad40c48e855ad5ef" do
     throwError s!"AuditLink digest drifted: {IR.digestHex program}"
   logInfo m!"auditlink: digest={IR.digestHex program} abi-ok"
 

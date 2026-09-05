@@ -102,7 +102,7 @@ def statusOf (_s : State) (row : UInt64) : UInt8 :=
   else if row == 9 then 2
   else if row == 10 then 2
   else if row == 11 then 1
-  else if row == 12 then 3
+  else if row == 12 then 2
   else if row == 13 then 2
   else if row == 14 then 3
   else if row == 15 then 2
@@ -137,10 +137,11 @@ def isBlocked (_s : State) (row : UInt64) : Bool :=
   else if row == 31 then true
   else false
 
-/-- ABSENT without a permanent non-goal: row 12, `interfaces/IERC1271.sol`. -/
+/-- ABSENT without a permanent non-goal. No row today: row 12, `interfaces/IERC1271.sol`, was the
+last one and shipped as `Sdk.Ierc1271`; the view stays so the next reopened row has a home. -/
 @[pf_entry]
-def isTemporaryGap (_s : State) (row : UInt64) : Bool :=
-  row == 12
+def isTemporaryGap (_s : State) (_row : UInt64) : Bool :=
+  false
 
 @[pf_entry]
 def nonGoalTagOf (_s : State) (row : UInt64) : UInt8 :=
