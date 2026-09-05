@@ -163,6 +163,9 @@ jobs:
       - name: Check IERC1271 false vs revert honesty
         run: python3 scripts/check_ierc1271_bool_honesty.py
 
+      - name: Check IERC1271 receiving-side non-goal honesty
+        run: python3 scripts/check_ierc1271_receiving_honesty.py
+
       - name: Check DuplicateId product honesty
         run: python3 scripts/check_product_honesty.py
 

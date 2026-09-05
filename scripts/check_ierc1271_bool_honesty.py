@@ -40,7 +40,7 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
-        "Remaining: receiving side, wider payloads",
+        "The receiving side stays a permanent non-goal. Wider payloads stay the 65-byte bound.",
     ),
     (ROOT / "docs" / "product" / "support-matrix.md", "Ierc1271.validNow"),
     (ROOT / "runtime-tests" / "evm" / "anvil_signerlink.sh", "tryNow(address,bytes32,bytes)"),

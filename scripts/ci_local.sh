@@ -126,6 +126,7 @@ run_guards() {
   python3 scripts/check_no_sorry.py
   python3 scripts/check_signature_now_honesty.py
   python3 scripts/check_ierc1271_bool_honesty.py
+  python3 scripts/check_ierc1271_receiving_honesty.py
   python3 scripts/check_product_honesty.py
   python3 scripts/check_vest20_honesty.py
   python3 scripts/check_vest_rotate_honesty.py

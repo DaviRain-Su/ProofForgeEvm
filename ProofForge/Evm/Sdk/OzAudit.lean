@@ -16,7 +16,9 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
 - 32 backlog coverage rows: 2 DONE, 21 PARTIAL, 9 ABSENT (all 9 blocked by non-goals; no
   implementable gap since row 12, `interfaces/IERC1271.sol`, shipped `checkSignature` and
   `checkNow` over the 65-byte signature bound, and `validSignature` / `validNow` over
-  `OpenCall.staticTryMagic` (OZ `false` instead of revert). Rows 10 and 21 (`IERC1155` /
+  `OpenCall.staticTryMagic` (OZ `false` instead of revert). Row 12 stays PARTIAL.
+  Remaining named restriction is the receiving side (a permanent non-goal) and wider payloads.
+  Rows 10 and 21 (`IERC1155` /
   `token/ERC1155`) stay PARTIAL because batches are bounded. `DuplicateId()` is that profile's
   fail-closed bound versus OZ in-order duplicate application, not a `temporaryGapCount` row.
   Rows 9 and 20 (`IERC721` / `token/ERC721`) stay PARTIAL after `Gallery` shipped bounded

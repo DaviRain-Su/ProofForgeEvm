@@ -25,10 +25,15 @@ STALE_PHRASES = (
     "permit is closed call/internal",
     "no pause / permit /",
     "extensions/permit-votes remain PARTIAL).",
+    "Yes — W5 slice 4 shipped bounded string metadata SDK",
+    "Yes — W5 slice 4 shipped `Sdk.Erc20Meta`",
 )
 
 ABSENT = (
     (ROOT / "Examples" / "Evm" / "Erc20Meta.lean", "def nonceOf"),
+    (ROOT / "Examples" / "Evm" / "Erc20Meta.lean", "def getVotes"),
+    (ROOT / "Examples" / "Evm" / "Erc20Meta.lean", "def getPastVotes"),
+    (ROOT / "Examples" / "Evm" / "Token.lean", "def getVotes"),
     (ROOT / "runtime-tests" / "evm" / "anvil_erc20meta.sh", "nonceOf(address)"),
 )
 
@@ -54,6 +59,14 @@ REQUIRED = (
     (ROOT / "runtime-tests" / "evm" / "anvil_erc20meta.sh", "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)"),
     (ROOT / "runtime-tests" / "evm" / "anvil_erc20meta.sh", "DOMAIN_SEPARATOR()(bytes32)"),
     (ROOT / "runtime-tests" / "evm" / "anvil_erc20meta.sh", "nonces(address)(uint256)"),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "No remaining implementable slice. W5 slice 4 shipped bounded string metadata SDK",
+    ),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "No remaining implementable slice. W5 slice 4 shipped `Sdk.Erc20Meta`",
+    ),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "this expansion shipped issuer permit on `Erc20Meta`",

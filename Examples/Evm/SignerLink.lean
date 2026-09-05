@@ -9,6 +9,7 @@ the 65-byte `r ‖ s ‖ v` through `Ecdsa.recover`. A refused check reverts and
 where it was. `tryNow` is the OZ `false` path: `Ierc1271.validNow` over a STATICCALL, so a
 refused signature answers `false` and leaves `accepted` in place. Driven in
 `runtime-tests/evm/anvil_signerlink.sh` against a Solidity ERC-1271 wallet and against an EOA.
+This contract does not implement `isValidSignature`.
 -/
 
 namespace Examples.Evm.SignerLink
