@@ -20,7 +20,7 @@ plus wider payloads. `temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PART
 Row 16 stays PARTIAL after `cancelAuthorization`.
 Row 16 remaining named restriction is the remaining draft interfaces.
 Row 2 remaining named restriction is enumeration/manager.
-Row 13 remaining named restriction is flash/777/1363.
+Row 13 remaining named restriction is dynamic exchange-rate vault math plus flash/777/1363.
 Row 22 remaining named restriction is dynamic multi-id registration.
 Row 1 nominate-zero nominates the zero address (OZ cancel).
 VestLink and Vest20Link ship `renounceOwnership`.

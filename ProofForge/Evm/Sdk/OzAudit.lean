@@ -45,7 +45,7 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   Remaining named restriction on that row is enumeration/manager.
   Row 13 (`IERC3156*` / `IERC4626` / `IERC6909`) stays PARTIAL after bounded 1:1 ERC-4626 and
   fixed-id ERC-6909.
-  Remaining named restriction on that row is flash/777/1363.
+  Remaining named restriction on that row is dynamic exchange-rate vault math plus flash/777/1363.
   Row 22 (`token/ERC6909`) stays PARTIAL after bounded fixed-id ERC-6909.
   Remaining named restriction on that row is dynamic multi-id registration.
   Row 1 (`access/Ownable`, `Ownable2Step`) stays PARTIAL after TwoStepCounter/Credits CREATE

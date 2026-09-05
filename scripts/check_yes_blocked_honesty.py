@@ -2,8 +2,10 @@
 """Fail when a PARTIAL coverage row still lists Implementable as Yes.
 
 A shipped bounded profile leaves blocked remainders, not a Yes cell.
-Coverage table rows 3, 13, 16, and 22 (OzAudit 2, 13, 16, 22) were the liars.
-DONE rows may still say Yes. Sdk.OzAudit.temporaryGapCount stays 0.
+Coverage table rows 3, 16, and 22 (OzAudit 2, 16, 22) were the liars that
+closed blocked work. Row 13 names dynamic exchange-rate vault math as a
+remainder rather than starting with Yes. DONE rows may still say Yes.
+Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
     python3 scripts/check_yes_blocked_honesty.py
@@ -32,7 +34,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
-        "Remaining named restriction on that row is flash/777/1363.",
+        "Remaining named restriction on that row is dynamic exchange-rate vault math plus flash/777/1363.",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
@@ -69,7 +71,7 @@ REQUIRED = (
     ),
     (
         ROOT / "Tests" / "EvmOzAuditSpec.lean",
-        "Row 13 remaining named restriction is flash/777/1363.",
+        "Row 13 remaining named restriction is dynamic exchange-rate vault math plus flash/777/1363.",
     ),
     (
         ROOT / "Tests" / "EvmOzAuditSpec.lean",
@@ -85,7 +87,7 @@ REQUIRED = (
     ),
     (
         BACKLOG,
-        "No remaining implementable slice. W5 slice 7 shipped bounded 1:1 ERC-4626 vault profile",
+        "Named remainder: dynamic exchange-rate vault math",
     ),
     (
         BACKLOG,
