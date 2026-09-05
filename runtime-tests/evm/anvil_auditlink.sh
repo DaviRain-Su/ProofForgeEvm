@@ -31,7 +31,9 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'coverageRows()(ui
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'classifiedCount()(uint64)')" \
   32 "classified row count"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'blockedCount()(uint64)')" \
-  10 "blocked row count"
+  9 "blocked row count"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'temporaryGapCount()(uint64)')" \
+  0 "temporary gap count"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'isComplete()(bool)')" \
   true "inventory complete"
 
@@ -54,23 +56,42 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'isBlocked(uint64)(bool)' 2)" \
   false "access/extensions not blocked"
 
+# Every ABSENT row is either blocked by a tagged permanent non-goal or a temporary gap with no
+# tag, never both and never neither; DONE/PARTIAL rows are neither.
+gaps=0
 for row in $(seq 0 31); do
   classified="$("$cast" call --rpc-url "$rpc" "$addr" "isClassified(uint64)(bool)" "$row")"
   status="$("$cast" call --rpc-url "$rpc" "$addr" "statusOf(uint64)(uint8)" "$row")"
   tag="$("$cast" call --rpc-url "$rpc" "$addr" "pathTagOf(uint64)(uint8)" "$row")"
   blocked="$("$cast" call --rpc-url "$rpc" "$addr" "isBlocked(uint64)(bool)" "$row")"
+  gap="$("$cast" call --rpc-url "$rpc" "$addr" "isTemporaryGap(uint64)(bool)" "$row")"
+  ngtag="$("$cast" call --rpc-url "$rpc" "$addr" "nonGoalTagOf(uint64)(uint8)" "$row")"
   [[ "$classified" == "true" ]] || { echo "FAIL: row $row unclassified" >&2; exit 1; }
   [[ "$tag" != "0" ]] || { echo "FAIL: row $row missing path tag" >&2; exit 1; }
   if [[ "$status" == "3" ]]; then
-    [[ "$blocked" == "true" ]] || { echo "FAIL: row $row ABSENT but not blocked" >&2; exit 1; }
-    ngtag="$("$cast" call --rpc-url "$rpc" "$addr" "nonGoalTagOf(uint64)(uint8)" "$row")"
-    [[ "$ngtag" != "0" ]] || { echo "FAIL: row $row blocked but missing non-goal tag" >&2; exit 1; }
+    if [[ "$blocked" == "true" ]]; then
+      [[ "$gap" == "false" ]] || { echo "FAIL: row $row blocked and a temporary gap" >&2; exit 1; }
+      [[ "$ngtag" != "0" ]] || { echo "FAIL: row $row blocked but missing non-goal tag" >&2; exit 1; }
+    else
+      [[ "$gap" == "true" ]] || { echo "FAIL: row $row ABSENT, not blocked, not a temporary gap" >&2; exit 1; }
+      [[ "$ngtag" == "0" ]] || { echo "FAIL: row $row temporary gap but carries non-goal tag" >&2; exit 1; }
+      gaps=$((gaps + 1))
+    fi
   else
     [[ "$blocked" == "false" ]] || { echo "FAIL: row $row DONE/PARTIAL but blocked" >&2; exit 1; }
-    ngtag="$("$cast" call --rpc-url "$rpc" "$addr" "nonGoalTagOf(uint64)(uint8)" "$row")"
+    [[ "$gap" == "false" ]] || { echo "FAIL: row $row DONE/PARTIAL but a temporary gap" >&2; exit 1; }
     [[ "$ngtag" == "0" ]] || { echo "FAIL: row $row DONE/PARTIAL but carries non-goal tag" >&2; exit 1; }
   fi
 done
+pf_evm_require_equal "$gaps" 0 "temporary gaps counted row by row"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'statusOf(uint64)(uint8)' 12)" 2 "IERC1271 row is PARTIAL"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'isTemporaryGap(uint64)(bool)' 12)" false "IERC1271 row is no longer a temporary gap"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'isBlocked(uint64)(bool)' 12)" false "IERC1271 row not blocked"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'nonGoalTagOf(uint64)(uint8)' 12)" 0 "IERC1271 row carries no non-goal tag"
 
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'nonGoalTagOf(uint64)(uint8)' 18)" \
@@ -90,4 +111,4 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'auditOk(uint64,uint64)(bool)' 451 367)" \
   false "stale tree path count fails closed"
 
-echo "evm-anvil-auditlink: ok (OZ audit table witness + per-row classification + non-goal evidence + fail-closed auditOk gate)"
+echo "evm-anvil-auditlink: ok (OZ audit table witness + per-row classification + non-goal evidence + no temporary gap + fail-closed auditOk gate)"

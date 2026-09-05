@@ -54,11 +54,11 @@ def ArgType.abiType : ArgType → Except String String
   | .scalar type => Codec.abiType type
   | .bytes _ => pure "bytes"
 
-/-- A `bytes` capacity is bounded by the same local-frame ceiling the entry decoder admits, so
+/-- A `bytes` capacity is bounded by the same packed-bytes ceiling the entry decoder admits, so
 every `BoundedBytes` an entry can receive can be forwarded. -/
 def ArgType.supported : ArgType → Bool
   | .scalar type => argScalarSupported type
-  | .bytes capacity => 1 + capacity ≤ Codec.maxBoundedArrayLocalWords
+  | .bytes capacity => capacity ≤ Codec.maxPackedBytesCapacity
 
 def ArgType.canonical : ArgType → String
   | .scalar type => toString (repr type)

@@ -48,12 +48,27 @@ arrays carry exactly the active slots in the same order. The event is a typed fr
 bounded dynamic-array tails; the EVM emitter writes the ABI head (one offset word per array),
 then each array's length and its first `length` slots.
 
+## Receiver hook
+
+`checkOnReceived` is OZ's `ERC1155Utils.checkOnERC1155Received` over `OpenCall.callMagic`: a
+recipient with code must answer `onERC1155Received(address,address,uint256,uint256,bytes)` with
+exactly one word equal to that selector, left-aligned, or the transaction reverts
+(`revert(0, 0)`, so no partial state remains and the callee's reason is not bubbled); a recipient
+without code is not called. The result is a CALL carrier, so it stands only as the entry's result
+word under `Effect.thenTrue`, with the balance movement and `Log.transferSingle` in the state
+word; the extractor orders the stores, then the log, then the hook, so a receiver that reads
+`balanceOf` inside the hook sees the credited balance, as under OZ `_updateWithAcceptanceCheck`.
+`data` carries at most 32 bytes (`Hook` spells the literal because the open-call decoder wants
+one). The batch hook `onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)` has no
+home yet: an open-call argument is a one-word scalar or one `bytes` tail, never an array, so
+`safeBatchTransferFrom` stays the hook-less `batchTransferFrom`.
+
 ## Explicitly unsupported
 
-`safeBatchTransferFrom` with its `bytes data` and `onERC1155BatchReceived` callback (the bounded
-`batchTransferFrom` consumers ship instead has no receiver hook), mint/burn batches,
-ERC1155Receiver callbacks (`onERC1155Received`), metadata URI, duplicate ids inside one batch,
-and unbounded inputs.
+`safeBatchTransferFrom` with its `onERC1155BatchReceived` callback (the bounded
+`batchTransferFrom` consumers ship instead has no receiver hook), mint/burn batches, implementing
+the receiving side of the hooks, metadata URI, duplicate ids inside one batch, and unbounded
+inputs.
 Static ERC-165 declarations are supplied separately by `Sdk.Erc165`; this ledger never infers
 interface support from its methods.
 There is no new Runtime leaf, hashed-map kind, Op/IR/Component/Emit recipe, protocol opcode,
@@ -276,6 +291,22 @@ the id-encoding gate). -/
 @[pf_inline] def burn (balances : Balances) (source : Address)
     (tokenId amount : UInt256) : UInt64 :=
   balances.debit source tokenId amount
+
+/-- The receiver hook a contract recipient must answer. Constructor and field names are the ABI
+surface: `onERC1155Received(address operator, address from, uint256 id, uint256 value, bytes data)`,
+magic `0xf23a6e61`. `data` is bounded to 32 bytes. -/
+inductive Hook where
+  | onERC1155Received (operator «from» : Address) (id value : UInt256)
+      (data : ProofForge.Core.Value.BoundedBytes 32)
+
+/-- OZ `checkOnERC1155Received`: call the hook on a recipient with code and require its own
+selector back; skip a recipient without code. A CALL carrier for the entry's result word under
+`Effect.thenTrue`; see the module doc. -/
+@[pf_inline] def checkOnReceived (to operator source : Address) (tokenId amount : UInt256)
+    (data : ProofForge.Core.Value.BoundedBytes 32) : UInt64 :=
+  if Address.hasCode to then
+    OpenCall.callMagic to (Hook.onERC1155Received operator source tokenId amount data)
+  else 0
 
 -- `Notice` derives `Repr`/`DecidableEq` like every SDK event, and Common's `BoundedVec` ships
 -- neither; these stay here until ProofForgeCommon derives them at the type.

@@ -7,10 +7,14 @@ capped at `maxPerId`), burn accounting (supply moves with the balance), and erro
 The supply map is a separate `Storage.AddressMap256` namespace keyed by `tokenKey`, so it shares
 the same 192-bit key envelope and never aliases the balance/operator namespaces. Successful mint,
 burn, and transfer emit canonical ERC-1155 `TransferSingle`; operator writes emit `ApprovalForAll`.
+The single transfer is `safeTransferFrom` with the SDK's receiver check (`Erc1155.checkOnReceived`);
+`MultiToken` keeps the hook-less `transferFrom` because the hook entry does not fit it under
+EIP-170.
 -/
 
 namespace Examples.Evm.CraftToken
 open ProofForge.Evm.Sdk
+open ProofForge.Core.Value (BoundedBytes)
 
 structure State where
   dummy : UInt64
@@ -89,18 +93,25 @@ def setApprovalForAll (s : State) (operator : Address) (approved : Bool) :
         Erc1155.Operators.setApprovalForAll operators Context.caller operator approved },
       Erc1155.Log.approvalForAll Context.caller operator approved)
 
+/-- `safeTransferFrom(address,address,uint256,uint256,bytes)`, the single transfer ERC-1155 has:
+the checked move and the `TransferSingle` log land first, then OZ's receiver check. A recipient
+without code is not called; a recipient with code must answer `onERC1155Received` with its own
+selector or the whole transaction reverts, and a receiver that reads `balanceOf` inside the hook
+sees the credited balance. `data` is bounded to 32 bytes. -/
 @[pf_entry]
-def transferFrom (s : State) (source to : Address) (tokenId : UInt256) (amount : UInt256) :
-    Except Error (State × UInt64) :=
+def safeTransferFrom (s : State) (source to : Address) (tokenId : UInt256) (amount : UInt256)
+    (data : BoundedBytes 32) : Except Error (State × Bool) :=
   if !Erc1155.isApprovedOrOwner operators Context.caller source tokenId then
-    .ok (s, Revert.unauthorized Context.caller)
+    Effect.abort s (Revert.unauthorized Context.caller)
   else if Address.isZero to then
-    .ok (s, Revert.zeroAddress)
+    Effect.abort s Revert.zeroAddress
   else if Erc1155.Balances.canTransfer balances source to tokenId amount then
-    .ok ({ dummy := Erc1155.Balances.transfer balances source to tokenId amount },
-      Erc1155.Log.transferSingle Context.caller source to tokenId amount)
+    .ok ({ dummy := Erc1155.Balances.transfer balances source to tokenId amount |||
+        Erc1155.Log.transferSingle Context.caller source to tokenId amount },
+      Effect.thenTrue
+        (Erc1155.checkOnReceived to Context.caller source tokenId amount data))
   else
-    .ok (s, Erc1155.Balances.insufficient balances source tokenId amount)
+    Effect.abort s (Erc1155.Balances.insufficient balances source tokenId amount)
 
 @[pf_entry]
 def balanceOf (_s : State) (owner : Address) (tokenId : UInt256) : UInt256 :=

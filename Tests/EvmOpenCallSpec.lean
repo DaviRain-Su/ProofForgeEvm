@@ -103,8 +103,9 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 #guard (OpenCall.ArgType.bytes 8).limbCount == 9
 #guard (OpenCall.ArgType.bytes 8).abiType matches .ok "bytes"
 #guard (OpenCall.ArgType.bytes 8).canonical == "bytes8"
-#guard (OpenCall.ArgType.bytes 63).supported
-#guard !(OpenCall.ArgType.bytes 64).supported
+#guard (OpenCall.ArgType.bytes 65).supported
+#guard !(OpenCall.ArgType.bytes 66).supported
+#guard OpenCall.ArgType.supported (.bytes Codec.maxPackedBytesCapacity)
 #guard sinkPlan.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard sinkPlan.headBytes == 68
 #guard sinkPlan.inSize == 100
@@ -123,11 +124,11 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 private def twoTails : OpenCall.Plan Ops.Val :=
   { sinkPlan with args := #[bytesArg "a" 4, bytesArg "b" 4] }
 private def wideTail : OpenCall.Plan Ops.Val :=
-  { sinkPlan with args := #[bytesArg "data" 64] }
+  { sinkPlan with args := #[bytesArg "data" 66] }
 private def shortTail : OpenCall.Plan Ops.Val :=
   { sinkPlan with args := #[{ bytesArg "data" 8 with parts := Array.replicate 8 lit }] }
 private def edgeTail : OpenCall.Plan Ops.Val :=
-  { sinkPlan with args := #[bytesArg "data" 63] }
+  { sinkPlan with args := #[bytesArg "data" 65] }
 
 #guard !twoTails.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard !wideTail.wellFormed (·.wellFormed Ops.ValKind.arity)
@@ -178,7 +179,7 @@ private def hashOperands : Array Ops.Val := #[lit, lit, lit] ++ Array.replicate 
 #guard hashQuery.wellFormed
 #guard hashQuery.arity == 12
 #guard !(OpenCall.StaticShape.word.query "two" #[.bytes 4, .bytes 4]).wellFormed
-#guard !(OpenCall.StaticShape.word.query "wide" #[.bytes 64]).wellFormed
+#guard !(OpenCall.StaticShape.word.query "wide" #[.bytes 66]).wellFormed
 #guard
   match hashQuery.toPlan hashOperands with
   | some plan =>
@@ -515,9 +516,9 @@ def twoBytesArgs (target : Address) (a b : BoundedBytes 4) : UInt64 :=
   OpenCall.call target (TwoTails.pair a b)
 
 inductive WideTail where
-  | wide (data : BoundedBytes 64)
+  | wide (data : BoundedBytes 66)
 
-def wideBytesArg (target : Address) (data : BoundedBytes 64) : UInt64 :=
+def wideBytesArg (target : Address) (data : BoundedBytes 66) : UInt64 :=
   OpenCall.call target (WideTail.wide data)
 
 inductive StringTail where

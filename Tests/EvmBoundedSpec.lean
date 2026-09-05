@@ -242,10 +242,23 @@ elab "#pf_guard_evm_bounded_abi" : command => do
   | .error reason => reason.contains "local frame exceeds 64 words"
   | .ok _ => false
 
+#guard ProofForge.Evm.Codec.maxPackedBytesCapacity == 65
+#guard ProofForge.Evm.Codec.maxPackedBytesLocalWords == 66
+
 #guard
-  match ProofForge.Evm.Codec.inputPlan (.boundedBytes 64) with
-  | .error reason => reason.contains "packed bytes local frame exceeds 64 words"
+  match ProofForge.Evm.Codec.inputPlan (.boundedBytes 65) with
+  | .ok plan => plan.wordCount == 66
+  | .error _ => false
+
+#guard
+  match ProofForge.Evm.Codec.inputPlan (.boundedBytes 66) with
+  | .error reason => reason.contains "packed bytes local frame exceeds 66 words"
   | .ok _ => false
+
+#guard
+  match ProofForge.Evm.Codec.dynamicOutputPlan (.boundedBytes 65) with
+  | .ok (some (.packedBytes plan)) => plan.capacity == 65
+  | _ => false
 
 #guard
   match ProofForge.Evm.Codec.dynamicOutputPlan
@@ -254,8 +267,8 @@ elab "#pf_guard_evm_bounded_abi" : command => do
   | .ok _ => false
 
 #guard
-  match ProofForge.Evm.Codec.dynamicOutputPlan (.boundedString 64) with
-  | .error reason => reason.contains "result frame exceeds 64 words"
+  match ProofForge.Evm.Codec.dynamicOutputPlan (.boundedString 66) with
+  | .error reason => reason.contains "packed bytes result frame exceeds 66 words"
   | .ok _ => false
 
 

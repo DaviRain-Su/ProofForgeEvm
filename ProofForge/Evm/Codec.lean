@@ -309,8 +309,18 @@ private def staticInputPlan (schema : Schema) : Except String AbiInputPlan := do
   }
 
 /-- EVM keeps the source carrier finite even though standard ABI uses a dynamic tail. This limit
-is a target resource bound on generated scalar locals, not an ABI or Core schema limit. -/
+is a target resource bound on generated scalar locals, not an ABI or Core schema limit. It also
+sizes the emitter's memory guard: two frames of this many words. -/
 def maxBoundedArrayLocalWords : Nat := 64
+
+/-- Packed `bytes` / `string` capacity ceiling: one ECDSA signature, `r ‖ s ‖ v`, the widest byte
+string the SDK forwards (ERC-1271 `isValidSignature`). Its local frame is one byte limb per slot
+plus the length, `maxPackedBytesLocalWords`, but its memory image is `32 + ceil32(capacity)`
+bytes, so the guard sized from `maxBoundedArrayLocalWords` still covers it. -/
+def maxPackedBytesCapacity : Nat := 65
+
+/-- Local frame of a full-capacity packed byte string: the length word plus one limb per byte. -/
+def maxPackedBytesLocalWords : Nat := 1 + maxPackedBytesCapacity
 
 /-- Build a Bounded Array v1 plan from an already-selected element ABI plan (static product or
 Tagged Tuple v1). Remaps element projections and taggedGuards into the `length || slots` frame. -/
@@ -366,8 +376,8 @@ head offset, a 32-byte length, packed active bytes, and zero right-padding to a 
 def packedBytesV1InputPlan (capacity : Nat) (validateUtf8 : Bool) :
     Except String AbiInputPlan := do
   let localWords := 1 + capacity
-  unless localWords ≤ maxBoundedArrayLocalWords do
-    throw s!"evm/codec: packed bytes local frame exceeds {maxBoundedArrayLocalWords} words"
+  unless localWords ≤ maxPackedBytesLocalWords do
+    throw s!"evm/codec: packed bytes local frame exceeds {maxPackedBytesLocalWords} words"
   let mut projections : Array AbiProjection := #[{
     sourceName := "length"
     wordIndex := 0
@@ -428,12 +438,12 @@ def dynamicOutputPlan (schema : Schema) : Except String (Option DynamicOutputPla
         capacity, elementTypeName, elementWords
       })
   | .boundedBytes capacity =>
-      unless 1 + capacity ≤ maxBoundedArrayLocalWords do
-        throw s!"evm/codec: packed bytes result frame exceeds {maxBoundedArrayLocalWords} words"
+      unless 1 + capacity ≤ maxPackedBytesLocalWords do
+        throw s!"evm/codec: packed bytes result frame exceeds {maxPackedBytesLocalWords} words"
       return some (.packedBytes { capacity, validateUtf8 := false })
   | .boundedString capacity =>
-      unless 1 + capacity ≤ maxBoundedArrayLocalWords do
-        throw s!"evm/codec: packed bytes result frame exceeds {maxBoundedArrayLocalWords} words"
+      unless 1 + capacity ≤ maxPackedBytesLocalWords do
+        throw s!"evm/codec: packed bytes result frame exceeds {maxPackedBytesLocalWords} words"
       return some (.packedBytes { capacity, validateUtf8 := true })
   | _ => pure none
 
