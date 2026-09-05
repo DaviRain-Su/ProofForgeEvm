@@ -213,6 +213,9 @@ types, and `Indexed` flags as one `EventFrame`; the host returns 0. -/
 /-- Parameterized OZ `OwnableInvalidOwner(address)`. Host returns 0. -/
 @[irreducible] def evmRevertOwnableInvalidOwner (_owner : Addr20) : UInt64 := 0
 
+/-- Parameterized OZ `OwnableUnauthorizedAccount(address)`. Host returns 0. -/
+@[irreducible] def evmRevertOwnableUnauthorizedAccount (_account : Addr20) : UInt64 := 0
+
 /-- Selector-only `ZeroAddress()`. Host returns 0. -/
 @[irreducible] def evmRevertZeroAddress : UInt64 := 0
 

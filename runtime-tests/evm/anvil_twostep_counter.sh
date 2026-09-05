@@ -66,7 +66,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: non-owner bump unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'bump(uint64)' 1)" "$other" \
   "non-owner bump"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'get()(uint64)')" \
@@ -126,7 +126,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: stale nominee acceptOwnership unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'acceptOwnership()')" "$other" \
   "stale nominee acceptOwnership"
 
@@ -148,7 +148,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: old-owner bump unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$sender" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$sender" \
   "$("$cast" calldata 'bump(uint64)' 1)" "$sender" \
   "old-owner bump"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'get()(uint64)')" \
@@ -175,7 +175,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: cancelled acceptOwnership unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$sender" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$sender" \
   "$("$cast" calldata 'acceptOwnership()')" "$sender" \
   "cancelled acceptOwnership"
 
@@ -208,7 +208,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$third_key" \
   echo "FAIL: owner action after renounce unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$third" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$third" \
   "$("$cast" calldata 'bump(uint64)' 1)" "$third" \
   "owner action after renounce"
 

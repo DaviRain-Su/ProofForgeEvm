@@ -59,7 +59,7 @@ other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
 
 # Non-admin deliver reverts Unauthorized(other) and cannot append.
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'deliver(uint64)' 1)" "$other" "non-admin deliver"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'deliver(uint64)' 1 >/dev/null 2>&1; then

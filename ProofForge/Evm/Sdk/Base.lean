@@ -391,6 +391,9 @@ namespace Revert
 @[pf_inline] def ownableInvalidOwner (owner : Address) : UInt64 :=
   Runtime.evmRevertOwnableInvalidOwner owner
 
+@[pf_inline] def ownableUnauthorizedAccount (account : Address) : UInt64 :=
+  Runtime.evmRevertOwnableUnauthorizedAccount account
+
 @[pf_inline] def zeroAddress : UInt64 := Runtime.evmRevertZeroAddress
 @[pf_inline] def paused : UInt64 := Runtime.evmRevertPaused
 @[pf_inline] def capExceeded : UInt64 := Runtime.evmRevertCapExceeded

@@ -43,7 +43,7 @@ other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
 
 # Non-admin record reverts Unauthorized(other) and cannot append.
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'record(uint64)' 1)" "$other" "non-admin record"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'record(uint64)' 1 >/dev/null 2>&1; then
@@ -103,14 +103,14 @@ pf_evm_require_storage "$addr" 4 99 "OOB amend holds entries[1]"
 pf_evm_require_storage "$addr" 7 4 "OOB amend holds count"
 
 # Non-admin amend and wipe revert Unauthorized(other).
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'amend(uint64,uint64)' 0 5)" "$other" "non-admin amend"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'amend(uint64,uint64)' 0 5 >/dev/null 2>&1; then
   echo "FAIL: non-admin amend unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'wipe()')" "$other" "non-admin wipe"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'wipe()' >/dev/null 2>&1; then

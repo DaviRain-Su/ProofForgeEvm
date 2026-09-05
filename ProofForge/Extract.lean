@@ -696,6 +696,8 @@ def extractMethod (env : Environment) (kind : Core.IR.MethodKind) (n : Name) :
           .evmRevertUnauthorized (flipVal fuel' a) (flipVal fuel' b) (flipVal fuel' c)
       | .evmRevertOwnableInvalidOwner a b c =>
           .evmRevertOwnableInvalidOwner (flipVal fuel' a) (flipVal fuel' b) (flipVal fuel' c)
+      | .evmRevertOwnableUnauthorizedAccount a b c =>
+          .evmRevertOwnableUnauthorizedAccount (flipVal fuel' a) (flipVal fuel' b) (flipVal fuel' c)
       | .evmRevertZeroAddress => .evmRevertZeroAddress
       | .evmRevertPaused => .evmRevertPaused
       | .evmRevertCapExceeded => .evmRevertCapExceeded
@@ -1143,6 +1145,7 @@ private def opFields : Ops.Op → Array FieldUse
         valFields e ++ valFields f ++ valFields g ++ valFields h
   | .evmRevertUnauthorized a b c => valFields a ++ valFields b ++ valFields c
   | .evmRevertOwnableInvalidOwner a b c => valFields a ++ valFields b ++ valFields c
+  | .evmRevertOwnableUnauthorizedAccount a b c => valFields a ++ valFields b ++ valFields c
   | .evmRevertZeroAddress => #[]
   | .evmRevertPaused => #[]
   | .evmRevertCapExceeded => #[]
@@ -1352,6 +1355,9 @@ private def resolveVectorLeaves (p : IR.Program) : Except String IR.Program := d
       | .evmRevertOwnableInvalidOwner a b c =>
           return .evmRevertOwnableInvalidOwner (← normalizeVal a) (← normalizeVal b)
             (← normalizeVal c)
+      | .evmRevertOwnableUnauthorizedAccount a b c =>
+          return .evmRevertOwnableUnauthorizedAccount (← normalizeVal a) (← normalizeVal b)
+            (← normalizeVal c)
       | .evmRevertZeroAddress => pure .evmRevertZeroAddress
       | .evmRevertPaused => pure .evmRevertPaused
       | .evmRevertCapExceeded => pure .evmRevertCapExceeded
@@ -1518,6 +1524,8 @@ private partial def opEscapedArg (limit : Nat) : Ops.Op → Option Nat
   | .evmRevertUnauthorized a b c =>
       #[a, b, c].findSome? (valEscapedArg limit)
   | .evmRevertOwnableInvalidOwner a b c =>
+      #[a, b, c].findSome? (valEscapedArg limit)
+  | .evmRevertOwnableUnauthorizedAccount a b c =>
       #[a, b, c].findSome? (valEscapedArg limit)
   | .evmRevertZeroAddress => none
   | .evmRevertPaused => none

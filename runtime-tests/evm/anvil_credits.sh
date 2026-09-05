@@ -68,7 +68,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: non-owner grant unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'grant(address,uint256)' "$other" 1)" "$other" \
   "non-owner grant"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
@@ -151,7 +151,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: stale nominee acceptOwnership unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'acceptOwnership()')" "$other" \
   "stale nominee acceptOwnership"
 receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$third_key" \
@@ -170,7 +170,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: old-owner grant unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$sender" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$sender" \
   "$("$cast" calldata 'grant(address,uint256)' "$other" 1)" "$sender" \
   "old-owner grant"
 
@@ -204,7 +204,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$third_key" \
   echo "FAIL: owner action after renounce unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$third" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$third" \
   "$("$cast" calldata 'grant(address,uint256)' "$third" 1)" "$third" \
   "owner action after renounce"
 

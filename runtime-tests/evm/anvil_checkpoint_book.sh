@@ -30,7 +30,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'latestValue()(uint
 
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'push(uint64,uint64)' 10 100)" "$other" "non-admin checkpoint push"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'push(uint64,uint64)' 10 100 >/dev/null 2>&1; then

@@ -94,6 +94,10 @@ private def expectVestLink : CommandElabM Unit := do
     throwError "VestLink must not grow a royalty surface"
   unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
     throwError "VestLink ABI lost OwnableInvalidOwner"
+  unless abi.contains "\"name\":\"OwnableUnauthorizedAccount\"" do
+    throwError "VestLink ABI lost OwnableUnauthorizedAccount"
+  unless !abi.contains "\"name\":\"Unauthorized\"" do
+    throwError "VestLink must not advertise Unauthorized"
   unless ctorHasOwnableInvalidOwner program.constructor.ops do
     throwError "VestLink constructor lost OwnableInvalidOwner revert"
   unless ctorHasConstructorTransferred program.constructor.ops do
@@ -107,6 +111,10 @@ private def expectVestLink : CommandElabM Unit := do
     "0x" ++ ProofForge.Evm.Keccak.selector "OwnableInvalidOwner" #["address"]
   unless ctorYul.contains invalidOwnerSel do
     throwError s!"VestLink constructor Yul lost OwnableInvalidOwner:\n{ctorYul}"
+  let unauthAccountSel :=
+    "0x" ++ ProofForge.Evm.Keccak.selector "OwnableUnauthorizedAccount" #["address"]
+  unless yul.contains unauthAccountSel do
+    throwError s!"VestLink Yul lost OwnableUnauthorizedAccount:\n{yul}"
   let ownershipTopic :=
     "0x" ++ ProofForge.Crypto.Keccak.keccak256HexOfString "OwnershipTransferred(address,address)"
   unless ctorYul.contains ownershipTopic do
@@ -120,7 +128,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "b9471739ac722d35" do
+  unless IR.digestHex program == "fac351201b2369ba" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

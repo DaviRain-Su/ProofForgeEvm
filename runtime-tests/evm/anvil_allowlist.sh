@@ -55,7 +55,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'sizeOf()(uint64)')
   "empty size"
 
 # Owner authorization precedes collection policy and stores nothing.
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'grant(uint64)' 7)" "$other" "non-owner grant"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'grant(uint64)' 7 >/dev/null 2>&1; then

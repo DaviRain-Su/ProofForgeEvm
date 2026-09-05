@@ -12,7 +12,7 @@ This module owns contract *policy gates*, not storage geometry. Every combinator
   component query), or delegate an explicit `UInt8` paused flag to `Sdk.Pausable`;
   construction-time immutable owners keep using the existing `Address.eqImmutable` directly
   (e.g. `Examples.Evm.Token`),
-- failure terminals are the closed `Revert` set (`Unauthorized(caller)`, `Paused()`),
+- failure terminals are the closed `Revert` set (`OwnableUnauthorizedAccount(caller)`, `Paused()`),
   never new error selectors;
 - two-step ownership is one fixed `Ownership` value containing the sole pending address; the
 consumer stores that value as ordinary static state, so an accepted transfer cannot leave an
@@ -58,10 +58,10 @@ The public `ProofForge.Evm.Sdk` umbrella exports this component. Nothing in this
 @[pf_inline] def requireRunning (paused : UInt8) : Bool :=
   Pausable.isRunning paused
 
-/-- Failure terminal of the owner gate: `Unauthorized(caller)`. Returns the revert value;
+/-- Failure terminal of the owner gate: `OwnableUnauthorizedAccount(caller)`. Returns the revert value;
     the caller's state is returned unchanged by the consumer. -/
 @[pf_inline] def ownerViolation : UInt64 :=
-  Revert.unauthorized Context.caller
+  Revert.ownableUnauthorizedAccount Context.caller
 
 /-- Failure terminal of the running gate: `Paused()`. -/
 @[pf_inline] def runningViolation : UInt64 :=

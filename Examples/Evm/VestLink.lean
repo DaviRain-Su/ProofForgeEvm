@@ -132,7 +132,7 @@ def vestedAmount (s : State) (timestamp : UInt64) : UInt256 :=
     UInt256.zero
 
 /-- One-step Ownable rotation of the stored beneficiary. Zero `newOwner` reverts
-`OwnableInvalidOwner(newOwner)`. Non-owner reverts `Unauthorized(caller)`. Success emits
+`OwnableInvalidOwner(newOwner)`. Non-owner reverts `OwnableUnauthorizedAccount(caller)`. Success emits
 `OwnershipTransferred(previous, newOwner)`. -/
 @[pf_entry]
 def transferOwnership (s : State) (newOwner : Address) : Except Error (State × UInt64) :=

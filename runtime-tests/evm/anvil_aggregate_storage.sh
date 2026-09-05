@@ -115,7 +115,7 @@ pf_evm_require_equal "$pairs2_values" "42 4" "amountSidePairs after setAmount"
 # Non-admin nested write reverts Unauthorized(other) and cannot mutate leaves.
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setBundle(uint64,uint8,bool)' 9 2 false)" "$other" \
   "non-admin setBundle"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
@@ -127,7 +127,7 @@ pf_evm_require_storage "$addr" 3 42 "unauthorized setBundle holds amount"
 pf_evm_require_storage "$addr" 4 4 "unauthorized setBundle holds side"
 pf_evm_require_storage "$addr" 5 1 "unauthorized setBundle holds enabled"
 
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setAmount(uint64)' 1)" "$other" "non-admin setAmount"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'setAmount(uint64)' 1 >/dev/null 2>&1; then

@@ -29,7 +29,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'get()(uint64)')" \
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
 bump_data="$("$cast" calldata 'bump(uint64)' 1)"
-pf_evm_require_unauthorized "$addr" "$other" "$bump_data" "$other" "non-owner bump"
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" "$bump_data" "$other" "non-owner bump"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'bump(uint64)' 1 >/dev/null 2>&1; then
   echo "FAIL: non-owner bump unexpectedly succeeded" >&2

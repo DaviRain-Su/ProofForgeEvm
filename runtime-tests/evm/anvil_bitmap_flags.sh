@@ -47,7 +47,7 @@ other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
 
 # Non-owner enable reverts Unauthorized(other) and stores nothing.
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'enable(uint64)' 7)" "$other" "non-owner enable"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'enable(uint64)' 7 >/dev/null 2>&1; then
@@ -120,14 +120,14 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
 pf_evm_require_storage "$addr" 3 1 "disable of a clear bit is an idempotent same-word write"
 
 # Non-owner disable/toggle revert Unauthorized(other) and store nothing.
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'disable(uint64)' 0)" "$other" "non-owner disable"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'disable(uint64)' 0 >/dev/null 2>&1; then
   echo "FAIL: non-owner disable unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'toggle(uint64)' 0)" "$other" "non-owner toggle"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'toggle(uint64)' 0 >/dev/null 2>&1; then

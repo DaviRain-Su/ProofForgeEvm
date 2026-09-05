@@ -114,7 +114,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: non-owner transferOwnership unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'transferOwnership(address)' "$other")" "$other" \
   "non-owner transferOwnership"
 pf_evm_require_ownable_invalid_owner "$addr" "$beneficiary" \
