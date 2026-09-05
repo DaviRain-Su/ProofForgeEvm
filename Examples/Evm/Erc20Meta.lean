@@ -9,12 +9,16 @@ open ProofForge.Core.Value
 # ERC-20 metadata profile (product surface)
 
 Minimal ledger + **string** `name` / `symbol` ABI so external tools see ERC-20-shaped
-metadata. This is intentionally smaller than `Examples.Evm.Token` (no pause / permit /
-cap / non-standard `*Of` renames).
+metadata. This is intentionally smaller than `Examples.Evm.Token` (no pause / cap /
+packed `bytes32` metadata / non-standard `*Of` renames). Issuer EIP-2612 `permit`,
+`DOMAIN_SEPARATOR`, and `nonces` use the closed Token/1 path (`Permit.authorize`).
 
 Honest limits:
-- Not a full EIP-20 claim (no optional extensions; events only on transfer/approve paths).
+- Not a full EIP-20 claim (no pause, cap, or extension ecosystem; events only on
+  transfer/approve/permit paths).
 - `BoundedString` capacity is compile-time; strings longer than the bound are out of scope.
+- Permit domain is the closed Token/1 name/version (nonce base 2, allowance base 1), not the
+  string metadata views. The example name happens to be `Token`.
 - Kernel theorems here cover Lean defs only — not `.bin` / EVM refinement.
 -/
 
@@ -32,6 +36,11 @@ inductive Error where
 
 @[pf_inline] def allowances : Fungible.Allowances :=
   Storage.Layout.root.addressMap256 |>.next |>.addressPairMap256 |>.handle
+
+/-- Same hashed-map base as `emitPermit` (nonce base 2 after balances 0 and allowances 1). -/
+@[pf_inline] def nonceStore : Storage.AddressMap256 :=
+  Storage.Layout.root.addressMap256 |>.next |>.addressPairMap256 |>.next
+    |>.addressMap256 |>.handle
 
 /-- UTF-8 bytes for `Token` padded to the example name capacity. -/
 @[pf_inline] def tokenName : BoundedString 8 :=
@@ -96,6 +105,25 @@ def balanceOf (_s : State) (who : Address) : UInt256 :=
 @[pf_entry]
 def allowance (_s : State) (owner spender : Address) : UInt256 :=
   Fungible.Allowances.allowanceOf allowances owner spender
+
+/-- IERC2612 `nonces(address)`, not Token's `nonceOf`. -/
+@[pf_entry]
+def nonces (_s : State) (who : Address) : UInt256 :=
+  Nonces.current nonceStore who
+
+@[pf_entry]
+def DOMAIN_SEPARATOR (_s : State) : Bytes32 :=
+  Permit.domainSeparator
+
+/-- Issuer EIP-2612 permit over the closed Token/1 domain. Sequential `Effect` is not needed;
+the `0 ≠ 1` branch is the extractable closed-call carrier. -/
+@[pf_entry]
+def permit (s : State) (owner spender : Address) (value deadline : UInt256)
+    (v : UInt8) (r signature : Bytes32) : Except Error (State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok (hold s, Permit.authorize owner spender value deadline v r signature)
+  else
+    .error .overflow
 
 @[pf_entry]
 def approve (s : State) (spender : Address) (amount : UInt256) :

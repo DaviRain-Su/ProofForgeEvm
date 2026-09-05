@@ -199,6 +199,9 @@ jobs:
       - name: Check VestLink ETH-only named profile honesty
         run: python3 scripts/check_vest_eth_only_honesty.py
 
+      - name: Check Erc20Meta issuer permit honesty
+        run: python3 scripts/check_erc20_permit_honesty.py
+
       - name: Check ERC-721 3-arg safeTransferFrom honesty
         run: python3 scripts/check_safe3_honesty.py
 

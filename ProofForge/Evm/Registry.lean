@@ -56,7 +56,7 @@ def entries : Array Entry := #[
   { name := "Vault", digest := "bb2f93cb28d7501" },
   { name := "Ownable", digest := "86d62e4974bfb6fd" },
   { name := "Token", digest := "e25dfb4e1eaa54c" },
-  { name := "Erc20Meta", digest := "9e1221ef24a9c091" },
+  { name := "Erc20Meta", digest := "3dfa816778bd3ef6" },
   { name := "SafePay", digest := "3971d7ce6eb18141" },
   { name := "RoyaltyArt", digest := "89fe67825f5f9c28" },
   { name := "Capped", digest := "b0b0b7244ebb8aed" },
