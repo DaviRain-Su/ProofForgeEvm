@@ -164,6 +164,18 @@ def sinkTrunc (_s : State) (target : Address) (tag : UInt256) (data : BoundedByt
   else
     .error .overflow
 
+/-- Parameter `{ data with length := keep }`. `keep` is the published ABI length.
+Emit reverts when `keep` is greater than capacity. -/
+@[pf_entry]
+def sinkKeep (_s : State) (target : Address) (tag : UInt256) (data : BoundedBytes 8)
+    (keep : UInt32) :
+    Except Error (State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ dummy := 0, flag := _s.flag, target := _s.target },
+      OpenCall.callSuccess target (Remote.sink tag { data with length := keep }))
+  else
+    .error .overflow
+
 /-- Bounded `string` argument through CALL: `label(string)`. ABI `string` is not `bytes`.
 The Anvil mock records decoded length, payload keccak, and keccak of whole calldata. -/
 @[pf_entry]

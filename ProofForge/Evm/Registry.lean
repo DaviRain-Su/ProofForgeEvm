@@ -82,7 +82,7 @@ def entries : Array Entry := #[
   { name := "EvmTypedErrors", digest := "499001a31fb4d9e7" },
   { name := "EvmTypedEvents", digest := "90bd573ddf9e2e49" },
   { name := "EvmChainGuard", digest := "ebef98a36a4b1cc5" },
-  { name := "EvmOpenCall", digest := "fc3e7d9256bdf997" }
+  { name := "EvmOpenCall", digest := "ff3eb24ef92f3ac0" }
 ]
 
 def names : Array String := entries.map (·.name)

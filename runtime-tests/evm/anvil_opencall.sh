@@ -201,6 +201,30 @@ pf_evm_require_equal \
   "$("$cast" keccak "$("$cast" calldata 'sink(uint256,bytes)' 7 0x000102)")" \
   "truncated calldata matches cast calldata length 3"
 
+# Parameter `{ data with length := keep }`. keep=3 matches sinkTrunc. keep=9 reverts empty.
+sender="$("$cast" wallet address --private-key "$private_key")"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'sinkKeep(address,uint256,bytes,uint32)' "$target" 7 0x0001020304050607 3 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'sunkLength()(uint256)')" 3 \
+  "keep ABI length is 3"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$target" 'sunkHash()(bytes32)')" \
+  "$("$cast" keccak 0x000102)" "keep payload is the first three source bytes"
+pf_evm_require_equal \
+  "$("$cast" call --rpc-url "$rpc" "$target" 'sunkCalldataHash()(bytes32)')" \
+  "$("$cast" keccak "$("$cast" calldata 'sink(uint256,bytes)' 7 0x000102)")" \
+  "keep calldata matches cast calldata length 3"
+pf_evm_require_empty_revert "$addr" "$sender" \
+  "$("$cast" calldata 'sinkKeep(address,uint256,bytes,uint32)' "$target" 7 0x0001020304050607 9)" \
+  "keep longer than capacity reverts empty"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'sinkKeep(address,uint256,bytes,uint32)' "$target" 7 0x0001020304050607 9 \
+    >/dev/null 2>&1; then
+  echo "FAIL: keep longer than capacity reached the callee" >&2
+  exit 1
+fi
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'sunkLength()(uint256)')" 3 \
+  "over-capacity keep never reached sink"
+
 # Bounded string argument. ABI `string` is not `bytes`: the selector and `cast calldata`
 # encoding must match `label(string)` / `stringHash(string)`, not the bytes twins.
 string_case() {
