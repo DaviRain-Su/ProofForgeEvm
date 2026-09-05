@@ -189,6 +189,17 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'hashBytes(address,bytes)(bytes32)' \
   echo "FAIL: nine bytes passed the BoundedBytes 8 entry" >&2
   exit 1
 fi
+# `{ data with length := 3 }` keeps the eight source slots and publishes ABI length 3.
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'sinkTrunc(address,uint256,bytes)' "$target" 7 0x0001020304050607 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'sunkLength()(uint256)')" 3 \
+  "truncated ABI length is 3"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$target" 'sunkHash()(bytes32)')" \
+  "$("$cast" keccak 0x000102)" "truncated payload is the first three source bytes"
+pf_evm_require_equal \
+  "$("$cast" call --rpc-url "$rpc" "$target" 'sunkCalldataHash()(bytes32)')" \
+  "$("$cast" keccak "$("$cast" calldata 'sink(uint256,bytes)' 7 0x000102)")" \
+  "truncated calldata matches cast calldata length 3"
 
 # Bounded string argument. ABI `string` is not `bytes`: the selector and `cast calldata`
 # encoding must match `label(string)` / `stringHash(string)`, not the bytes twins.

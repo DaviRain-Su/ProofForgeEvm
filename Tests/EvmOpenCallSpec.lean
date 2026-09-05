@@ -542,7 +542,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "31027ffbd5535bb0"
+#guard Registry.digestOf "EvmOpenCall" == some "fc3e7d9256bdf997"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -700,6 +700,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost sinkBytes"
   let some _hash := source.methods.find? (·.ixName == "hashBytes")
     | throwError "open-call example lost hashBytes"
+  let some trunc := source.methods.find? (·.ixName == "sinkTrunc")
+    | throwError "open-call example lost sinkTrunc"
   let some label := source.methods.find? (·.ixName == "sinkString")
     | throwError "open-call example lost sinkString"
   let some _hashString := source.methods.find? (·.ixName == "hashString")
@@ -743,6 +745,16 @@ elab "#pf_guard_evm_open_call_source" : command => do
       sinkPlans[0]!.args[1]!.parts.size == 9 &&
       sinkPlans[0]!.inSize == 100 && sinkPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
     throwError s!"sinkBytes plan diverged: {repr sinkPlans}"
+  let truncPlans := sourceOpenCalls trunc.ops
+  unless truncPlans.size == 1 && truncPlans[0]!.name == "sink" &&
+      truncPlans[0]!.kind == .call && truncPlans[0]!.policy == .contractSuccess &&
+      truncPlans[0]!.args.size == 2 &&
+      truncPlans[0]!.args[1]!.type == .bytes 8 &&
+      truncPlans[0]!.args[1]!.parts.size == 9 &&
+      truncPlans[0]!.args[1]!.parts[0]! == .lit 3 &&
+      truncPlans[0]!.args[1]!.parts[1]! matches .field _ "values_0" &&
+      truncPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
+    throwError s!"sinkTrunc plan diverged: {repr truncPlans}"
   unless labelPlans.size == 1 && labelPlans[0]!.name == "label" &&
       labelPlans[0]!.kind == .call && labelPlans[0]!.policy == .contractSuccess &&
       labelPlans[0]!.args.size == 1 &&

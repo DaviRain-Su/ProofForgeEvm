@@ -153,6 +153,17 @@ the calldata the callee received, one word the gate compares with `cast calldata
 def hashBytes (_s : State) (target : Address) (data : BoundedBytes 8) : UInt256 :=
   OpenCall.staticWord target (Remote.calldataHash data)
 
+/-- Source `{ data with length := 3 }` keeps the original slots and publishes ABI length 3.
+Inactive source bytes must not appear in the packed tail. -/
+@[pf_entry]
+def sinkTrunc (_s : State) (target : Address) (tag : UInt256) (data : BoundedBytes 8) :
+    Except Error (State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ dummy := 0, flag := _s.flag, target := _s.target },
+      OpenCall.callSuccess target (Remote.sink tag { data with length := 3 }))
+  else
+    .error .overflow
+
 /-- Bounded `string` argument through CALL: `label(string)`. ABI `string` is not `bytes`.
 The Anvil mock records decoded length, payload keccak, and keccak of whole calldata. -/
 @[pf_entry]
