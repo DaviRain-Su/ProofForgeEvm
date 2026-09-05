@@ -24,6 +24,7 @@ SCAN_ROOTS = (
     ROOT / "ProofForge" / "Evm" / "Sdk" / "Access.lean",
     ROOT / "Examples" / "Evm" / "VestLink.lean",
     ROOT / "Examples" / "Evm" / "Vest20Link.lean",
+    ROOT / "runtime-tests" / "evm" / "anvil_bitmap_flags.sh",
 )
 
 STALE_PHRASES = (
@@ -49,6 +50,10 @@ REQUIRED = (
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_require_ownable_unauthorized_account"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "pf_evm_require_ownable_unauthorized_account"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "pf_evm_require_ownable_unauthorized_account"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_bitmap_flags.sh",
+     "non-owner OOB toggle hits the owner gate first"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_bitmap_flags.sh",
+     "pf_evm_require_ownable_unauthorized_account"),
     (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "Only-owner `OwnableUnauthorizedAccount(address)`"),
     (ROOT / "docs" / "product" / "support-matrix.md", "OwnableUnauthorizedAccount(caller)"),
     (ROOT / "docs" / "product" / "writing-contracts.md", "OwnableUnauthorizedAccount(caller)"),
@@ -84,6 +89,13 @@ def main() -> int:
             continue
         if needle not in path.read_text(encoding="utf-8"):
             failures.append(f"{rel}: missing {needle!r}")
+    bitmap_flags = ROOT / "runtime-tests" / "evm" / "anvil_bitmap_flags.sh"
+    if bitmap_flags.is_file() and "'Unauthorized(address)'" in bitmap_flags.read_text(
+        encoding="utf-8"
+    ):
+        failures.append(
+            "runtime-tests/evm/anvil_bitmap_flags.sh: leftover Unauthorized(address) owner-gate check"
+        )
     if failures:
         for item in failures:
             print(f"check_vest_unauthorized_honesty: {item}", file=sys.stderr)
