@@ -180,6 +180,10 @@ def Call.emitsZeroAddress : Call V → Bool
   | .nativeFx call => call.emitsZeroAddress
   | _ => false
 
+def Call.isConstructorTransferred (isZero : V → Bool) : Call V → Bool
+  | .nativeFx call => call.isConstructorTransferred isZero
+  | _ => false
+
 def Call.emitsPaused : Call V → Bool
   | .nativeFx call => call.emitsPaused
   | _ => false

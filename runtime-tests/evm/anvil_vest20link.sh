@@ -56,6 +56,13 @@ addr="$(printf '%s' "$receipt" | pf_evm_contract_address)"
 token="$(printf '%s' "$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" --create "0x$mock_hex")" | pf_evm_contract_address)"
 token_b="$(printf '%s' "$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" --create "0x$mock_hex")" | pf_evm_contract_address)"
 zero="0x0000000000000000000000000000000000000000"
+sig_own="$(pf_evm_typed_event_sig "$abi" OwnershipTransferred)"
+pf_evm_require_equal "$sig_own" 'OwnershipTransferred(address,address)' \
+  "ABI OwnershipTransferred signature"
+topic_own="$("$cast" keccak "$sig_own")"
+pf_evm_typed_event_check "$abi" "$receipt" OwnershipTransferred "$topic_own" \
+  "{\"previousOwner\": \"$zero\", \"newOwner\": \"$beneficiary\"}" \
+  "CREATE OwnershipTransferred LOG3"
 
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'beneficiary()(address)')" \
   "$beneficiary" "stored beneficiary"
@@ -209,6 +216,28 @@ print(addr)
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$ctor_mut_addr" 'owner()(address)')" \
   "$zero" "constructor-guard mutation stored a zero owner"
 
+log_mut_dir="$root/build/evm/vest20link-ctor-log-mut"
+rm -rf "$log_mut_dir"
+mkdir -p "$log_mut_dir"
+pf_evm_strip_ctor_ownership_log "$yul" Vest20Link "$log_mut_dir/Vest20Link.yul"
+log_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$log_mut_dir/Vest20Link.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc produced no Vest20Link constructor-log mutation bytecode')
+print(hexes[-1])
+")"
+log_mut_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$beneficiary" "$start_ts" "$duration" 0)"
+log_mut_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${log_mut_code}${log_mut_encoded#0x}")"
+log_mut_addr="$(printf '%s' "$log_mut_receipt" | pf_evm_contract_address)"
+pf_evm_typed_event_check "$abi" "$log_mut_receipt" OwnershipTransferred "$topic_own" \
+  '{}' "constructor-log mutation CREATE" 0
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$log_mut_addr" 'owner()(address)')" \
+  "$beneficiary" "constructor-log mutation still stored the owner"
+
 mut_dir="$root/build/evm/vest20link-call-mut"
 rm -rf "$mut_dir"
 mkdir -p "$mut_dir"
@@ -251,4 +280,4 @@ fi
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$beneficiary")" \
   "$before_mut" "STATICCALL mutation left the original beneficiary token A balance unchanged"
 
-echo "evm-anvil-vest20link: ok (ERC-20 map release + rotation + ERC20Released + two-token independence + zero-owner CREATE + constructor-guard mutation + CALL mutation, $runtime_bytes bytes)"
+echo "evm-anvil-vest20link: ok (ERC-20 map release + rotation + ERC20Released + two-token independence + zero-owner CREATE + CREATE OwnershipTransferred + constructor-guard mutation + constructor-log mutation + CALL mutation, $runtime_bytes bytes)"

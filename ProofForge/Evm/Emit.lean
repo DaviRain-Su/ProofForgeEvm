@@ -1391,11 +1391,25 @@ private def q (s : String) : String :=
   "\"" ++ s ++ "\""
 
 /-- True when `op` is only a constructor ZeroAddress revert-guard, including a dummy
-`returnU64 0` else-arm. Logs, CALL, and stores stay refused. -/
+`returnU64 0` else-arm. -/
 private partial def ctorOpIsRevertGuard (op : IR.Op) : Bool :=
   match op with
   | .ite _ _ _ thn els => thn.all ctorOpIsRevertGuard && els.all ctorOpIsRevertGuard
   | .component call => call.emitsZeroAddress
+  | .returnU64 (.lit 0) => true
+  | _ => false
+
+/-- True when `op` may run in the constructor prefix before initialize stores.
+Revert-only ZeroAddress guards and LOG3 `OwnershipTransferred(address(0), owner)`
+are allowed. CALL, map writes, value transfers, and other logs stay refused. -/
+private partial def ctorOpIsAllowedPrelude (op : IR.Op) : Bool :=
+  match op with
+  | .ite _ _ _ thn els => thn.all ctorOpIsAllowedPrelude && els.all ctorOpIsAllowedPrelude
+  | .component call =>
+      call.emitsZeroAddress ||
+        call.isConstructorTransferred (fun
+          | .lit 0 => true
+          | _ => false)
   | .returnU64 (.lit 0) => true
   | _ => false
 
@@ -1406,7 +1420,7 @@ private def splitConstructorOps (ops : Array IR.Op) :
   | some i => do
       let guardOps := ops.extract 0 i
       let rest := ops.extract i ops.size
-      unless guardOps.all ctorOpIsRevertGuard do
+      unless guardOps.all ctorOpIsAllowedPrelude do
         throw "extract/unsupported: EVM constructor effects are not lowered"
       unless rest.all (fun
         | .returnState _ | .returnU64 _ => true
@@ -1927,8 +1941,9 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
   let mut typedEvents := #[]
   let mut typedEventIds : Array String := #[]
   let mut typedEventJson : Array String := #[]
-  for method in p.entries do
-    for frame in collectTypedEventFrames method.ops do
+  let eventOps := #[p.constructor.ops] ++ p.entries.map (·.ops)
+  for ops in eventOps do
+    for frame in collectTypedEventFrames ops do
       let identity ← typedEventIdentity frame
       let json ← eventAbiTyped frame
       match typedEventIds.idxOf? identity with

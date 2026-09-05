@@ -8,7 +8,8 @@ beneficiary. `release()` pays the currently releasable amount (OZ ABI). `release
 permits a partial payout. The ERC-20 `released[token]` map lives on `Vest20Link`. There is no
 arbitrary schedule mutation.
 
-A zero beneficiary reverts `ZeroAddress` in the constructor. Overflowing `start + duration` or
+A zero beneficiary reverts `ZeroAddress` in the constructor. The success path emits
+`OwnershipTransferred(address(0), beneficiary)`. Overflowing `start + duration` or
 `cliffDuration > duration` still fails closed to zero views and a no-op `release`. Before the
 cliff, `vestedAmount` is 0 even when `timestamp ≥ start`. After the cliff the linear formula still
 uses `timestamp - start`.
@@ -48,7 +49,7 @@ def init (beneficiary : Address) (_start _duration cliffDuration : UInt64) : Sta
     if Address.isZero beneficiary then
       Revert.zeroAddress
     else
-      (0 : UInt64)
+      Ownable.Log.constructorTransferred beneficiary
   { owner := beneficiary, cliffDuration := cliffDuration, released := UInt256.zero,
     guard := Reentrancy.notEntered }
 

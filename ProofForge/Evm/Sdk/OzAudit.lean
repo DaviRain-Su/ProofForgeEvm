@@ -24,9 +24,10 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   (`finance/VestingWallet`) stays PARTIAL after `VestLink` shipped stored-beneficiary
   `transferOwnership`, parameterless `release()`, a constructor-stored OZ cliff
   (`cliffDuration`, `cliff()`), and CREATE of a zero beneficiary that reverts `ZeroAddress()`.
-  Remaining named gap on that row is the constructor
-  `OwnershipTransferred(address(0), owner)` log. The CREATE selector is `ZeroAddress()`, not
-  OZ `OwnableInvalidOwner(address)`. `temporaryGapCount` stays 0.)
+  Remaining named gap on that row is CREATE reverting `ZeroAddress()` rather than
+  OZ `OwnableInvalidOwner(address)`. The constructor
+  `OwnershipTransferred(address(0), owner)` log lowers on VestLink and Vest20Link.
+  `temporaryGapCount` stays 0.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal

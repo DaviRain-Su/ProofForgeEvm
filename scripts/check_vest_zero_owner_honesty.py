@@ -4,8 +4,8 @@
 VestLink and Vest20Link revert ZeroAddress() when CREATE gets address(0). That
 guard is a dropped-let in init plus an Emit revert-only constructor prefix.
 Sdk.OzAudit.temporaryGapCount stays 0. A doc that still lists the CREATE guard as
-the VestingWallet gap is a lying inventory. Constructor OwnershipTransferred logs
-and OZ OwnableInvalidOwner remain the named remainder.
+the VestingWallet gap is a lying inventory. OZ OwnableInvalidOwner remains the
+named remainder after the constructor OwnershipTransferred log.
 
 Usage:
     python3 scripts/check_vest_zero_owner_honesty.py
