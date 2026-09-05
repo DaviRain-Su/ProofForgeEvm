@@ -3,14 +3,15 @@ import ProofForge.Evm.Sdk
 /-!
 S3 source consumer of typed external CALL. Constructor name + fields are the ABI contract;
 the target may be a parameter or a stored `Address`. A `BoundedBytes` field is the one
-`bytes` argument a call may carry; a `BoundedVec` field is one dynamic-array argument.
-No raw calldata, selector string, return-buffer length, or opcode is accepted. Reentrancy
+`bytes` argument a call may carry; a `BoundedString` field is the one `string` argument;
+a `BoundedVec` field is one dynamic-array argument. One packed tail per plan. No raw
+calldata, selector string, return-buffer length, or opcode is accepted. Reentrancy
 is application-visible.
 -/
 
 namespace Examples.Evm.EvmOpenCall
 open ProofForge.Evm.Sdk
-open ProofForge.Core.Value (BoundedBytes BoundedVec)
+open ProofForge.Core.Value (BoundedBytes BoundedString BoundedVec)
 
 structure State where
   dummy : UInt64
@@ -37,6 +38,8 @@ inductive Remote where
   | supportsInterface (interfaceId : Bytes4)
   | sink (tag : UInt256) (data : BoundedBytes 8)
   | calldataHash (data : BoundedBytes 8)
+  | label (text : BoundedString 8)
+  | stringHash (text : BoundedString 8)
   | onERC721Received (operator origin : Address) (tokenId : UInt256) (data : BoundedBytes 8)
   | onERC1155BatchReceived (operator origin : Address)
       (ids values : BoundedVec UInt256 4) (data : BoundedBytes 8)
@@ -149,6 +152,36 @@ the calldata the callee received, one word the gate compares with `cast calldata
 @[pf_entry]
 def hashBytes (_s : State) (target : Address) (data : BoundedBytes 8) : UInt256 :=
   OpenCall.staticWord target (Remote.calldataHash data)
+
+/-- Bounded `string` argument through CALL: `label(string)`. ABI `string` is not `bytes`.
+The Anvil mock records decoded length, payload keccak, and keccak of whole calldata. -/
+@[pf_entry]
+def sinkString (_s : State) (target : Address) (text : BoundedString 8) :
+    Except Error (State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ dummy := 0, flag := _s.flag, target := _s.target },
+      OpenCall.callSuccess target (Remote.label text))
+  else
+    .error .overflow
+
+/-- Bounded `string` argument through STATICCALL: `stringHash(string)` returns keccak of the
+calldata the callee received. -/
+@[pf_entry]
+def hashString (_s : State) (target : Address) (text : BoundedString 8) : UInt256 :=
+  OpenCall.staticWord target (Remote.stringHash text)
+
+/-- Source-built `BoundedString` from scalar bytes. The emit path must revert before CALL when
+the bytes are not UTF-8; forwarding an ABI-decoded `string` already passed the entry scanner. -/
+@[pf_entry]
+def sinkBadUtf8 (_s : State) (target : Address) : Except Error (State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ dummy := 0, flag := _s.flag, target := _s.target },
+      OpenCall.callSuccess target (Remote.label {
+        length := 2,
+        values := #v[0xc0, 0x80, 0, 0, 0, 0, 0, 0]
+      }))
+  else
+    .error .overflow
 
 /-- A STATICCALL read as a guard: `ping()` runs only when the callee's `isOn()` answers true.
 The read is materialized before the branch, so a false word never reaches the CALL. -/

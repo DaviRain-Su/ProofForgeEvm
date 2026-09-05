@@ -10,9 +10,9 @@ namespace ProofForge.Evm.OpenCall.Emit
 /-!
 Emitter for typed open CALL/STATICCALL. Calldata is assembled from the plan at `memory[0, …)`:
 selector, one head word per argument, then dynamic tails in declaration order. A plan with no
-array keeps the historical geometry: at most one `bytes` tail (length word and padded payload)
-whose offset is the compile-time head length. A plan with an array walks a byte cursor so a
-later tail can follow a runtime-length prefix. The result gate is always
+array keeps the historical geometry: at most one packed `bytes` or `string` tail (length word
+and padded payload) whose offset is the compile-time head length. A plan with an array walks a
+byte cursor so a later tail can follow a runtime-length prefix. The result gate is always
 `CallResult.Emit.emitBound`, handed the tail's padded length or the cursor so the call sends
 exactly the canonical calldata size. This is not a third result-policy interpreter.
 `NativeFx.sendEth` is not lowered through this module.
@@ -21,7 +21,8 @@ Every operand is materialized before the first calldata word is stored. An opera
 itself a read (`OpenCall.staticWord` as an argument) runs its own call through `memory[0, …)`,
 and interleaving it with the stores would overwrite the selector and head words already written.
 Array slots are packed into Yul locals in that same prelude, because packing an address or
-fixed-bytes word uses `memory[0]` as scratch.
+fixed-bytes word uses `memory[0]` as scratch. A `.string` tail runs the shared UTF-8 scanner
+before the CALL. A `.bytes` tail does not.
 -/
 
 private def nl : String := "\n"
@@ -84,14 +85,21 @@ private def storeArg (indent : String) (offset headWords : Nat) (type : ArgType)
   else
     throw "extract/unsupported: open-call argument type has no EVM word carrier"
 
-/-- Write the tail of one `bytes` argument at `memory[tailAt, tailAt + 32 + ceil32(capacity))`:
-the runtime length, then the payload padded to a word. Limbs that are exactly one packed-bytes
-entry parameter copy its padded payload from calldata, whose padding the entry decoder proved
-zero. Any other limbs store only the first `length` bytes over a zeroed region, so the calldata
-is canonical however the inactive source slots read. Returns the Yul name bound to the padded
-payload length. -/
-private def storeBytesTail (context : Context σ) (tailAt capacity : Nat) (limbs : Array Ops.Val)
-    (parts : Array String) (st : σ) : Except String (String × String × σ) := do
+/-- Shared Unicode-scalar scanner over a packed tail already stored at `dataAt`. -/
+private def utf8TailGuard (indent lengthName dataAt : String) : String :=
+  Codec.Emit.renderUtf8Guard "oc_utf8_" indent lengthName
+    (fun i => "byte(0, mload(add(" ++ dataAt ++ ", " ++ i ++ ")))") 0
+
+/-- Write the tail of one packed `bytes` / `string` argument at
+`memory[tailAt, tailAt + 32 + ceil32(capacity))`: the runtime length, then the payload padded to
+a word. Limbs that are exactly one packed-bytes entry parameter copy its padded payload from
+calldata, whose padding the entry decoder proved zero. Any other limbs store only the first
+`length` bytes over a zeroed region, so the calldata is canonical however the inactive source
+slots read. A `string` tail then scans UTF-8 and reverts before the CALL. Returns the Yul
+name bound to the padded payload length. -/
+private def storeBytesTail (context : Context σ) (tailAt capacity : Nat) (validateUtf8 : Bool)
+    (limbs : Array Ops.Val) (parts : Array String) (st : σ) :
+    Except String (String × String × σ) := do
   let indent := context.indent
   unless parts.size == 1 + capacity do
     throw "extract/unsupported: open-call bytes argument limbs do not match its capacity"
@@ -104,17 +112,19 @@ private def storeBytesTail (context : Context σ) (tailAt capacity : Nat) (limbs
   let (padded, st) := context.fresh st
   let paddedLet :=
     indent ++ "let " ++ padded ++ " := and(add(" ++ len ++ ", 31), not(31))" ++ nl
+  let utf8 :=
+    if validateUtf8 then utf8TailGuard indent len (toString dataAt) else ""
   if let some payload := context.calldataBytes limbs then
     txt := txt ++ paddedLet ++
       indent ++ "calldatacopy(" ++ toString dataAt ++ ", " ++ payload ++ ", " ++ padded ++ ")" ++ nl
-    return (txt, padded, st)
+    return (txt ++ utf8, padded, st)
   for word in [0:(capacity + 31) / 32] do
     txt := txt ++ indent ++ "mstore(" ++ toString (dataAt + word * 32) ++ ", 0)" ++ nl
   for i in [0:capacity] do
     txt := txt ++
       indent ++ "if gt(" ++ len ++ ", " ++ toString i ++ ") { mstore8(" ++
         toString (dataAt + i) ++ ", " ++ parts[1 + i]! ++ ") }" ++ nl
-  return (txt ++ paddedLet, padded, st)
+  return (txt ++ paddedLet ++ utf8, padded, st)
 
 /-- Bind one already-materialized scalar to an ABI word. Address and fixed-bytes packing may
 use `memory[0]` as scratch, so this runs before the selector is stored. -/
@@ -177,9 +187,11 @@ private def storeArrayTailAt (indent cursor : String) (capacity : Nat) (len : St
   txt ++ indent ++ cursor ++ " := add(" ++ cursor ++ ", mul(add(" ++ len ++ ", 1), " ++
     toString CallResult.abiWordBytes ++ "))" ++ nl
 
-/-- Write one `bytes` tail at the cursor and advance the cursor by `32 + ceil32(length)`. -/
+/-- Write one packed tail at the cursor and advance the cursor by `32 + ceil32(length)`.
+A `string` tail scans UTF-8 before the cursor moves. -/
 private def storeBytesTailAt (context : Context σ) (cursor : String) (capacity : Nat)
-    (limbs : Array Ops.Val) (parts : Array String) (st : σ) : Except String (String × σ) := do
+    (validateUtf8 : Bool) (limbs : Array Ops.Val) (parts : Array String) (st : σ) :
+    Except String (String × σ) := do
   let indent := context.indent
   unless parts.size == 1 + capacity do
     throw "extract/unsupported: open-call bytes argument limbs do not match its capacity"
@@ -191,10 +203,12 @@ private def storeBytesTailAt (context : Context σ) (cursor : String) (capacity 
   let (padded, st) := context.fresh st
   let paddedLet :=
     indent ++ "let " ++ padded ++ " := and(add(" ++ len ++ ", 31), not(31))" ++ nl
+  let utf8 :=
+    if validateUtf8 then utf8TailGuard indent len ("add(" ++ cursor ++ ", 32)") else ""
   if let some payload := context.calldataBytes limbs then
     txt := txt ++ paddedLet ++
       indent ++ "calldatacopy(add(" ++ cursor ++ ", 32), " ++ payload ++ ", " ++ padded ++ ")" ++
-        nl ++
+        nl ++ utf8 ++
       indent ++ cursor ++ " := add(" ++ cursor ++ ", add(32, " ++ padded ++ "))" ++ nl
     return (txt, st)
   for word in [0:(capacity + 31) / 32] do
@@ -204,7 +218,7 @@ private def storeBytesTailAt (context : Context σ) (cursor : String) (capacity 
     txt := txt ++
       indent ++ "if gt(" ++ len ++ ", " ++ toString i ++ ") { mstore8(add(" ++ cursor ++
         ", " ++ toString (CallResult.abiWordBytes + i) ++ "), " ++ parts[1 + i]! ++ ") }" ++ nl
-  return (txt ++ paddedLet ++ indent ++ cursor ++ " := add(" ++ cursor ++ ", add(32, " ++
+  return (txt ++ paddedLet ++ utf8 ++ indent ++ cursor ++ " := add(" ++ cursor ++ ", add(32, " ++
     padded ++ "))" ++ nl, st)
 
 private def planCacheKey (context : Context σ) (plan : OpenCall.Plan Ops.Val) (word : Nat) :
@@ -262,10 +276,13 @@ def emitPlan (context : Context σ) (plan : OpenCall.Plan Ops.Val) (st : σ) :
       txt := txt ++ (← storeArg indent (CallResult.selectorBytes + CallResult.abiWordBytes * i)
         plan.args.size plan.args[i]!.type args[i]!)
     if let some i := plan.args.findIdx? (·.type.isDynamic) then
-      let .bytes capacity := plan.args[i]!.type
-        | throw "extract/unsupported: open-call bytes argument lost its capacity"
+      let capacity ←
+        match plan.args[i]!.type with
+        | .bytes n | .string n => pure n
+        | _ => throw "extract/unsupported: open-call packed argument lost its capacity"
       let (tailTxt, padded, st') ←
-        storeBytesTail context plan.headBytes capacity plan.args[i]!.parts args[i]! st
+        storeBytesTail context plan.headBytes capacity plan.args[i]!.type.validateUtf8
+          plan.args[i]!.parts args[i]! st
       txt := txt ++ tailTxt
       inSizeTail := some padded
       st := st'
@@ -278,11 +295,12 @@ def emitPlan (context : Context σ) (plan : OpenCall.Plan Ops.Val) (st : σ) :
       match plan.args[i]!.type with
       | .scalar _ =>
           txt := txt ++ (← storeArg indent offset plan.args.size plan.args[i]!.type args[i]!)
-      | .bytes capacity =>
+      | .bytes capacity | .string capacity =>
           txt := txt ++ indent ++ "mstore(" ++ toString offset ++ ", sub(" ++ cursor ++
             ", 4))" ++ nl
           let (tailTxt, st') ←
-            storeBytesTailAt context cursor capacity plan.args[i]!.parts args[i]! st
+            storeBytesTailAt context cursor capacity plan.args[i]!.type.validateUtf8
+              plan.args[i]!.parts args[i]! st
           txt := txt ++ tailTxt
           st := st'
       | .array capacity _ =>

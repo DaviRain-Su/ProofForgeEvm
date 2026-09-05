@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # OpenCall S3: parameter- and state-supplied targets, one- to four-word, bool, and address
 # STATICCALL reads with their fail-closed frames, reads deciding a guard, compared, and passed
-# as another call's argument, one bounded bytes argument through CALL and STATICCALL, CALL
-# value, EOA rejection, malformed returndata, CALL-before-sstore effect order, the
+# as another call's argument, one bounded bytes or string argument through CALL and STATICCALL,
+# CALL value, EOA rejection, malformed returndata, CALL-before-sstore effect order, the
 # compile-time refusal of a CALL carrier anywhere but the result word, and a receiver hook
 # through CALL whose one returned word must be the hook's own selector.
 set -euo pipefail
@@ -189,6 +189,49 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'hashBytes(address,bytes)(bytes32)' \
   echo "FAIL: nine bytes passed the BoundedBytes 8 entry" >&2
   exit 1
 fi
+
+# Bounded string argument. ABI `string` is not `bytes`: the selector and `cast calldata`
+# encoding must match `label(string)` / `stringHash(string)`, not the bytes twins.
+string_case() {
+  local data="$1" want_len="$2"
+  local want_hash want_calldata want_static
+  want_hash="$("$cast" keccak "$data")"
+  want_calldata="$("$cast" keccak "$("$cast" calldata 'label(string)' "$data")")"
+  want_static="$("$cast" keccak "$("$cast" calldata 'stringHash(string)' "$data")")"
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'sinkString(address,string)' "$target" "$data" >/dev/null
+  pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'labeledLength()(uint256)')" \
+    "$want_len" "label length"
+  pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$target" 'labeledHash()(bytes32)')" \
+    "$want_hash" "label payload keccak (len $want_len)"
+  pf_evm_require_equal \
+    "$("$cast" call --rpc-url "$rpc" "$target" 'labeledCalldataHash()(bytes32)')" \
+    "$want_calldata" "label calldata is the canonical string encoding (len $want_len)"
+  pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
+    'hashString(address,string)(bytes32)' "$target" "$data")" "$want_static" \
+    "STATICCALL string calldata is the canonical encoding (len $want_len)"
+}
+string_case "" 0
+string_case abc 3
+string_case abcdefgh 8
+if "$cast" call --rpc-url "$rpc" "$addr" 'hashString(address,string)(bytes32)' \
+    "$target" abcdefghi >/dev/null 2>&1; then
+  echo "FAIL: nine-char string passed the BoundedString 8 entry" >&2
+  exit 1
+fi
+# A source-built malformed UTF-8 string must revert at the emit scanner, before CALL.
+# The last successful `string_case` left labeledLength at 8.
+sender="$("$cast" wallet address --private-key "$private_key")"
+pf_evm_require_empty_revert "$addr" "$sender" \
+  "$("$cast" calldata 'sinkBadUtf8(address)' "$target")" \
+  "constructed malformed UTF-8 reverts empty before CALL"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'sinkBadUtf8(address)' "$target" >/dev/null 2>&1; then
+  echo "FAIL: constructed malformed UTF-8 reached the callee" >&2
+  exit 1
+fi
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'labeledLength()(uint256)')" 8 \
+  "malformed UTF-8 never reached label"
 
 # Reads in value position. Each guard is observed on both sides against the mock's state, the
 # call inside an untaken branch is proven absent through echo(0)'s two-word frame, and the
