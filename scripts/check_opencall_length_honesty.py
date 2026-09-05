@@ -3,6 +3,8 @@
 
 decodePackedByteArgParts mixedParts? reads length from the constructor's
 length argument and GetElem from its values argument.
+sinkKeep publishes a UInt32 parameter as that length.
+Emit reverts gt(len, capacity).
 A second packed field stays refused.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
@@ -21,6 +23,7 @@ STALE_PHRASES = (
     "`{ v with length }` stays fail closed",
     "the structure-update base resolution is a decoder follow-up",
     "A source-built `{ data with length := k }` argument stays fail closed",
+    "A parameter `{ v with length := keep }` stays out unless emit reverts",
 )
 
 REQUIRED = (
@@ -32,7 +35,20 @@ REQUIRED = (
     (ROOT / "Tests" / "EvmOpenCallSpec.lean", "truncPlans[0]!.args[1]!.parts[0]! == .lit 3"),
     (ROOT / "Tests" / "EvmOpenCallSpec.lean", 'truncPlans[0]!.args[1]!.parts[1]! matches .field _ "values_0"'),
     (ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh", "sinkTrunc(address,uint256,bytes)"),
+    (ROOT / "Examples" / "Evm" / "EvmOpenCall.lean", "def sinkKeep"),
+    (ROOT / "Examples" / "Evm" / "EvmOpenCall.lean", "{ data with length := keep }"),
+    (ROOT / "Tests" / "EvmOpenCallSpec.lean", "source.methods.find? (·.ixName == \"sinkKeep\")"),
+    (ROOT / "Tests" / "EvmOpenCallSpec.lean", "keepPlans[0]!.args[1]!.parts[0]! == .arg 3"),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh",
+        "sinkKeep(address,uint256,bytes,uint32)",
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh",
+        '"keep longer than capacity reverts empty"',
+    ),
     (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "OpenCall `{ v with length }` packed-tail decoder"),
+    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "OpenCall parameter `{ v with length := keep }`"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
 )
 
