@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Auth3009Link: bounded ERC-3009 transfer-with-authorization. Darwin + Linux.
+# Auth3009Link: bounded ERC-3009 transfer- and receive-with-authorization. Darwin + Linux.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -235,4 +235,126 @@ fi
 got_dom2="$("$cast" call --rpc-url "$rpc" "$addr" 'DOMAIN_SEPARATOR()(bytes32)')"
 pf_evm_require_equal "${got_dom2,,}" "${got_dom,,}" "DOMAIN_SEPARATOR holds after transferWithAuthorization"
 
-echo "evm-anvil-auth3009link: ok (ERC-3009 transfer-with-authorization; engineering only)"
+recv_nonce="0x0000000000000000000000000000000000000000000000000000000000000002"
+recv_typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"ReceiveWithAuthorization\": [
+      {\"name\":\"from\",\"type\":\"address\"},
+      {\"name\":\"to\",\"type\":\"address\"},
+      {\"name\":\"value\",\"type\":\"uint256\"},
+      {\"name\":\"validAfter\",\"type\":\"uint256\"},
+      {\"name\":\"validBefore\",\"type\":\"uint256\"},
+      {\"name\":\"nonce\",\"type\":\"bytes32\"}
+    ]
+  },
+  \"primaryType\": \"ReceiveWithAuthorization\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"from\": \"$sender\",
+    \"to\": \"$dest\",
+    \"value\": \"10\",
+    \"validAfter\": \"$valid_after\",
+    \"validBefore\": \"$valid_before\",
+    \"nonce\": \"$recv_nonce\"
+  }
+}")"
+recv_sig="$("$cast" wallet sign --data --private-key "$private_key" "$recv_typed")"
+recv_r="0x${recv_sig:2:64}"
+recv_s="0x${recv_sig:66:64}"
+recv_v="$((16#${recv_sig:130:2}))"
+
+recv_wrong_data="$("$cast" calldata \
+  'receiveWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+  "$sender" "$dest" 10 "$valid_after" "$valid_before" "$recv_nonce" "$recv_v" "$recv_r" "$recv_s")"
+pf_evm_require_unauthorized "$addr" "$sender" "$recv_wrong_data" "$sender" \
+  "receiveWithAuthorization submitted by from"
+
+mismatch_nonce="0x0000000000000000000000000000000000000000000000000000000000000005"
+mismatch_typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"TransferWithAuthorization\": [
+      {\"name\":\"from\",\"type\":\"address\"},
+      {\"name\":\"to\",\"type\":\"address\"},
+      {\"name\":\"value\",\"type\":\"uint256\"},
+      {\"name\":\"validAfter\",\"type\":\"uint256\"},
+      {\"name\":\"validBefore\",\"type\":\"uint256\"},
+      {\"name\":\"nonce\",\"type\":\"bytes32\"}
+    ]
+  },
+  \"primaryType\": \"TransferWithAuthorization\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"from\": \"$sender\",
+    \"to\": \"$dest\",
+    \"value\": \"1\",
+    \"validAfter\": \"$valid_after\",
+    \"validBefore\": \"$valid_before\",
+    \"nonce\": \"$mismatch_nonce\"
+  }
+}")"
+mismatch_sig="$("$cast" wallet sign --data --private-key "$private_key" "$mismatch_typed")"
+mismatch_r="0x${mismatch_sig:2:64}"
+mismatch_s="0x${mismatch_sig:66:64}"
+mismatch_v="$((16#${mismatch_sig:130:2}))"
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'receiveWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+    "$sender" "$dest" 1 "$valid_after" "$valid_before" "$mismatch_nonce" \
+    "$mismatch_v" "$mismatch_r" "$mismatch_s" >/dev/null 2>&1; then
+  echo "FAIL: TransferWithAuthorization typehash unexpectedly authorized receiveWithAuthorization" >&2
+  exit 1
+fi
+
+third_key="0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+third="$("$cast" wallet address --private-key "$third_key")"
+pf_evm_require_unauthorized "$addr" "$third" "$recv_wrong_data" "$third" \
+  "receiveWithAuthorization submitted by a third party"
+
+recv_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'receiveWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+  "$sender" "$dest" 10 "$valid_after" "$valid_before" "$recv_nonce" "$recv_v" "$recv_r" "$recv_s")"
+printf '%s' "$recv_receipt" | "$python" -I -S -c "
+import json, sys
+r = json.load(sys.stdin)
+want = '${auth_used_topic,,}'
+hits = [lg for lg in (r.get('logs') or [])
+        if (lg.get('topics') or []) and lg['topics'][0].lower() == want]
+if len(hits) != 1:
+    raise SystemExit(f'FAIL: expected exactly one AuthorizationUsed log on receive, got {len(hits)}')
+"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'balanceOf(address)(uint256)' "$sender")" \
+  65 "sender after receiveWithAuthorization"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'balanceOf(address)(uint256)' "$dest")" \
+  35 "recipient after receiveWithAuthorization"
+
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'receiveWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+    "$sender" "$dest" 10 "$valid_after" "$valid_before" "$recv_nonce" "$recv_v" "$recv_r" "$recv_s" >/dev/null 2>&1; then
+  echo "FAIL: replayed receiveWithAuthorization unexpectedly succeeded" >&2
+  exit 1
+fi
+
+echo "evm-anvil-auth3009link: ok (ERC-3009 transfer- and receive-with-authorization; engineering only)"

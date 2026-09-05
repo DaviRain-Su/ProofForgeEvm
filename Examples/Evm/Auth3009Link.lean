@@ -68,4 +68,14 @@ def transferWithAuthorization (s : State) (owner to : Address) (value validAfter
   else
     .error .overflow
 
+@[pf_entry]
+def receiveWithAuthorization (s : State) (owner to : Address) (value validAfter validBefore : UInt256)
+    (nonce : Bytes32) (v : UInt8) (r signature : Bytes32) : Except Error (State × UInt64) :=
+  Effect.ensureCode (!Address.isZero to) (hold s) Revert.zeroAddress fun _ =>
+  if (0 : UInt64) ≠ 1 then
+    .ok (hold s,
+      Erc3009.receive owner to value validAfter validBefore nonce v r signature)
+  else
+    .error .overflow
+
 end Examples.Evm.Auth3009Link

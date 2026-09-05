@@ -139,6 +139,7 @@ run_guards() {
   python3 scripts/check_vest_ownable2step_honesty.py
   python3 scripts/check_vest_eth_only_honesty.py
   python3 scripts/check_erc20_permit_honesty.py
+  python3 scripts/check_erc3009_receive_honesty.py
   python3 scripts/check_safe3_honesty.py
   python3 scripts/check_erc721_enum_honesty.py
 }

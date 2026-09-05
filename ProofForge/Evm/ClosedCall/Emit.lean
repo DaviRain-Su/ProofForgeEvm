@@ -47,6 +47,10 @@ private def eip712TransferWithAuthorizationTypeHash : String :=
   Keccak.keccak256HexOfString
     "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
 
+private def eip712ReceiveWithAuthorizationTypeHash : String :=
+  Keccak.keccak256HexOfString
+    "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+
 private def eip712NameHash : String := Keccak.keccak256HexOfString "Token"
 
 private def eip712VersionHash : String := Keccak.keccak256HexOfString "1"
@@ -600,7 +604,8 @@ private def emitPermit (context : Context σ)
     approvalTxt
   return (acc, n0, st36)
 
-private def emitTransferWithAuthorization (context : Context σ)
+private def emitAuthorizationWithTypeHash (context : Context σ)
+    (typeHash : String) (requirePayee : Bool)
     (f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Ops.Val)
     (st : σ) : Except String (String × String × σ) := do
   let indent := context.indent
@@ -652,10 +657,17 @@ private def emitTransferWithAuthorization (context : Context σ)
   let (fromBal, st45) := context.fresh st44
   let (toSlot, st46) := context.fresh st45
   let (toBal, st47) := context.fresh st46
+  let (callerA, st48) := context.fresh st47
   let expiredSel := Keccak.selector "Expired" #[]
   let expiredTxt ← LogError.Emit.emitRevert { indent := indent ++ "  " } { selector := expiredSel }
   let unauthorizedTxt ← LogError.Emit.emitRevert { indent := indent ++ "  " }
     { selector := Keccak.selector "Unauthorized" #["address"], args := #[signer] }
+  let payeeUnauthorizedTxt ←
+    if requirePayee then
+      LogError.Emit.emitRevert { indent := indent ++ "  " }
+        { selector := Keccak.selector "Unauthorized" #["address"], args := #[callerA] }
+    else
+      pure ""
   let authUsedTxt ← LogError.Emit.emitLog context.logError
     { data := #[]
       topics := #["0x" ++ Keccak.keccak256HexOfString "AuthorizationUsed(address,bytes32)", fromA, nonceWord] }
@@ -674,6 +686,11 @@ private def emitTransferWithAuthorization (context : Context σ)
     indent ++ "mstore(0, 0)" ++ nl ++
     packAddrMstore8 indent tw0 tw1 tw2 ++
     indent ++ "let " ++ toA ++ " := mload(0)" ++ nl ++
+    (if requirePayee then
+      indent ++ "let " ++ callerA ++ " := caller()" ++ nl ++
+      indent ++ "if iszero(eq(" ++ callerA ++ ", " ++ toA ++ ")) {" ++ nl ++
+      payeeUnauthorizedTxt ++ indent ++ "}" ++ nl
+     else "") ++
     indent ++ "let " ++ amt ++ " := " ++ packU256 x0 x1 x2 x3 ++ nl ++
     indent ++ "let " ++ validAfter ++ " := " ++ packU256 k0 k1 k2 k3 ++ nl ++
     indent ++ "let " ++ validBefore ++ " := " ++ packU256 l0 l1 l2 l3 ++ nl ++
@@ -692,7 +709,7 @@ private def emitTransferWithAuthorization (context : Context σ)
     indent ++ "mstore(128, 3)" ++ nl ++
     indent ++ "let " ++ authSlot ++ " := keccak256(0, 160)" ++ nl ++
     indent ++ "if sload(" ++ authSlot ++ ") { " ++ revert0 ++ " }" ++ nl ++
-    indent ++ "mstore(0, 0x" ++ eip712TransferWithAuthorizationTypeHash ++ ")" ++ nl ++
+    indent ++ "mstore(0, 0x" ++ typeHash ++ ")" ++ nl ++
     indent ++ "mstore(32, " ++ fromA ++ ")" ++ nl ++
     indent ++ "mstore(64, " ++ toA ++ ")" ++ nl ++
     indent ++ "mstore(96, " ++ amt ++ ")" ++ nl ++
@@ -732,7 +749,7 @@ private def emitTransferWithAuthorization (context : Context σ)
     indent ++ "sstore(" ++ toSlot ++ ", 1)" ++ nl ++
     indent ++ "sstore(add(" ++ toSlot ++ ", 1), add(" ++ toBal ++ ", " ++ amt ++ "))" ++ nl ++
     authUsedTxt ++ transferTxt
-  return (acc, x0, st47)
+  return (acc, x0, st48)
 
 private def emitTokenPermit (context : Context σ)
     (tw0 tw1 tw2 ow0 ow1 ow2 sw0 sw1 sw2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Ops.Val)
@@ -815,7 +832,11 @@ def emitCall (context : Context σ) (call : ClosedCall.Call Ops.Val) (st : σ) :
   | .permit o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       emitPermit context o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
   | .transferWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
-      emitTransferWithAuthorization context f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
+      emitAuthorizationWithTypeHash context eip712TransferWithAuthorizationTypeHash false
+        f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
+  | .receiveWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      emitAuthorizationWithTypeHash context eip712ReceiveWithAuthorizationTypeHash true
+        f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
   | .tokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       emitTokenPermit context t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
 
