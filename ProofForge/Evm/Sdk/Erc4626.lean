@@ -7,13 +7,13 @@ namespace ProofForge.Evm.Sdk.Erc4626
 
 Compile-time fixed underlying asset, floor `assets * (totalSupply + 1) / (totalAssets + 1)` and floor
 `shares * (totalAssets + 1) / (totalSupply + 1)` conversion via `mulDivOffset`, ceiling
-`previewMint` via `mulDivCeil`, ceiling `previewWithdraw`, and closed ERC-20 call policy helpers. Empty
-supply is 1:1 so the first depositor is not divided by zero. Floor conversions add a virtual
-+1 share and +1 asset when supply is nonzero (OZ `_decimalsOffset() == 0`), folded into one
-WideWord query. There is no fee accrual, flash-loan
-callback, or dynamic asset rotation. Ceiling `previewMint` uses full-precision `mulDivCeil`.
-Ceiling `previewWithdraw` still uses checked 256-bit mul and omits the virtual offset.
-Nonzero `_decimalsOffset` stays out. Consumers pair this module with `Fungible.Balances`
+`previewMint` via `mulDivCeil`, ceiling `previewWithdraw` via `mulDivCeil`, and closed ERC-20 call
+policy helpers. Empty supply is 1:1 so the first depositor is not divided by zero. Floor conversions
+add a virtual +1 share and +1 asset when supply is nonzero (OZ `_decimalsOffset() == 0`), folded into
+one WideWord query. There is no fee accrual, flash-loan
+callback, or dynamic asset rotation. Ceiling `previewMint` and `previewWithdraw` use full-precision
+`mulDivCeil` and omit the virtual offset. Nonzero `_decimalsOffset` stays out. Consumers pair this
+module with `Fungible.Balances`
 for share ledger storage, `Sdk.Reentrancy` around external asset movement, and closed
 `ERC20` / `SafeErc20` facades.
 
@@ -73,16 +73,12 @@ Empty supply answers `shares` (1:1). A nonzero remainder adds one asset.
 
 /-- Ceiling `assets * totalSupply / totalAssets` when the vault already has shares.
 Empty supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0,
-because checked `UInt256.div` reverts on a zero divisor. A nonzero remainder adds one share.
-Checked 256-bit mul still reverts if the product overflows. Ceiling conversions omit the virtual offset. -/
+because a zero denominator reverts. A nonzero remainder adds one share.
+`mulDivCeil` keeps a 512-bit intermediate. Ceiling conversions omit the virtual offset. -/
 @[pf_inline] def sharesForWithdraw (assets totalSupply totalAssets : UInt256) : UInt256 :=
   if UInt256.eq totalSupply UInt256.zero then assets
   else if UInt256.eq totalAssets UInt256.zero then UInt256.zero
-  else
-    let prod := UInt256.mul assets totalSupply
-    let q := UInt256.div prod totalAssets
-    if UInt256.eq (UInt256.mod prod totalAssets) UInt256.zero then q
-    else UInt256.add q ⟨1, 0, 0, 0⟩
+  else mulDivCeil assets totalSupply totalAssets
 
 /-- Floor `assets * (totalSupply + 1) / (totalAssets + 1)` when the vault already has shares. Empty
 supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0. -/
