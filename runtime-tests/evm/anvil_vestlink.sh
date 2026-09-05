@@ -239,7 +239,7 @@ yul="$root/build/evm/VestLink.yul"
 ctor_mut_dir="$root/build/evm/vestlink-ctor-mut"
 rm -rf "$ctor_mut_dir"
 mkdir -p "$ctor_mut_dir"
-pf_evm_strip_ctor_invalid_owner_guard "$yul" VestLink "$ctor_mut_dir/VestLink.yul"
+pf_evm_strip_ctor_invalid_owner_guard "$yul" VestLink "$ctor_mut_dir/VestLink.yul" 0
 ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$ctor_mut_dir/VestLink.yul" | "$python" -I -S -c "
 import sys

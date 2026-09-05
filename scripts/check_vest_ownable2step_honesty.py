@@ -58,8 +58,10 @@ REQUIRED = (
     (ROOT / "Tests" / "EvmVest20Spec.lean", "OwnershipTransferStarted"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "acceptOwnership()"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "OwnershipTransferStarted"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", 'VestLink.yul" 0'),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "acceptOwnership()"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "OwnershipTransferStarted"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", 'Vest20Link.yul" 0'),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "Vest Ownable2Step nominate plus accept",

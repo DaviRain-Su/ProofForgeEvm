@@ -255,7 +255,7 @@ yul="$root/build/evm/Vest20Link.yul"
 ctor_mut_dir="$root/build/evm/vest20link-ctor-mut"
 rm -rf "$ctor_mut_dir"
 mkdir -p "$ctor_mut_dir"
-pf_evm_strip_ctor_invalid_owner_guard "$yul" Vest20Link "$ctor_mut_dir/Vest20Link.yul"
+pf_evm_strip_ctor_invalid_owner_guard "$yul" Vest20Link "$ctor_mut_dir/Vest20Link.yul" 0
 ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$ctor_mut_dir/Vest20Link.yul" | "$python" -I -S -c "
 import sys
