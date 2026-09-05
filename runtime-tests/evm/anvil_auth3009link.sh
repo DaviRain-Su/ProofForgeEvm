@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Auth3009Link: bounded ERC-3009 transfer- and receive-with-authorization. Darwin + Linux.
+# Auth3009Link: bounded ERC-3009 transfer, receive, and cancel. Darwin + Linux.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -357,4 +357,229 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   exit 1
 fi
 
-echo "evm-anvil-auth3009link: ok (ERC-3009 transfer- and receive-with-authorization; engineering only)"
+cancel_nonce="0x0000000000000000000000000000000000000000000000000000000000000006"
+cancel_typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"CancelAuthorization\": [
+      {\"name\":\"authorizer\",\"type\":\"address\"},
+      {\"name\":\"nonce\",\"type\":\"bytes32\"}
+    ]
+  },
+  \"primaryType\": \"CancelAuthorization\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"authorizer\": \"$sender\",
+    \"nonce\": \"$cancel_nonce\"
+  }
+}")"
+cancel_sig="$("$cast" wallet sign --data --private-key "$private_key" "$cancel_typed")"
+cancel_r="0x${cancel_sig:2:64}"
+cancel_s="0x${cancel_sig:66:64}"
+cancel_v="$((16#${cancel_sig:130:2}))"
+
+wrong_cancel_sig="$("$cast" wallet sign --data --private-key "$other_key" "$cancel_typed")"
+wrong_cancel_r="0x${wrong_cancel_sig:2:64}"
+wrong_cancel_s="0x${wrong_cancel_sig:66:64}"
+wrong_cancel_v="$((16#${wrong_cancel_sig:130:2}))"
+wrong_cancel_data="$("$cast" calldata \
+  'cancelAuthorization(address,bytes32,uint8,bytes32,bytes32)' \
+  "$sender" "$cancel_nonce" "$wrong_cancel_v" "$wrong_cancel_r" "$wrong_cancel_s")"
+pf_evm_require_unauthorized "$addr" "$dest" "$wrong_cancel_data" "$dest" \
+  "cancelAuthorization signed by recipient"
+
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'cancelAuthorization(address,bytes32,uint8,bytes32,bytes32)' \
+    "$sender" "$mismatch_nonce" "$mismatch_v" "$mismatch_r" "$mismatch_s" >/dev/null 2>&1; then
+  echo "FAIL: TransferWithAuthorization typehash unexpectedly authorized cancelAuthorization" >&2
+  exit 1
+fi
+
+cancel_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'cancelAuthorization(address,bytes32,uint8,bytes32,bytes32)' \
+  "$sender" "$cancel_nonce" "$cancel_v" "$cancel_r" "$cancel_s")"
+auth_canceled_topic="$("$cast" keccak "AuthorizationCanceled(address,bytes32)")"
+printf '%s' "$cancel_receipt" | "$python" -I -S -c "
+import json, sys
+r = json.load(sys.stdin)
+want = '${auth_canceled_topic,,}'
+hits = [lg for lg in (r.get('logs') or [])
+        if (lg.get('topics') or []) and lg['topics'][0].lower() == want]
+if len(hits) != 1:
+    raise SystemExit(f'FAIL: expected exactly one AuthorizationCanceled log, got {len(hits)}')
+topics = hits[0]['topics']
+if len(topics) != 3:
+    raise SystemExit(f'FAIL: AuthorizationCanceled should be LOG3, got {len(topics)} topics')
+sender = int('${sender,,}', 16)
+nonce = int('${cancel_nonce,,}', 16)
+if int(topics[1], 16) != sender:
+    raise SystemExit(f'FAIL: AuthorizationCanceled authorizer {topics[1]} != sender')
+if int(topics[2], 16) != nonce:
+    raise SystemExit(f'FAIL: AuthorizationCanceled nonce {topics[2]} != expected')
+data = (hits[0].get('data') or '0x')[2:]
+if data not in ('', '0'):
+    raise SystemExit(f'FAIL: AuthorizationCanceled data should be empty, got {data}')
+"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'balanceOf(address)(uint256)' "$sender")" \
+  65 "sender after cancelAuthorization"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'balanceOf(address)(uint256)' "$dest")" \
+  35 "recipient after cancelAuthorization"
+
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'cancelAuthorization(address,bytes32,uint8,bytes32,bytes32)' \
+    "$sender" "$cancel_nonce" "$cancel_v" "$cancel_r" "$cancel_s" >/dev/null 2>&1; then
+  echo "FAIL: replayed cancelAuthorization unexpectedly succeeded" >&2
+  exit 1
+fi
+
+used_typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"TransferWithAuthorization\": [
+      {\"name\":\"from\",\"type\":\"address\"},
+      {\"name\":\"to\",\"type\":\"address\"},
+      {\"name\":\"value\",\"type\":\"uint256\"},
+      {\"name\":\"validAfter\",\"type\":\"uint256\"},
+      {\"name\":\"validBefore\",\"type\":\"uint256\"},
+      {\"name\":\"nonce\",\"type\":\"bytes32\"}
+    ]
+  },
+  \"primaryType\": \"TransferWithAuthorization\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"from\": \"$sender\",
+    \"to\": \"$dest\",
+    \"value\": \"1\",
+    \"validAfter\": \"$valid_after\",
+    \"validBefore\": \"$valid_before\",
+    \"nonce\": \"$cancel_nonce\"
+  }
+}")"
+used_sig="$("$cast" wallet sign --data --private-key "$private_key" "$used_typed")"
+used_r="0x${used_sig:2:64}"
+used_s="0x${used_sig:66:64}"
+used_v="$((16#${used_sig:130:2}))"
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+    "$sender" "$dest" 1 "$valid_after" "$valid_before" "$cancel_nonce" \
+    "$used_v" "$used_r" "$used_s" >/dev/null 2>&1; then
+  echo "FAIL: transferWithAuthorization of a cancelled nonce unexpectedly succeeded" >&2
+  exit 1
+fi
+
+recv_used_typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"ReceiveWithAuthorization\": [
+      {\"name\":\"from\",\"type\":\"address\"},
+      {\"name\":\"to\",\"type\":\"address\"},
+      {\"name\":\"value\",\"type\":\"uint256\"},
+      {\"name\":\"validAfter\",\"type\":\"uint256\"},
+      {\"name\":\"validBefore\",\"type\":\"uint256\"},
+      {\"name\":\"nonce\",\"type\":\"bytes32\"}
+    ]
+  },
+  \"primaryType\": \"ReceiveWithAuthorization\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"from\": \"$sender\",
+    \"to\": \"$dest\",
+    \"value\": \"1\",
+    \"validAfter\": \"$valid_after\",
+    \"validBefore\": \"$valid_before\",
+    \"nonce\": \"$cancel_nonce\"
+  }
+}")"
+recv_used_sig="$("$cast" wallet sign --data --private-key "$private_key" "$recv_used_typed")"
+recv_used_r="0x${recv_used_sig:2:64}"
+recv_used_s="0x${recv_used_sig:66:64}"
+recv_used_v="$((16#${recv_used_sig:130:2}))"
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'receiveWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+    "$sender" "$dest" 1 "$valid_after" "$valid_before" "$cancel_nonce" \
+    "$recv_used_v" "$recv_used_r" "$recv_used_s" >/dev/null 2>&1; then
+  echo "FAIL: receiveWithAuthorization of a cancelled nonce unexpectedly succeeded" >&2
+  exit 1
+fi
+
+live_nonce="0x0000000000000000000000000000000000000000000000000000000000000008"
+live_typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"TransferWithAuthorization\": [
+      {\"name\":\"from\",\"type\":\"address\"},
+      {\"name\":\"to\",\"type\":\"address\"},
+      {\"name\":\"value\",\"type\":\"uint256\"},
+      {\"name\":\"validAfter\",\"type\":\"uint256\"},
+      {\"name\":\"validBefore\",\"type\":\"uint256\"},
+      {\"name\":\"nonce\",\"type\":\"bytes32\"}
+    ]
+  },
+  \"primaryType\": \"TransferWithAuthorization\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"from\": \"$sender\",
+    \"to\": \"$dest\",
+    \"value\": \"1\",
+    \"validAfter\": \"$valid_after\",
+    \"validBefore\": \"$valid_before\",
+    \"nonce\": \"$live_nonce\"
+  }
+}")"
+live_sig="$("$cast" wallet sign --data --private-key "$private_key" "$live_typed")"
+live_r="0x${live_sig:2:64}"
+live_s="0x${live_sig:66:64}"
+live_v="$((16#${live_sig:130:2}))"
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
+  "$sender" "$dest" 1 "$valid_after" "$valid_before" "$live_nonce" "$live_v" "$live_r" "$live_s" >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'balanceOf(address)(uint256)' "$sender")" \
+  64 "sender after transfer of a live nonce"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'balanceOf(address)(uint256)' "$dest")" \
+  36 "recipient after transfer of a live nonce"
+
+echo "evm-anvil-auth3009link: ok (ERC-3009 transfer, receive, and cancel; engineering only)"

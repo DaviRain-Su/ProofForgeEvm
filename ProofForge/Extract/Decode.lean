@@ -999,7 +999,9 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       (endsWith e ".evmTransferWithAuthorization" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmTransferWithAuthorization) ||
       (endsWith e ".evmReceiveWithAuthorization" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmReceiveWithAuthorization)) &&
+      isConstNamed e ``ProofForge.Evm.Runtime.evmReceiveWithAuthorization) ||
+      (endsWith e ".evmCancelAuthorization" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmCancelAuthorization)) &&
       e.getAppArgs.size ≥ 1 then
       if endsWith e ".evmMapGetU64" || isConstNamed e ``ProofForge.Evm.Runtime.evmMapGetU64 then
       let args := e.getAppArgs
@@ -4362,6 +4364,21 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
         (.arg 6) (.arg 7) (.arg 8) (.arg 9) (.arg 10) (.arg 11) (.arg 12) (.arg 13) (.arg 14)
         (.arg 15) (.arg 16) (.arg 17) (.arg 18) (.arg 19) (.arg 20) (.arg 21) (.arg 22) (.arg 23)
         (.arg 24) (.arg 25) (.arg 26) (.arg 27) (.arg 28) (.arg 29) (.arg 30))
+  else if isConstNamed app ``ProofForge.Evm.Runtime.evmCancelAuthorization ||
+      endsWith app ".evmCancelAuthorization" then
+    match nthFromEnd args 4, nthFromEnd args 3, nthFromEnd args 2,
+        nthFromEnd args 1, nthFromEnd args 0 with
+    | some authorizer, some nonce, some _v, some r, some s =>
+      let (a0, a1, a2) := addr20Leaves env authorizer
+      let (n0, n1, n2, n3) := bytes32Leaves env nonce
+      let vv := valAtEnd env args 2
+      let (r0, r1, r2, r3) := bytes32Leaves env r
+      let (z0, z1, z2, z3) := bytes32Leaves env s
+      some (.evmCancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3)
+    | _, _, _, _, _ =>
+      some (.evmCancelAuthorization (.arg 0) (.arg 1) (.arg 2) (.arg 3) (.arg 4) (.arg 5)
+        (.arg 6) (.arg 7) (.arg 8) (.arg 9) (.arg 10) (.arg 11) (.arg 12)
+        (.arg 13) (.arg 14) (.arg 15))
   else none
 
 /-- Collect EVM effect leaves by unfolding source facades into `ProofForge.Evm.Runtime`
@@ -4719,6 +4736,7 @@ private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   | some (.evmPermit _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
   | some (.evmTransferWithAuthorization _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
   | some (.evmReceiveWithAuthorization _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
+  | some (.evmCancelAuthorization _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => .lit 0
   | some (.evmTokenPermit _ _ _ _ _ _ _ _ _ v0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) => v0
   | some (.evmComponent (.openCall _)) => .lit 0
   | _ => .arg 0
