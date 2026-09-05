@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Fail when ERC-4626 docs still claim 1:1 conversion or lose floor/ceiling math.
 
-Erc4626.convertToShares is floor assets * totalSupply / totalAssets.
+Erc4626.convertToShares is floor assets * totalSupply / totalAssets via mulDiv.
 Erc4626.previewMint is ceiling shares * totalAssets / totalSupply.
 Erc4626.previewWithdraw is ceiling assets * totalSupply / totalAssets.
 Empty supply is 1:1. Virtual-offset inflation defense stays out.
-Full-precision mulDiv stays out.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -27,6 +26,8 @@ STALE_PHRASES = (
     "Ceiling previewMint stays out",
     "Ceiling `previewWithdraw` stays out",
     "Ceiling previewWithdraw stays out",
+    "Full-precision mulDiv stays out",
+    "`mulDiv` stays out",
 )
 
 REQUIRED = (
@@ -44,7 +45,27 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
-        "UInt256.div (UInt256.mul assets totalSupply) totalAssets",
+        "def mulDiv (left right denom : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "mulDiv assets totalSupply totalAssets",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "mulDiv shares totalAssets totalSupply",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Runtime.lean",
+        "def evmMulDiv256 (a b denom : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "WideWord.lean",
+        "| mulDiv256 (limb : Nat)",
+    ),
+    (
+        ROOT / "ProofForge" / "Extract" / "Decode.lean",
+        "endsWith baseE \".evmMulDiv256\" then some (.mulDiv256 limb.toNat)",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
@@ -139,12 +160,24 @@ REQUIRED = (
         '"floor convertToShares(1) is 0"',
     ),
     (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        "two128=340282366920938463463374607431768211456",
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"full-precision convertToShares(2^128) is 2^128"',
+    ),
+    (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 ceiling `previewMint`",
     ),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 ceiling `previewWithdraw`",
+    ),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "ERC-4626 floor `mulDiv`",
     ),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
 )

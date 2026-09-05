@@ -45,6 +45,23 @@ pf_evm_require_equal "${got_asset,,}" "${token,,}" "asset"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 100)" 100 \
   "empty vault is 1:1 shares"
 
+# 2^128 * 2^128 overflows checked 256-bit mul; mulDiv keeps convertToShares 1:1.
+two128=340282366920938463463374607431768211456
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
+  'mint(address,uint256)' "$sender" "$two128" >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
+  'approve(address,uint256)' "$addr" "$two128" >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
+  'deposit(uint256,address)' "$two128" "$sender" >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' "$two128")" \
+  "$two128" "full-precision convertToShares(2^128) is 2^128"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' "$two128")" \
+  "$two128" "full-precision convertToAssets(2^128) is 2^128"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
+  'redeem(uint256,address,address)' "$two128" "$sender" "$sender" >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint256)')" 0 \
+  "redeemed 2^128 shares"
+
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'mint(address,uint256)' "$sender" 500 >/dev/null
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'approve(address,uint256)' "$addr" 500 >/dev/null
 

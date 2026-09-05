@@ -355,6 +355,10 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
             endsWith baseE ".evmSub256" then some (.arith256 1 limb.toNat)
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMul256 ||
             endsWith baseE ".evmMul256" then some (.arith256 2 limb.toNat)
+        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMulWrap256 ||
+            endsWith baseE ".evmMulWrap256" then some (.arith256 3 limb.toNat)
+        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmSubWrap256 ||
+            endsWith baseE ".evmSubWrap256" then some (.arith256 4 limb.toNat)
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmAnd256 ||
             endsWith baseE ".evmAnd256" then some (.bitwise256 .and limb.toNat)
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmOr256 ||
@@ -391,6 +395,26 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
         let w2 ← limbVal base "w2"
         let w3 ← limbVal base "w3"
         some (w0, w1, w2, w3)
+      let ternaryQuery? : Option Evm.WideWord.Query :=
+        if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMulmod256 ||
+            endsWith baseE ".evmMulmod256" then some (.mulmod256 limb.toNat)
+        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMulDiv256 ||
+            endsWith baseE ".evmMulDiv256" then some (.mulDiv256 limb.toNat)
+        else none
+      match ternaryQuery? with
+      | some query =>
+        let bargs := baseE.getAppArgs
+        if bargs.size < 3 then none
+        else
+          let aE := bargs[bargs.size - 3]!
+          let bE := bargs[bargs.size - 2]!
+          let mE := bargs[bargs.size - 1]!
+          match wordVals aE, wordVals bE, wordVals mE with
+          | some (a0, a1, a2, a3), some (b0, b1, b2, b3), some (m0, m1, m2, m3) =>
+            some (.ext (.evm (.component (.wideWord query)))
+              #[a0, a1, a2, a3, b0, b1, b2, b3, m0, m1, m2, m3])
+          | _, _, _ => none
+      | none =>
       match binaryQuery?, unaryQuery?, shiftQuery? with
       | some query, _, _ =>
         let bargs := baseE.getAppArgs
@@ -1261,6 +1285,10 @@ private partial def uint256Leaves (env : Environment) (e : Expr) :
     if isConstNamed e ``ProofForge.Evm.Runtime.evmAdd256 || endsWith e ".evmAdd256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmSub256 || endsWith e ".evmSub256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmMul256 || endsWith e ".evmMul256" ||
+        isConstNamed e ``ProofForge.Evm.Runtime.evmMulWrap256 || endsWith e ".evmMulWrap256" ||
+        isConstNamed e ``ProofForge.Evm.Runtime.evmSubWrap256 || endsWith e ".evmSubWrap256" ||
+        isConstNamed e ``ProofForge.Evm.Runtime.evmMulmod256 || endsWith e ".evmMulmod256" ||
+        isConstNamed e ``ProofForge.Evm.Runtime.evmMulDiv256 || endsWith e ".evmMulDiv256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmAnd256 || endsWith e ".evmAnd256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmOr256 || endsWith e ".evmOr256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmXor256 || endsWith e ".evmXor256" ||
@@ -5962,6 +5990,10 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
       isConstNamed e ``ProofForge.Evm.Runtime.evmAdd256 || endsWith e ".evmAdd256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmSub256 || endsWith e ".evmSub256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmMul256 || endsWith e ".evmMul256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmMulWrap256 || endsWith e ".evmMulWrap256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmSubWrap256 || endsWith e ".evmSubWrap256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmMulmod256 || endsWith e ".evmMulmod256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmMulDiv256 || endsWith e ".evmMulDiv256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmAnd256 || endsWith e ".evmAnd256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmOr256 || endsWith e ".evmOr256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmXor256 || endsWith e ".evmXor256" ||
