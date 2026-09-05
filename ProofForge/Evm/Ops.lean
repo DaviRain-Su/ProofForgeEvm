@@ -92,6 +92,8 @@ def tokenBalance256 (limb : Nat) (tw0 tw1 tw2 : Val) : Val :=
   .ext (.component (.closedCall (.balance256 limb))) #[tw0, tw1, tw2]
 def tokenAllowance256 (limb : Nat) (tw0 tw1 tw2 o0 o1 o2 s0 s1 s2 : Val) : Val :=
   .ext (.component (.closedCall (.allowance256 limb))) #[tw0, tw1, tw2, o0, o1, o2, s0, s1, s2]
+def authorizationState (a0 a1 a2 n0 n1 n2 n3 : Val) : Val :=
+  .ext (.component (.closedCall .authorizationState)) #[a0, a1, a2, n0, n1, n2, n3]
 def callValue256 (limb : Nat) : Val := .ext (.callValue256 limb) #[]
 def selfBalance256 (limb : Nat) : Val := .ext (.selfBalance256 limb) #[]
 def domainSep256 (limb : Nat) : Val := .ext (.domainSep256 limb) #[]

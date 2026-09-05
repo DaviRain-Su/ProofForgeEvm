@@ -13,17 +13,22 @@ the packed 256-bit word. -/
 inductive Query where
   | balance256 (limb : Nat)
   | allowance256 (limb : Nat)
+  /-- Local auth-used flag: keccak256(authorizer.w0 ‖ w1 ‖ w2 ‖ packedNonce ‖ 3). -/
+  | authorizationState
   deriving BEq, Repr, Inhabited
 
 def Query.arity : Query → Nat
   | .balance256 _ => 3
   | .allowance256 _ => 9
+  | .authorizationState => 7
 
 def Query.effects : Query → EffectSummary
   | .balance256 _ | .allowance256 _ => { externalCall := true }
+  | .authorizationState => { readsStorage := true }
 
 def Query.wellFormed : Query → Bool
   | .balance256 limb | .allowance256 limb => limb ≤ 3
+  | .authorizationState => true
 
 private def renderOperands (renderValue : V → String) (operands : Array V) : String :=
   String.intercalate "," (operands.map renderValue).toList
@@ -36,6 +41,9 @@ def Query.canonical (renderValue : V → String) (operands : Array V) : Query �
   | .allowance256 limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.tokenAllowance256 {limb}" ++
         s!"({renderOperands renderValue operands})"
+  | .authorizationState =>
+      if operands.size == 7 then s!"authstate({renderOperands renderValue operands})"
+      else s!"invalid-authstate-{operands.size}"
 
 /-- Closed ERC-20 / WETH / Uniswap / permit effects. -/
 inductive Call (V : Type) where

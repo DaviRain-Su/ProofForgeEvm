@@ -65,7 +65,7 @@ REQUIRED = (
     ),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
-        "this expansion shipped `cancelAuthorization`",
+        "this expansion shipped `authorizationState`",
     ),
     (
         ROOT / "docs" / "product" / "support-matrix.md",

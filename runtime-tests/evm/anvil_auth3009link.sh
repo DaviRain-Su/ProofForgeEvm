@@ -44,6 +44,12 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
 valid_after=0
 valid_before=9999999999
 nonce="0x0000000000000000000000000000000000000000000000000000000000000001"
+auth_of() {
+  "$cast" call --rpc-url "$rpc" "$addr" \
+    'authorizationState(address,bytes32)(bool)' "$1" "$2"
+}
+pf_evm_require_equal "$(auth_of "$sender" "$nonce")" false \
+  "unused nonce is false before transfer"
 typed="$(printf '%s' "{
   \"types\": {
     \"EIP712Domain\": [
@@ -126,6 +132,10 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'totalSupply()(uint256)')" \
   100 "total supply after authorized transfer"
+pf_evm_require_equal "$(auth_of "$sender" "$nonce")" true \
+  "transfer marks the authorizer nonce used"
+pf_evm_require_equal "$(auth_of "$dest" "$nonce")" false \
+  "recipient is not the authorizer for that nonce"
 
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
@@ -185,6 +195,8 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: validAfter == timestamp unexpectedly succeeded" >&2
   exit 1
 fi
+pf_evm_require_equal "$(auth_of "$sender" "$edge_nonce")" false \
+  "failed validAfter left the nonce unused"
 
 edge_before_nonce="0x0000000000000000000000000000000000000000000000000000000000000004"
 edge_before_typed="$(printf '%s' "{
@@ -349,6 +361,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$dest")" \
   35 "recipient after receiveWithAuthorization"
+pf_evm_require_equal "$(auth_of "$sender" "$recv_nonce")" true \
+  "receive marks the authorizer nonce used"
 
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'receiveWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
@@ -436,6 +450,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$dest")" \
   35 "recipient after cancelAuthorization"
+pf_evm_require_equal "$(auth_of "$sender" "$cancel_nonce")" true \
+  "cancel marks the authorizer nonce used"
 
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'cancelAuthorization(address,bytes32,uint8,bytes32,bytes32)' \
@@ -572,6 +588,8 @@ live_sig="$("$cast" wallet sign --data --private-key "$private_key" "$live_typed
 live_r="0x${live_sig:2:64}"
 live_s="0x${live_sig:66:64}"
 live_v="$((16#${live_sig:130:2}))"
+pf_evm_require_equal "$(auth_of "$sender" "$live_nonce")" false \
+  "live nonce is unused before transfer"
 "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   "$addr" 'transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)' \
   "$sender" "$dest" 1 "$valid_after" "$valid_before" "$live_nonce" "$live_v" "$live_r" "$live_s" >/dev/null
@@ -581,5 +599,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'balanceOf(address)(uint256)' "$dest")" \
   36 "recipient after transfer of a live nonce"
+pf_evm_require_equal "$(auth_of "$sender" "$live_nonce")" true \
+  "live transfer marks the authorizer nonce used"
 
-echo "evm-anvil-auth3009link: ok (ERC-3009 transfer, receive, and cancel; engineering only)"
+echo "evm-anvil-auth3009link: ok (ERC-3009 transfer, receive, cancel, and authorizationState; engineering only)"
