@@ -12,8 +12,9 @@ paused flag is an explicit `UInt8` state field, and `ownership` contains exactly
 address. All storage writes stay in this file. Successful `transferOwnership` emits Ownable2Step
 `OwnershipTransferStarted`; successful `acceptOwnership` and `renounceOwnership` emit canonical
 `OwnershipTransferred`; renunciation clears both owner and pending nominee. Successful `pause` /
-`unpause` emit `Paused` / `Unpaused`. Constructor init stores the owner argument and empty pending
-state; it does not log (constructor effects are not lowered).
+`unpause` emit `Paused` / `Unpaused`. CREATE of a zero owner reverts `OwnableInvalidOwner(address)`.
+The success path emits `OwnershipTransferred(address(0), owner)`. Nominate-zero on
+`transferOwnership` still reverts `ZeroAddress()`.
 -/
 
 def u64Max : UInt64 := ~~~(0 : UInt64)
@@ -32,6 +33,11 @@ inductive Error where
 
 @[pf_entry]
 def init (owner : Address) : State :=
+  let _ :=
+    if Address.isZero owner then
+      Revert.ownableInvalidOwner owner
+    else
+      Ownable.Log.constructorTransferred owner
   { owner, paused := Pausable.running, count := 0, ownership := Access.Ownership.none }
 
 /-- Step 1 of ownership transfer: current owner nominates `candidate`.

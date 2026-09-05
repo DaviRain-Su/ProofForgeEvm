@@ -13,12 +13,12 @@ the application.
 Constructor policy that *is* extractable: applications store a nonzero owner argument into an
 explicit `State` field and start with `Access.Ownership.none`. A dropped-let
 `Revert.ownableInvalidOwner` before the `returnState` vector lowers as a constructor prefix.
-VestLink and Vest20Link CREATE of `address(0)` revert `OwnableInvalidOwner(address)`. The
-else-arm of that dropped-let may emit `Log.constructorTransferred` (LOG3
-`OwnershipTransferred(address(0), newOwner)`). CALL, map writes, value transfers, and any
-other constructor log stay refused (`extract/unsupported: EVM constructor effects are not
-lowered`). TwoStepCounter and Credits still store a zero owner without reverting CREATE and
-without a constructor log.
+VestLink, Vest20Link, TwoStepCounter, and Credits CREATE of `address(0)` revert
+`OwnableInvalidOwner(address)`. The else-arm of that dropped-let may emit
+`Log.constructorTransferred` (LOG3 `OwnershipTransferred(address(0), newOwner)`). CALL, map
+writes, value transfers, and any other constructor log stay refused
+(`extract/unsupported: EVM constructor effects are not lowered`). TwoStepCounter and Credits
+`transferOwnership` of a zero nominee still reverts `ZeroAddress()`.
 -/
 
 /-- Canonical Ownable / Ownable2Step events. Constructor and field names are the ABI surface.

@@ -28,7 +28,11 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   only-owner reverts `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`, and
   `Vest20Link` as the dual-asset wallet (`release()` native ETH plus `release(address)` ERC-20).
   Remaining named gap on that row is no Ownable2Step and ABI `releasedOf` rather than OZ
-  `released`. `temporaryGapCount` stays 0.)
+  `released`.
+  Row 1 (`access/Ownable`, `Ownable2Step`) stays PARTIAL after TwoStepCounter/Credits CREATE
+  reverts `OwnableInvalidOwner(address)` and logs `OwnershipTransferred(address(0), owner)`.
+  Remaining named gap on that row is nominate-zero still `ZeroAddress()`.
+  `temporaryGapCount` stays 0.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal

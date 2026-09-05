@@ -177,7 +177,8 @@ elab "#pf_guard_credits" : command => do
       yul.contains "revert(0, 68)" do
     throwError "Credits yul missing OwnableUnauthorizedAccount/Paused/ZeroAddress/Insufficient payloads"
   let abi := ProofForge.Evm.Emit.emitAbi program
-  for name in #["\"name\":\"OwnableUnauthorizedAccount\"", "\"name\":\"Paused\"", "\"name\":\"ZeroAddress\"",
+  for name in #["\"name\":\"OwnableUnauthorizedAccount\"", "\"name\":\"OwnableInvalidOwner\"",
+      "\"name\":\"Paused\"", "\"name\":\"ZeroAddress\"",
       "\"name\":\"Insufficient\"", "\"name\":\"transferOwnership\"",
       "\"name\":\"acceptOwnership\"", "\"name\":\"renounceOwnership\"", "\"name\":\"grant\"", "\"name\":\"claim\"",
       "\"name\":\"creditOf\"", "\"name\":\"totalOf\""] do

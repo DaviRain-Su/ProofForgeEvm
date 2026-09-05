@@ -187,6 +187,9 @@ jobs:
       - name: Check vesting dual-asset wallet honesty
         run: python3 scripts/check_vest_dual_honesty.py
 
+      - name: Check TwoStep/Credits CREATE honesty
+        run: python3 scripts/check_twostep_ctor_honesty.py
+
       - name: Check ERC-721 3-arg safeTransferFrom honesty
         run: python3 scripts/check_safe3_honesty.py
 
