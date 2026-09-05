@@ -10,9 +10,9 @@ namespace ProofForge.Evm.OpenCall.Emit
 /-!
 Emitter for typed open CALL/STATICCALL. Calldata is assembled from the plan at `memory[0, …)`:
 selector, one head word per argument, then dynamic tails in declaration order. A plan with no
-array keeps the historical geometry: at most one `bytes` tail (length word and padded payload)
-whose offset is the compile-time head length. A plan with an array walks a byte cursor so a
-later tail can follow a runtime-length prefix. The result gate is always
+array keeps the historical geometry: at most one packed `bytes` or `string` tail (length word
+and padded payload) whose offset is the compile-time head length. A plan with an array walks a
+byte cursor so a later tail can follow a runtime-length prefix. The result gate is always
 `CallResult.Emit.emitBound`, handed the tail's padded length or the cursor so the call sends
 exactly the canonical calldata size. This is not a third result-policy interpreter.
 `NativeFx.sendEth` is not lowered through this module.
@@ -84,12 +84,12 @@ private def storeArg (indent : String) (offset headWords : Nat) (type : ArgType)
   else
     throw "extract/unsupported: open-call argument type has no EVM word carrier"
 
-/-- Write the tail of one `bytes` argument at `memory[tailAt, tailAt + 32 + ceil32(capacity))`:
-the runtime length, then the payload padded to a word. Limbs that are exactly one packed-bytes
-entry parameter copy its padded payload from calldata, whose padding the entry decoder proved
-zero. Any other limbs store only the first `length` bytes over a zeroed region, so the calldata
-is canonical however the inactive source slots read. Returns the Yul name bound to the padded
-payload length. -/
+/-- Write the tail of one packed `bytes` / `string` argument at
+`memory[tailAt, tailAt + 32 + ceil32(capacity))`: the runtime length, then the payload padded to
+a word. Limbs that are exactly one packed-bytes entry parameter copy its padded payload from
+calldata, whose padding the entry decoder proved zero. Any other limbs store only the first
+`length` bytes over a zeroed region, so the calldata is canonical however the inactive source
+slots read. Returns the Yul name bound to the padded payload length. -/
 private def storeBytesTail (context : Context σ) (tailAt capacity : Nat) (limbs : Array Ops.Val)
     (parts : Array String) (st : σ) : Except String (String × String × σ) := do
   let indent := context.indent
@@ -262,8 +262,10 @@ def emitPlan (context : Context σ) (plan : OpenCall.Plan Ops.Val) (st : σ) :
       txt := txt ++ (← storeArg indent (CallResult.selectorBytes + CallResult.abiWordBytes * i)
         plan.args.size plan.args[i]!.type args[i]!)
     if let some i := plan.args.findIdx? (·.type.isDynamic) then
-      let .bytes capacity := plan.args[i]!.type
-        | throw "extract/unsupported: open-call bytes argument lost its capacity"
+      let capacity ←
+        match plan.args[i]!.type with
+        | .bytes n | .string n => pure n
+        | _ => throw "extract/unsupported: open-call packed argument lost its capacity"
       let (tailTxt, padded, st') ←
         storeBytesTail context plan.headBytes capacity plan.args[i]!.parts args[i]! st
       txt := txt ++ tailTxt
@@ -278,7 +280,7 @@ def emitPlan (context : Context σ) (plan : OpenCall.Plan Ops.Val) (st : σ) :
       match plan.args[i]!.type with
       | .scalar _ =>
           txt := txt ++ (← storeArg indent offset plan.args.size plan.args[i]!.type args[i]!)
-      | .bytes capacity =>
+      | .bytes capacity | .string capacity =>
           txt := txt ++ indent ++ "mstore(" ++ toString offset ++ ", sub(" ++ cursor ++
             ", 4))" ++ nl
           let (tailTxt, st') ←

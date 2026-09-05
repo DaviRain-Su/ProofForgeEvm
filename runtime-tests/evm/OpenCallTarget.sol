@@ -102,6 +102,20 @@ contract OpenCallTarget {
         return keccak256(msg.data);
     }
 
+    uint256 public labeledLength;
+    bytes32 public labeledHash;
+    bytes32 public labeledCalldataHash;
+
+    function label(string calldata text) external {
+        labeledLength = bytes(text).length;
+        labeledHash = keccak256(bytes(text));
+        labeledCalldataHash = keccak256(msg.data);
+    }
+
+    function stringHash(string calldata) external pure returns (bytes32) {
+        return keccak256(msg.data);
+    }
+
     /// Receiver hook. The returned frame is `hookWord` over `hookSize` bytes so the gate can
     /// answer with the right magic, a wrong selector, a dirty low byte, or a wrong size.
     /// `onERC721Received(address,address,uint256,bytes)`, left-aligned.

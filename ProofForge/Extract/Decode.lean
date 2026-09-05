@@ -80,6 +80,14 @@ private def boundedBytesFieldType? (ty : Expr) : Option Nat := do
   guard (args.size == 1)
   natLiteral? args[0]!
 
+/-- Literal capacity of a `BoundedString n` field type. -/
+private def boundedStringFieldType? (ty : Expr) : Option Nat := do
+  let ty := ty.consumeMData
+  guard (ty.getAppFn.constName? == some boundedStringName)
+  let args := ty.getAppArgs
+  guard (args.size == 1)
+  natLiteral? args[0]!
+
 /-- Element type and literal capacity of a `BoundedVec α n` field type. -/
 private def boundedVecFieldType? (ty : Expr) : Option (Expr × Nat) := do
   let ty := ty.consumeMData
@@ -1267,11 +1275,12 @@ private partial def eventPartsOf (env : Environment) (scalar : Core.Codec.Scalar
         some (#[w0, w1, w2, w3].extract 0 (Evm.Codec.limbCount scalar))
       else none
 
-/-- The limbs of a `BoundedBytes` open-call argument: the runtime length leaf, then
-`field.values[slot]` for every slot, read through the same `GetElem` path a source
+/-- The limbs of a packed `BoundedBytes` / `BoundedString` open-call argument: the runtime length
+leaf, then `field.values[slot]` for every slot, read through the same `GetElem` path a source
 `bytes.values[0].toUInt64` takes. A source-built constructor (empty `data` on the
 3-arg ERC-721 overload) is not an argument, so GetElem cannot find a `methodArgRef`. -/
-private partial def decodeBytesArgParts (env : Environment) (capacity : Nat) (field : Expr) :
+private partial def decodePackedByteArgParts (env : Environment)
+    (inductName lengthName valuesName : Name) (capacity : Nat) (field : Expr) :
     Option (Array Ops.Val) :=
   let rec listNats (fuel : Nat) (e : Expr) : Option (Array Nat) :=
     match fuel with
@@ -1358,7 +1367,7 @@ private partial def decodeBytesArgParts (env : Environment) (capacity : Nat) (fi
     let some ctor := field.getAppFn.constName? | none
     let some info := env.find? ctor | none
     let .ctorInfo c := info | none
-    unless c.induct == boundedBytesName do none
+    unless c.induct == inductName do none
     let args := field.getAppArgs
     unless args.size ≥ 2 do none
     let lengthE := args[args.size - 2]!
@@ -1380,9 +1389,9 @@ private partial def decodeBytesArgParts (env : Environment) (capacity : Nat) (fi
   match ctorParts? with
   | some parts => some parts
   | none => do
-    let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.length)
+    let length ← val env (mkAppN (mkConst lengthName)
       #[mkNatLit capacity, field])
-    let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedBytes.values)
+    let values := mkAppN (mkConst valuesName)
       #[mkNatLit capacity, field]
     let mut parts : Array Ops.Val := #[length]
     for slot in [0:capacity] do
@@ -1403,8 +1412,8 @@ private partial def decodeArrayArgParts (env : Environment) (elementType : Expr)
   return parts
 
 /-- Preserve a typed open-call constructor as one ABI plan. Names, closed scalar types, the
-literal capacity of a `BoundedBytes` field, and the literal capacity of a `BoundedVec` field
-stay structured; unsupported shapes must not degrade to raw calldata. -/
+literal capacity of a `BoundedBytes` or `BoundedString` field, and the literal capacity of a
+`BoundedVec` field stay structured; unsupported shapes must not degrade to raw calldata. -/
 private partial def decodeOpenCallArgs (env : Environment) (applied : Expr) :
     Except String (String × Array (Evm.OpenCall.Arg Ops.Val)) :=
   let applied := peelLets (strip applied)
@@ -1465,21 +1474,38 @@ private partial def decodeOpenCallArgs (env : Environment) (applied : Expr) :
                     let argType := Evm.OpenCall.ArgType.bytes capacity
                     unless argType.supported do
                       return .error "open-call bytes argument exceeds the bounded bytes capacity"
-                    unless (args.filter (·.type.isBytes)).size < Evm.OpenCall.maxBytesArgs do
-                      return .error "open-call supports at most one bytes argument"
+                    unless (args.filter (·.type.isPacked)).size < Evm.OpenCall.maxBytesArgs do
+                      return .error "open-call supports at most one bytes or string argument"
                     unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxDynamicArgs do
                       return .error "open-call supports at most three dynamic arguments"
-                    let some parts := decodeBytesArgParts env capacity fieldExpr
+                    let some parts := decodePackedByteArgParts env boundedBytesName
+                        ``ProofForge.Core.Value.BoundedBytes.length
+                        ``ProofForge.Core.Value.BoundedBytes.values capacity fieldExpr
                       | return .error "open-call bytes argument is not a bounded bytes value"
                     pure { name := fieldName, type := argType, parts }
                   | none =>
-                    let some scalar := eventScalarOfLeanType domain
-                      | return .error "open-call field type is not a closed EVM scalar"
-                    unless Evm.OpenCall.argScalarSupported scalar do
-                      return .error "open-call field type is not a closed EVM scalar"
-                    let some parts := eventPartsOf env scalar fieldExpr
-                      | return .error "open-call field is not a scalar value"
-                    pure { name := fieldName, type := .scalar scalar, parts }
+                    match boundedStringFieldType? domain with
+                    | some capacity =>
+                      let argType := Evm.OpenCall.ArgType.string capacity
+                      unless argType.supported do
+                        return .error "open-call string argument exceeds the bounded string capacity"
+                      unless (args.filter (·.type.isPacked)).size < Evm.OpenCall.maxBytesArgs do
+                        return .error "open-call supports at most one bytes or string argument"
+                      unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxDynamicArgs do
+                        return .error "open-call supports at most three dynamic arguments"
+                      let some parts := decodePackedByteArgParts env boundedStringName
+                          ``ProofForge.Core.Value.BoundedString.length
+                          ``ProofForge.Core.Value.BoundedString.values capacity fieldExpr
+                        | return .error "open-call string argument is not a bounded string value"
+                      pure { name := fieldName, type := argType, parts }
+                    | none =>
+                      let some scalar := eventScalarOfLeanType domain
+                        | return .error "open-call field type is not a closed EVM scalar"
+                      unless Evm.OpenCall.argScalarSupported scalar do
+                        return .error "open-call field type is not a closed EVM scalar"
+                      let some parts := eventPartsOf env scalar fieldExpr
+                        | return .error "open-call field is not a scalar value"
+                      pure { name := fieldName, type := .scalar scalar, parts }
               names := names.push fieldName
               args := args.push arg
               type := body

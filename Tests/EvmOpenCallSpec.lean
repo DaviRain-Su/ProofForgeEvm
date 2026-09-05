@@ -108,6 +108,14 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 #guard (OpenCall.ArgType.bytes 65).supported
 #guard !(OpenCall.ArgType.bytes 66).supported
 #guard OpenCall.ArgType.supported (.bytes Codec.maxPackedBytesCapacity)
+#guard (OpenCall.ArgType.string 8).limbCount == 9
+#guard (OpenCall.ArgType.string 8).abiType matches .ok "string"
+#guard (OpenCall.ArgType.string 8).canonical == "string8"
+#guard (OpenCall.ArgType.string 65).supported
+#guard !(OpenCall.ArgType.string 66).supported
+#guard OpenCall.ArgType.supported (.string Codec.maxPackedBytesCapacity)
+#guard (OpenCall.ArgType.string 8).isPacked
+#guard !(OpenCall.ArgType.bytes 8).isString
 #guard (OpenCall.ArgType.array 4 .uint256).limbCount == 17
 #guard (OpenCall.ArgType.array 4 .uint256).abiType matches .ok "uint256[]"
 #guard (OpenCall.ArgType.array 4 .uint256).supported
@@ -126,6 +134,32 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 -- A scalar-only plan spells its canonical string as before the bytes tail existed.
 #guard (transferPlan.canonical fun _ => "x") ==
   s!"ocall.call.erc20.transfer(x,x,x;to:{repr ProofForge.Core.Codec.Scalar.address20}(x,x,x),amount:{repr ProofForge.Core.Codec.Scalar.uint256}(x,x,x,x))"
+
+private def stringArgPlan (name : String) (capacity : Nat) : OpenCall.Arg Ops.Val :=
+  { name, type := .string capacity, parts := Array.replicate (1 + capacity) lit }
+
+private def labelPlan : OpenCall.Plan Ops.Val := {
+  name := "label"
+  args := #[stringArgPlan "text" 8]
+  target := #[lit, lit, lit]
+  kind := .call
+  policy := .contractSuccess
+}
+
+#guard labelPlan.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard labelPlan.headBytes == 36
+#guard labelPlan.inSize == 68
+#guard labelPlan.abiTypes matches .ok #["string"]
+#guard
+  match labelPlan.selectorHex (·.wellFormed Ops.ValKind.arity) with
+  | .ok sel => sel == Keccak.selector "label" #["string"] &&
+      sel != Keccak.selector "label" #["bytes"]
+  | .error _ => false
+#guard (labelPlan.canonical fun _ => "x").endsWith ",text:string8(x,x,x,x,x,x,x,x,x))"
+
+private def mixedPacked : OpenCall.Plan Ops.Val :=
+  { sinkPlan with args := #[bytesArg "a" 4, stringArgPlan "b" 4] }
+#guard !mixedPacked.wellFormed (·.wellFormed Ops.ValKind.arity)
 
 private def twoTails : OpenCall.Plan Ops.Val :=
   { sinkPlan with args := #[bytesArg "a" 4, bytesArg "b" 4] }
@@ -591,17 +625,17 @@ inductive TwoTails where
 def twoBytesArgs (target : Address) (a b : BoundedBytes 4) : UInt64 :=
   OpenCall.call target (TwoTails.pair a b)
 
+inductive BytesAndString where
+  | pair (a : BoundedBytes 4) (b : BoundedString 4)
+
+def bytesAndString (target : Address) (a : BoundedBytes 4) (b : BoundedString 4) : UInt64 :=
+  OpenCall.call target (BytesAndString.pair a b)
+
 inductive WideTail where
   | wide (data : BoundedBytes 66)
 
 def wideBytesArg (target : Address) (data : BoundedBytes 66) : UInt64 :=
   OpenCall.call target (WideTail.wide data)
-
-inductive StringTail where
-  | text (data : BoundedString 4)
-
-def stringArg (target : Address) (data : BoundedString 4) : UInt64 :=
-  OpenCall.call target (StringTail.text data)
 
 end Unsupported
 
@@ -662,6 +696,12 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost markThenPing"
   let some sink := source.methods.find? (·.ixName == "sinkBytes")
     | throwError "open-call example lost sinkBytes"
+  let some _hash := source.methods.find? (·.ixName == "hashBytes")
+    | throwError "open-call example lost hashBytes"
+  let some label := source.methods.find? (·.ixName == "sinkString")
+    | throwError "open-call example lost sinkString"
+  let some _hashString := source.methods.find? (·.ixName == "hashString")
+    | throwError "open-call example lost hashString"
   let some hook := source.methods.find? (·.ixName == "notifyReceiver")
     | throwError "open-call example lost notifyReceiver"
   let some batchHook := source.methods.find? (·.ixName == "notifyBatchReceiver")
@@ -672,6 +712,7 @@ elab "#pf_guard_evm_open_call_source" : command => do
   let payPlans := sourceOpenCalls pay.ops
   let markPlans := sourceOpenCalls mark.ops
   let sinkPlans := sourceOpenCalls sink.ops
+  let labelPlans := sourceOpenCalls label.ops
   unless pingPlans.size == 1 && pingPlans[0]!.name == "ping" &&
       pingPlans[0]!.kind == .call &&
       pingPlans[0]!.policy == .contractSuccess &&
@@ -698,6 +739,13 @@ elab "#pf_guard_evm_open_call_source" : command => do
       sinkPlans[0]!.args[1]!.parts.size == 9 &&
       sinkPlans[0]!.inSize == 100 && sinkPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
     throwError s!"sinkBytes plan diverged: {repr sinkPlans}"
+  unless labelPlans.size == 1 && labelPlans[0]!.name == "label" &&
+      labelPlans[0]!.kind == .call && labelPlans[0]!.policy == .contractSuccess &&
+      labelPlans[0]!.args.size == 1 &&
+      labelPlans[0]!.args[0]!.name == "text" && labelPlans[0]!.args[0]!.type == .string 8 &&
+      labelPlans[0]!.args[0]!.parts.size == 9 &&
+      labelPlans[0]!.inSize == 68 && labelPlans[0]!.abiTypes matches .ok #["string"] do
+    throwError s!"sinkString plan diverged: {repr labelPlans}"
   -- The hook's magic is the plan's own selector, computed from the constructor, never written
   -- by the author.
   let hookPlans := sourceOpenCalls hook.ops
@@ -778,6 +826,7 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectLimbs "readBalance" .word
   expectLimbs "readSupports" .bool
   expectLimbs "hashBytes" .word
+  expectLimbs "hashString" .word
   -- Both bytes paths send the canonical size: the static head plus the padded runtime length.
   unless yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "sink" #["uint256", "bytes"]})" &&
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "calldataHash" #["bytes"]})" &&
@@ -785,6 +834,10 @@ elab "#pf_guard_evm_open_call_source" : command => do
       yul.contains "mstore(4, 32)" && yul.contains "staticcall(gas(), v0, 0, add(68, " &&
       yul.contains ":= and(add(" && yul.contains ", 31), not(31))" do
     throwError "open-call Yul omitted the bytes tail offset, size, or selector"
+  unless yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "label" #["string"]})" &&
+      yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "stringHash" #["string"]})" &&
+      !yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "label" #["bytes"]})" do
+    throwError "open-call Yul omitted the string selector or used the bytes selector"
   unless yul.contains "if iszero(eq(returndatasize(), 96))" &&
       yul.contains "if iszero(eq(returndatasize(), 128))" &&
       yul.contains ", 1) { revert(0, 0) }" &&
@@ -802,9 +855,9 @@ elab "#pf_guard_evm_open_call_source" : command => do
   expectUnsupported env ``Unsupported.optionField "closed EVM scalar"
   expectUnsupported env ``Unsupported.anonymous "explicitly named"
   expectUnsupported env ``Unsupported.nineArgs "at most eight"
-  expectUnsupported env ``Unsupported.twoBytesArgs "at most one bytes argument"
+  expectUnsupported env ``Unsupported.twoBytesArgs "at most one bytes or string argument"
+  expectUnsupported env ``Unsupported.bytesAndString "at most one bytes or string argument"
   expectUnsupported env ``Unsupported.wideBytesArg "exceeds the bounded bytes capacity"
-  expectUnsupported env ``Unsupported.stringArg "closed EVM scalar"
 
   -- A read in value position keeps the computation around it: the Bool read is the `ite`
   -- condition, the UInt256 read an operand of `ge256`, the Address read an operand of `eq20`,
