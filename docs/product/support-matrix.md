@@ -41,7 +41,7 @@ ProofForge EVM is a **checkout-first Lean 4 → Yul → solc** compiler for a fa
 
 | Module | Say this | Do **not** say this |
 |---|---|---|
-| `Examples.Evm.Erc20Meta` | ERC-20-shaped ABI: `string` name/symbol, standard `allowance` / `transfer` / `approve` selectors | “Audited EIP-20” / mainnet token factory |
+| `Examples.Evm.Erc20Meta` | ERC-20-shaped ABI: `string` name/symbol, standard `allowance` / `transfer` / `approve` selectors, issuer EIP-2612 `permit` / `DOMAIN_SEPARATOR` / `nonces` over the closed Token/1 domain | “Audited EIP-20” / mainnet token factory |
 | Fungible + `Examples.Evm.Token` | ERC-20-style ledger / allowance policy; **`name`/`symbol` are packed `bytes32`**, and several views use `*Of` names | “Full ERC-20” / drop-in for MetaMask token import without checking ABI |
 | `Erc165` | Static `bytes4` interface IDs and bounded, explicitly declared support predicates. The four partial token examples advertise `IERC165` only and return false for ERC-721/1155, `0xffffffff`, and other undeclared IDs. `ReceiverLink` advertises IERC165 plus IERC721Receiver and IERC1155Receiver. `RoyaltyArt` advertises IERC165 + complete IERC2981 only with a nonzero receiver | Runtime discovery, inferred interface lists, or claiming an incomplete standard interface |
 | `SafeErc20` + `SafePay` | Fail-closed ERC-20 consumer helpers: closed `transfer`/`approve`/`transferFrom`, zero-address gates, checked increase/decrease, USDT `forceApprove` as always `approve(0)` then `approve(amount)`. No raw calldata | Drop-in OpenZeppelin SafeERC20; catching a failed CALL and retrying |

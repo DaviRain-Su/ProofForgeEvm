@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Erc20Meta: ERC-20-shaped string name/symbol + owner-gated mint + standard allowance/transfer/approve.
+# Erc20Meta: ERC-20-shaped string name/symbol + owner-gated mint + standard allowance/transfer/approve
+# plus issuer EIP-2612 permit / DOMAIN_SEPARATOR / nonces over the closed Token/1 domain.
 # Receipts: canonical Transfer/Approval LOG3 (indexed from/to or owner/spender, uint256 data).
 # Darwin + Linux.
 set -euo pipefail
@@ -59,6 +60,17 @@ if any(e.get('name')=='allowanceOf' for e in abi if e.get('type')=='function'):
     raise SystemExit('FAIL: non-standard allowanceOf must not appear')
 if (allow.get('outputs') or [{}])[0].get('type')!='uint256':
     raise SystemExit('FAIL: allowance() must return uint256')
+permit=fn('permit')
+if permit.get('stateMutability')=='view':
+    raise SystemExit('FAIL: permit must not be a view')
+dom=fn('DOMAIN_SEPARATOR')
+if (dom.get('outputs') or [{}])[0].get('type')!='bytes32':
+    raise SystemExit('FAIL: DOMAIN_SEPARATOR() must return bytes32')
+nonce=fn('nonces')
+if (nonce.get('outputs') or [{}])[0].get('type')!='uint256':
+    raise SystemExit('FAIL: nonces() must return uint256')
+if any(e.get('name')=='nonceOf' for e in abi if e.get('type')=='function'):
+    raise SystemExit('FAIL: non-standard nonceOf must not appear')
 "
 
 got_name="$("$cast" call --rpc-url "$rpc" "$addr" 'name()(string)')"
@@ -247,6 +259,117 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'allowance(address,address)(uint256)' "$sender" "$dest")" \
   15 "allowance after transferFrom"
 
+deadline=9999999999
+typed="$(printf '%s' "{
+  \"types\": {
+    \"EIP712Domain\": [
+      {\"name\":\"name\",\"type\":\"string\"},
+      {\"name\":\"version\",\"type\":\"string\"},
+      {\"name\":\"chainId\",\"type\":\"uint256\"},
+      {\"name\":\"verifyingContract\",\"type\":\"address\"}
+    ],
+    \"Permit\": [
+      {\"name\":\"owner\",\"type\":\"address\"},
+      {\"name\":\"spender\",\"type\":\"address\"},
+      {\"name\":\"value\",\"type\":\"uint256\"},
+      {\"name\":\"nonce\",\"type\":\"uint256\"},
+      {\"name\":\"deadline\",\"type\":\"uint256\"}
+    ]
+  },
+  \"primaryType\": \"Permit\",
+  \"domain\": {
+    \"name\": \"Token\",
+    \"version\": \"1\",
+    \"chainId\": $chain_id,
+    \"verifyingContract\": \"$addr\"
+  },
+  \"message\": {
+    \"owner\": \"$sender\",
+    \"spender\": \"$dest\",
+    \"value\": \"10\",
+    \"nonce\": \"0\",
+    \"deadline\": \"$deadline\"
+  }
+}")"
+sig="$("$cast" wallet sign --data --private-key "$private_key" "$typed")"
+r="0x${sig:2:64}"
+s="0x${sig:66:64}"
+v="$((16#${sig:130:2}))"
+
+wrong_sig="$("$cast" wallet sign --data --private-key "$other_key" "$typed")"
+wrong_r="0x${wrong_sig:2:64}"
+wrong_s="0x${wrong_sig:66:64}"
+wrong_v="$((16#${wrong_sig:130:2}))"
+wrong_data="$("$cast" calldata 'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)' \
+  "$sender" "$dest" 10 "$deadline" "$wrong_v" "$wrong_r" "$wrong_s")"
+pf_evm_require_unauthorized "$addr" "$dest" "$wrong_data" "$dest" \
+  "permit signed by spender"
+
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)' \
+  "$sender" "$dest" 10 "$deadline" "$v" "$r" "$s")"
+printf '%s' "$receipt" | "$python" -I -S -c "
+import json,sys
+r=json.load(sys.stdin)
+logs=r.get('logs') or []
+want='$topic_appr'.lower()
+sender=int('$sender', 16)
+dest=int('$dest', 16)
+hit=None
+for lg in logs:
+    topics=lg.get('topics') or []
+    if topics and topics[0].lower()==want:
+        hit=lg
+        break
+if hit is None:
+    raise SystemExit('FAIL: missing Approval(address,address,uint256) log on permit')
+topics=hit.get('topics') or []
+if len(topics)!=3:
+    raise SystemExit(f'FAIL: permit Approval should be LOG3, got {len(topics)} topics')
+if int(topics[1],16)!=sender:
+    raise SystemExit(f'FAIL: permit Approval owner {topics[1]} != sender')
+if int(topics[2],16)!=dest:
+    raise SystemExit(f'FAIL: permit Approval spender {topics[2]} != dest')
+data=int(hit.get('data') or '0x0', 16)
+if data!=10:
+    raise SystemExit(f'FAIL: permit approval log data {data} != 10')
+"
+pf_evm_typed_event_check "$abi" "$receipt" Approval "$topic_appr" \
+  "{\"owner\": \"$sender\", \"spender\": \"$dest\", \"value\": 10}" "permit Approval LOG3 ABI decode"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'allowance(address,address)(uint256)' "$sender" "$dest")" \
+  10 "allowance after permit"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'nonces(address)(uint256)' "$sender")" \
+  1 "nonce after permit"
+
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'transferFrom(address,address,uint256)' "$sender" "$dest" 10 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'balanceOf(address)(uint256)' "$sender")" \
+  55 "owner after permit transferFrom"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'balanceOf(address)(uint256)' "$dest")" \
+  45 "dest after permit transferFrom"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
+  'allowance(address,address)(uint256)' "$sender" "$dest")" \
+  0 "allowance after permit transferFrom"
+
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)' \
+    "$sender" "$dest" 10 0 "$v" "$r" "$s" >/dev/null 2>&1; then
+  echo "FAIL: expired permit unexpectedly succeeded" >&2
+  exit 1
+fi
+
+got_dom="$("$cast" call --rpc-url "$rpc" "$addr" 'DOMAIN_SEPARATOR()(bytes32)')"
+if [[ ! "$got_dom" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+  echo "FAIL: DOMAIN_SEPARATOR not bytes32: $got_dom" >&2
+  exit 1
+fi
+got_dom2="$("$cast" call --rpc-url "$rpc" "$addr" 'DOMAIN_SEPARATOR()(bytes32)')"
+pf_evm_require_equal "${got_dom2,,}" "${got_dom,,}" "DOMAIN_SEPARATOR holds after permit"
+
 got_name2="$("$cast" call --rpc-url "$rpc" "$addr" 'name()(string)')"
 got_symbol2="$("$cast" call --rpc-url "$rpc" "$addr" 'symbol()(string)')"
 got_name2="${got_name2#\"}"; got_name2="${got_name2%\"}"
@@ -254,4 +377,4 @@ got_symbol2="${got_symbol2#\"}"; got_symbol2="${got_symbol2%\"}"
 pf_evm_require_equal "$got_name2" "Token" "string name holds after transfer"
 pf_evm_require_equal "$got_symbol2" "PF" "string symbol holds after transfer"
 
-echo "evm-anvil-erc20meta: ok (string name/symbol ABI + owner mint + LOG3 Transfer/Approval topics/data; engineering only)"
+echo "evm-anvil-erc20meta: ok (string name/symbol ABI + owner mint + LOG3 Transfer/Approval + permit/domain/nonces; engineering only)"

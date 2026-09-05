@@ -4,7 +4,8 @@ import Examples.Evm.Erc20Meta
 
 /-!
 W5 slice 4–6: ERC-20 metadata SDK + canonical typed Transfer/Approval on `Erc20Meta`,
-plus owner-gated mint (rows 9/20 mint gap closed; extensions/permit-votes remain PARTIAL).
+plus owner-gated mint. This slice adds issuer EIP-2612 `permit` / `DOMAIN_SEPARATOR` /
+`nonces` (rows 8/19 stay PARTIAL; extensions/permit-votes remain the named restriction).
 
 Pins the `Erc20Meta` digest and checks that `name` / `symbol` use the ERC-20 `string` ABI (not
 packed `bytes32` like `Examples.Evm.Token`) and that Transfer/Approval appear as typed events.
@@ -33,6 +34,20 @@ private def invalidUtf8Name : BoundedString 8 :=
   { length := 2, values := #v[0xc0, 0x80, 0, 0, 0, 0, 0, 0] }
 
 #guard !Erc20Meta.canPublish invalidUtf8Name Examples.Evm.Erc20Meta.tokenSymbol
+
+private def sampleOwner : Address := ⟨1, 2, 3⟩
+private def sampleSpender : Address := ⟨4, 5, 6⟩
+private def nine : UInt256 := ⟨9, 0, 0, 0⟩
+
+#guard Examples.Evm.Erc20Meta.nonces (Examples.Evm.Erc20Meta.init sampleOwner) sampleOwner ==
+  ⟨0, 0, 0, 0⟩
+#guard Examples.Evm.Erc20Meta.DOMAIN_SEPARATOR (Examples.Evm.Erc20Meta.init sampleOwner) ==
+  ⟨0, 0, 0, 0⟩
+#guard
+  match Examples.Evm.Erc20Meta.permit (Examples.Evm.Erc20Meta.init sampleOwner)
+      sampleOwner sampleSpender nine nine 27 ⟨1, 0, 0, 0⟩ ⟨2, 0, 0, 0⟩ with
+  | .ok (_, ret) => ret == 9
+  | .error _ => false
 
 #guard Fungible.Log.transfer ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
 #guard Fungible.Log.approval ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
@@ -115,8 +130,9 @@ elab "#pf_erc20_meta_check" : command => do
   let digest := IR.digestHex program
   unless digest == "9e1221ef24a9c091" do
     throwError s!"Erc20Meta digest mismatch: {digest}"
-  let want := #["allowance", "approve", "balanceOf", "decimals", "initialize",
-    "mint", "name", "ownerOf", "symbol", "totalSupply", "transfer", "transferFrom"]
+  let want := #["DOMAIN_SEPARATOR", "allowance", "approve", "balanceOf", "decimals",
+    "initialize", "mint", "name", "nonces", "ownerOf", "permit", "symbol", "totalSupply",
+    "transfer", "transferFrom"]
   let methods :=
     (#[program.constructor.ixName] ++ program.entries.map (·.ixName)) |>.qsort (· < ·)
   unless methods == want do
@@ -141,6 +157,17 @@ elab "#pf_erc20_meta_check" : command => do
     throwError "missing standard allowance (not allowanceOf)"
   unless !abi.contains "\"name\":\"allowanceOf\"" do
     throwError "non-standard allowanceOf must not appear"
+  unless !abi.contains "\"name\":\"nonceOf\"" do
+    throwError "non-standard nonceOf must not appear; IERC2612 is nonces(address)"
+  unless abi.contains "\"name\":\"permit\"" do
+    throwError "missing issuer permit"
+  unless abi.contains "\"name\":\"DOMAIN_SEPARATOR\"" &&
+      abi.contains "\"type\":\"bytes32\"" do
+    throwError "DOMAIN_SEPARATOR() must advertise bytes32"
+  unless abi.contains "\"name\":\"nonces\"" do
+    throwError "missing IERC2612 nonces(address)"
+  unless abi.contains "\"name\":\"Expired\"" do
+    throwError "permit must advertise Expired"
   unless abi.contains transferAbi && abi.contains approvalAbi do
     throwError s!"Erc20Meta ABI lost canonical typed Transfer/Approval:\n{abi}"
   let yul ←
@@ -150,6 +177,21 @@ elab "#pf_erc20_meta_check" : command => do
   unless yul.contains s!"log3(0, 32, 0x{transferTopic}" &&
       yul.contains s!"log3(0, 32, 0x{approvalTopic}" do
     throwError "Erc20Meta Yul omitted LOG3 Transfer/Approval"
+  unless yul.contains "staticcall(gas(), 1," && yul.contains "0x1901" &&
+      yul.contains "keccak256(0, 224)" do
+    throwError "Erc20Meta Yul omitted closed permit ecrecover / EIP-712 / allowance slot"
+  let some permitEntry := program.entries.find? (·.ixName == "permit")
+    | throwError "missing permit"
+  let some domainEntry := program.entries.find? (·.ixName == "DOMAIN_SEPARATOR")
+    | throwError "missing DOMAIN_SEPARATOR"
+  let some nonceEntry := program.entries.find? (·.ixName == "nonces")
+    | throwError "missing nonces"
+  unless domainEntry.view == true && domainEntry.retWidths == #[33] do
+    throwError s!"DOMAIN_SEPARATOR view drifted: view={domainEntry.view} ret={domainEntry.retWidths}"
+  unless nonceEntry.view == true && nonceEntry.retWidths == #[32] do
+    throwError s!"nonces view drifted: view={nonceEntry.view} ret={nonceEntry.retWidths}"
+  unless permitEntry.view == false do
+    throwError "permit must be a mutation"
   logInfo m!"erc20-meta: digest={digest}"
 
 #pf_erc20_meta_check

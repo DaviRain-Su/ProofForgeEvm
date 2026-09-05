@@ -6,7 +6,7 @@
 - Public site under `website/` + GitHub Pages workflow
 - Compiler/SDK slice coverage well past the old E-RT / E-LANG / E-ASSET / E-OWN / E-TOK research plan
 - Named user-project CI gate (`pf init demo`)
-- `Examples.Evm.Erc20Meta` string metadata profile (Token remains the richer non-standard surface)
+- `Examples.Evm.Erc20Meta` string metadata profile plus issuer EIP-2612 permit (Token remains the richer pause/cap/packed-bytes32 surface)
 - Deploy story docs (`docs/product/deploy.md`)
 - CallResult S2 (#9): bounded multiword returndata policies (`exactWords n`, `strictBool`, `magicBytes4`, typed `words`)
 - Base RPC gates (#8): `PF_EVM_RPC_URL` + required `PF_EVM_CHAIN_ID`, fail-closed mismatch, Anvil-local storage probes
@@ -24,7 +24,7 @@
 ## Next
 
 6. **Named user-project CI gate** — `pf init demo` → `lake build` → `lake env pf build` (solc) for the counter template. *(landed as CI job `pf-init-user-project`)*
-7. **Standard ERC-20 example profile** — `Examples.Evm.Erc20Meta`: `string` name/symbol + standard selectors; Token remains the richer non-standard metadata surface. *(landed)*
+7. **Standard ERC-20 example profile** — `Examples.Evm.Erc20Meta`: `string` name/symbol + standard selectors + issuer EIP-2612 `permit`; Token remains the richer non-standard metadata surface. *(landed)*
 8. **Deploy story docs** — Anvil vs Base Sepolia / VibeNet honesty in `docs/product/deploy.md`. *(landed)*
 9. **Release v0.1** — in progress / prep. Version `0.1.0`, template git-tag `require`, and checkout `pf init` rewrite are in tree. Pushing tag `v0.1.0` is the cut. Do not claim the tag exists yet.
 10. **Website artifact honesty** — generate Forge panel excerpts from real `pf build` output, or keep them clearly labeled illustrative.
