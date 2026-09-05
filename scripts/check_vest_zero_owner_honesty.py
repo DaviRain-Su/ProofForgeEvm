@@ -4,8 +4,8 @@
 VestLink and Vest20Link revert ZeroAddress() when CREATE gets address(0). That
 guard is a dropped-let in init plus an Emit revert-only constructor prefix.
 Sdk.OzAudit.temporaryGapCount stays 0. A doc that still lists the CREATE guard as
-the VestingWallet gap is a lying inventory. Constructor OwnershipTransferred logs
-and OZ OwnableInvalidOwner remain the named remainder.
+the VestingWallet gap is a lying inventory. OZ OwnableInvalidOwner remains the
+named remainder after the constructor OwnershipTransferred log.
 
 Usage:
     python3 scripts/check_vest_zero_owner_honesty.py
@@ -39,10 +39,10 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "Emit.lean", "ctorOpIsRevertGuard"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "OwnershipTransferred(address(0), owner)"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "65e199169e0e2b14"'),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "65e199169e0e2b14"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "198b50791da92adb"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "198b50791da92adb"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "2d53b56c1d9429f9"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "2d53b56c1d9429f9"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "3034d29ecd2cc852"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "3034d29ecd2cc852"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", "0xd92e233d"),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_strip_ctor_zero_guard"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "zero beneficiary CREATE"),

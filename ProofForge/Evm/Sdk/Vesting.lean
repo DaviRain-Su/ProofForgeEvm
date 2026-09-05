@@ -16,8 +16,8 @@ The cliff matches OpenZeppelin `VestingWalletCliff`: vested amount is 0 until
 `start + cliffDuration`, then the linear formula still runs from `start` (a jump at the cliff
 when `cliffDuration > 0`). `cliffDuration = 0` is the linear wallet. `cliffDuration > duration`
 fails closed. CREATE of a zero beneficiary reverts `ZeroAddress()`. Constructor
-`OwnershipTransferred(address(0), owner)` is still not lowered. The CREATE selector is
-`ZeroAddress()`, not OZ `OwnableInvalidOwner(address)`.
+`OwnershipTransferred(address(0), owner)` lowers as the else-arm of that revert-guard. The CREATE
+selector is `ZeroAddress()`, not OZ `OwnableInvalidOwner(address)`.
 
 Fail-closed gates:
 - A zero beneficiary reverts `ZeroAddress` at CREATE.

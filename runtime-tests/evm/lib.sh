@@ -678,6 +678,35 @@ print('stripped one constructor ZeroAddress revert; runtime selector kept')
 "
 }
 
+# Write DEST_YUL from SRC_YUL with the constructor-only OwnershipTransferred LOG3
+# removed once. NAME is the Yul object. The runtime object must keep the topic so
+# transferOwnership is not stripped.
+pf_evm_strip_ctor_ownership_log() {
+  local src="$1" name="$2" dest="$3"
+  "$python" -I -S -c "
+from pathlib import Path
+import re, sys
+src = Path('$src').read_text()
+marker = 'object \"${name}_runtime\"'
+idx = src.find(marker)
+if idx < 0:
+    sys.stderr.write(f'FAIL: missing {marker}\\n')
+    sys.exit(1)
+head, tail = src[:idx], src[idx:]
+topic = '0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0'
+pat = r'log3\\(0, 0, ' + re.escape(topic) + r', [^)]+\\)'
+out, k = re.subn(pat, '', head, count=1)
+if k != 1:
+    sys.stderr.write(f'FAIL: constructor OwnershipTransferred log3 not found (k={k})\\n')
+    sys.exit(1)
+if topic not in tail:
+    sys.stderr.write('FAIL: runtime lost OwnershipTransferred topic after constructor strip\\n')
+    sys.exit(1)
+Path('$dest').write_text(out + tail)
+print('stripped one constructor OwnershipTransferred log3; runtime topic kept')
+"
+}
+
 pf_evm_deploy_ctor_address() {
   local bytecode="$1"
   local addr="$2"
@@ -729,6 +758,8 @@ r=json.load(sys.stdin)
 hits=[lg for lg in (r.get('logs') or []) if (lg.get('topics') or []) and lg['topics'][0].lower()==want]
 if len(hits)!=$count:
     raise SystemExit(f'FAIL: $label: expected $name log count $count, got {len(hits)}')
+if $count == 0:
+    raise SystemExit(0)
 lg=hits[$index]
 topics=lg['topics']
 indexed=[i for i in inputs if i.get('indexed')]

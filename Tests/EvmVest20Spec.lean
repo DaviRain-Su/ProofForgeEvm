@@ -28,6 +28,12 @@ private partial def ctorHasZeroAddress (ops : Array IR.Op) : Bool :=
     | .ite _ _ _ t f => ctorHasZeroAddress t || ctorHasZeroAddress f
     | _ => false
 
+private partial def ctorHasConstructorTransferred (ops : Array IR.Op) : Bool :=
+  ops.any fun
+    | .component call => call.isConstructorTransferred (fun | .lit 0 => true | _ => false)
+    | .ite _ _ _ t f => ctorHasConstructorTransferred t || ctorHasConstructorTransferred f
+    | _ => false
+
 private def expectVest20Link : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -81,6 +87,8 @@ private def expectVest20Link : CommandElabM Unit := do
     throwError "Vest20Link ABI lost ZeroAddress"
   unless ctorHasZeroAddress program.constructor.ops do
     throwError "Vest20Link constructor lost ZeroAddress revert"
+  unless ctorHasConstructorTransferred program.constructor.ops do
+    throwError "Vest20Link constructor lost OwnershipTransferred log"
   let yul ←
     match Emit.emitYul program with
     | .ok yul => pure yul
@@ -88,13 +96,17 @@ private def expectVest20Link : CommandElabM Unit := do
   let ctorYul := (yul.splitOn "_runtime")[0]!
   unless ctorYul.contains "0xd92e233d" do
     throwError s!"Vest20Link constructor Yul lost ZeroAddress:\n{ctorYul}"
+  let ownershipTopic :=
+    "0x" ++ ProofForge.Crypto.Keccak.keccak256HexOfString "OwnershipTransferred(address,address)"
+  unless ctorYul.contains ownershipTopic do
+    throwError s!"Vest20Link constructor Yul lost OwnershipTransferred topic:\n{ctorYul}"
   let canon := IR.canonical program
   for ixName in #["releasable", "vestedAmount"] do
     let some entry := (canon.splitOn "/").find? (·.startsWith s!"view:{ixName}:")
       | throwError s!"Vest20Link canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" do
       throwError s!"{ixName} lost the linear formula"
-  unless IR.digestHex program == "198b50791da92adb" do
+  unless IR.digestHex program == "3034d29ecd2cc852" do
     throwError s!"Vest20Link digest drifted: {IR.digestHex program}"
   logInfo m!"vest20link: digest={IR.digestHex program} abi-ok"
 

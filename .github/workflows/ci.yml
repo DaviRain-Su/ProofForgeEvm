@@ -175,6 +175,9 @@ jobs:
       - name: Check vesting CREATE ZeroAddress honesty
         run: python3 scripts/check_vest_zero_owner_honesty.py
 
+      - name: Check vesting constructor OwnershipTransferred honesty
+        run: python3 scripts/check_vest_ctor_log_honesty.py
+
       - name: Check ERC-721 3-arg safeTransferFrom honesty
         run: python3 scripts/check_safe3_honesty.py
 

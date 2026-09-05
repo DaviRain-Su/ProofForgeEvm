@@ -13,11 +13,11 @@ the application.
 Constructor policy that *is* extractable: applications store a nonzero owner argument into an
 explicit `State` field and start with `Access.Ownership.none`. A dropped-let
 `Revert.zeroAddress` before the `returnState` vector lowers as a constructor prefix. VestLink and
-Vest20Link CREATE of `address(0)` revert `ZeroAddress()`. Constructor logs are still refused
-(`extract/unsupported: EVM constructor effects are not lowered`). `Log.constructorTransferred`
-exists so the ABI-identical `OwnershipTransferred(address(0), newOwner)` shape is spelled once,
-but it must be used from a runtime entry, not from `init`. TwoStepCounter and Credits still
-store a zero owner without reverting CREATE.
+Vest20Link CREATE of `address(0)` revert `ZeroAddress()`. The else-arm of that dropped-let may
+emit `Log.constructorTransferred` (LOG3 `OwnershipTransferred(address(0), newOwner)`). CALL, map
+writes, value transfers, and any other constructor log stay refused
+(`extract/unsupported: EVM constructor effects are not lowered`). TwoStepCounter and Credits still
+store a zero owner without reverting CREATE and without a constructor log.
 -/
 
 /-- Canonical Ownable / Ownable2Step events. Constructor and field names are the ABI surface.
@@ -45,8 +45,8 @@ namespace Log
   Event.emit (Notice.OwnershipTransferStarted (Event.indexed previousOwner)
     (Event.indexed newOwner))
 
-/-- ABI-identical constructor transfer `OwnershipTransferred(address(0), newOwner)`. Not lowered
-from `init`; use only on a runtime entry. -/
+/-- ABI-identical constructor transfer `OwnershipTransferred(address(0), newOwner)`. Lowers from
+`init` when it is the else-arm of the ZeroAddress revert-guard. -/
 @[pf_inline] def constructorTransferred (newOwner : Address) : UInt64 :=
   ownershipTransferred Address.zero newOwner
 

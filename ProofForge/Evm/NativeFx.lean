@@ -212,6 +212,23 @@ def Call.emitsZeroAddress : Call V → Bool
   | .revertZeroAddress => true
   | _ => false
 
+/-- True when this is LOG3 `OwnershipTransferred(address(0), newOwner)` with no tails.
+Constructor prelude uses this shape; other typed logs stay out. -/
+def Call.isConstructorTransferred (isZero : V → Bool) : Call V → Bool
+  | .logTyped frame tails =>
+      frame.constructor == "OwnershipTransferred" &&
+        tails.isEmpty &&
+        frame.args.size == 2 &&
+        frame.args[0]!.name == "previousOwner" &&
+        frame.args[1]!.name == "newOwner" &&
+        frame.args[0]!.indexed &&
+        frame.args[1]!.indexed &&
+        Codec.isAddressCarrier frame.args[0]!.type &&
+        Codec.isAddressCarrier frame.args[1]!.type &&
+        frame.args[0]!.parts.size == Codec.limbCount frame.args[0]!.type &&
+        frame.args[0]!.parts.all isZero
+  | _ => false
+
 def Call.emitsPaused : Call V → Bool
   | .revertPaused => true
   | _ => false

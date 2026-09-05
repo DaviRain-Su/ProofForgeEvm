@@ -35,6 +35,12 @@ private partial def ctorHasZeroAddress (ops : Array IR.Op) : Bool :=
     | .ite _ _ _ t f => ctorHasZeroAddress t || ctorHasZeroAddress f
     | _ => false
 
+private partial def ctorHasConstructorTransferred (ops : Array IR.Op) : Bool :=
+  ops.any fun
+    | .component call => call.isConstructorTransferred (fun | .lit 0 => true | _ => false)
+    | .ite _ _ _ t f => ctorHasConstructorTransferred t || ctorHasConstructorTransferred f
+    | _ => false
+
 private def expectVestLink : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -90,6 +96,8 @@ private def expectVestLink : CommandElabM Unit := do
     throwError "VestLink ABI lost ZeroAddress"
   unless ctorHasZeroAddress program.constructor.ops do
     throwError "VestLink constructor lost ZeroAddress revert"
+  unless ctorHasConstructorTransferred program.constructor.ops do
+    throwError "VestLink constructor lost OwnershipTransferred log"
   let yul ←
     match Emit.emitYul program with
     | .ok yul => pure yul
@@ -97,6 +105,10 @@ private def expectVestLink : CommandElabM Unit := do
   let ctorYul := (yul.splitOn "_runtime")[0]!
   unless ctorYul.contains "0xd92e233d" do
     throwError s!"VestLink constructor Yul lost ZeroAddress:\n{ctorYul}"
+  let ownershipTopic :=
+    "0x" ++ ProofForge.Crypto.Keccak.keccak256HexOfString "OwnershipTransferred(address,address)"
+  unless ctorYul.contains ownershipTopic do
+    throwError s!"VestLink constructor Yul lost OwnershipTransferred topic:\n{ctorYul}"
   -- The mid-vesting branch is the linear formula over the SELFBALANCE read, not the read. When
   -- the query scan still descended into operator arguments, the read under the arithmetic was
   -- taken as the body's result and `releasable()` answered the raw balance.
@@ -106,7 +118,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "65e199169e0e2b14" do
+  unless IR.digestHex program == "2d53b56c1d9429f9" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 
