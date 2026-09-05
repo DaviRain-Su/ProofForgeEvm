@@ -52,6 +52,8 @@ REQUIRED = (
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "releasedOf()(uint256)"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "EtherReleased"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh",
+     "native released stays zero after ERC-20 quarter"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh",
      "rotated beneficiary ETH delta"),
     (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "Dual-asset `Vest20Link`"),
     (ROOT / "docs" / "product" / "support-matrix.md", "dual-asset wallet"),

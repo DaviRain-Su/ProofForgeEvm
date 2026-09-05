@@ -124,17 +124,21 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address
 token_lc="$("$python" -I -S -c "print('$token'.lower())")"
 pf_evm_typed_event_check "$abi" "$release_receipt" ERC20Released "$topic0" \
   "{\"token\": \"$token_lc\", \"amount\": 250}" "quarter ERC-20 release"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+  0 "native released stays zero after ERC-20 quarter"
 eth_topic="$("$cast" keccak 'EtherReleased(uint256)')"
+half=$((start_ts + duration / 2))
+pf_evm_stamp_next "$half"
 eth_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'release()')"
 pf_evm_typed_event_check "$abi" "$eth_receipt" EtherReleased "$eth_topic" \
-  '{"amount": 250000000000000000}' "release() pays the ETH quarter"
+  '{"amount": 500000000000000000}' "release() pays the ETH half"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
-  250000000000000000 "native released counter after quarter release()"
+  500000000000000000 "native released counter after half release()"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address)(uint256)' "$token")" \
   250 "ERC-20 released map stays independent of the ETH book"
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$addr")" \
-  750000000000000000 "wallet kept three quarters of the ETH"
+  500000000000000000 "wallet kept half of the ETH"
 
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'transferOwnership(address)' "$other" >/dev/null 2>&1; then
@@ -166,12 +170,12 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$addr")" \
   0 "vesting wallet empty of token A"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasable()(uint256)')" \
-  750000000000000000 "ETH remainder releasable after end"
+  500000000000000000 "ETH remainder releasable after end"
 other_before="$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$other")")"
 eth_rest="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'release()')"
 pf_evm_typed_event_check "$abi" "$eth_rest" EtherReleased "$eth_topic" \
-  '{"amount": 750000000000000000}' "release() after rotation pays the ETH remainder"
+  '{"amount": 500000000000000000}' "release() after rotation pays the ETH remainder"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
   1000000000000000000 "native released counter after full release()"
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$addr")" \
@@ -180,8 +184,8 @@ other_after="$(pf_evm_to_dec "$("$cast" balance --rpc-url "$rpc" "$other")")"
 "$python" -I -S -c "
 before=int('$other_before')
 after=int('$other_after')
-if after - before != 750000000000000000:
-    raise SystemExit(f'FAIL: rotated beneficiary ETH delta {after-before}, want 750000000000000000')
+if after - before != 500000000000000000:
+    raise SystemExit(f'FAIL: rotated beneficiary ETH delta {after-before}, want 500000000000000000')
 "
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'release(address)' "$token_b" >/dev/null
