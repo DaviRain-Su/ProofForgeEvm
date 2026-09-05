@@ -74,6 +74,12 @@ Extract folds `staticNat?` so the published ABI word matches. -/
 def wrap64 (_s : State) : UInt64 :=
   UInt64.ofNat (18446744073709551616 + 3)
 
+/-- Mixed runtime Nat plus a compile-time overflow, then `UInt64.ofNat`.
+`2^64` wraps to 0, so the published word is `s.cells[0]`. -/
+@[pf_entry]
+def wrap64mix (s : State) : UInt64 :=
+  UInt64.ofNat (s.cells[0]!.toNat + 18446744073709551616)
+
 /-- 两叶 return。 -/
 @[pf_entry]
 def both (s : State) : UInt64 × UInt64 :=

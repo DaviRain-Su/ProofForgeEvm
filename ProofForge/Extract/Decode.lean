@@ -844,7 +844,22 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
     | some n =>
       if n ≥ UInt64.size then some (.lit (UInt64.ofNat n))
       else asVal env fuel arg
-    | none => asVal env fuel arg
+    | none =>
+      match asVal env fuel arg with
+      | some v => some v
+      | none =>
+        let addends := strip arg
+        if (isConstNamed addends ``HAdd.hAdd || isConstNamed addends ``Nat.add ||
+            endsWith addends ".hAdd") && addends.getAppArgs.size ≥ 2 then
+          let args := addends.getAppArgs
+          let side (x : Expr) : Option Ops.Val :=
+            match foldStaticNat? env fuel x with
+            | some n => some (.lit (UInt64.ofNat n))
+            | none => asVal env fuel x
+          match side args[args.size - 2]!, side args[args.size - 1]! with
+          | some l, some r => some (.addU64 l r)
+          | _, _ => none
+        else none
   else if (isConstNamed e ``UInt8.toUInt64 || isConstNamed e ``UInt64.toUInt8 ||
       isConstNamed e ``UInt16.toUInt64 || isConstNamed e ``UInt64.toUInt16 ||
       isConstNamed e ``UInt32.toUInt64 || isConstNamed e ``UInt64.toUInt32 ||

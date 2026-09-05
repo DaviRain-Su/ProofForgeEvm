@@ -19,6 +19,8 @@ open Examples.Lang
 #guard shr (init 0) 8 67 == 1
 #guard mask8 (init 0) 7 == 7
 #guard wrap64 (init 0) == 3
+#guard wrap64mix (init 0) == 0
+#guard wrap64mix (init 3) == 3
 #guard Tests.Fixtures.getNarrowPrevious (Tests.Fixtures.initNarrow 7) 0 == 7
 #guard
   match both (init 9) with
@@ -111,6 +113,15 @@ elab "#pf_guard_uint64_ofnat_wrap" : command => do
     | .error reason => throwError reason
   unless (evm.entries.find? (·.ixName == "wrap64")).isSome do
     throwError "EVM Lang lost wrap64"
+  let some mix := source.methods.find? (·.ixName == "wrap64mix")
+    | throwError "Lang lost wrap64mix"
+  unless mix.ops.any (fun
+      | .returnU64 (.addU64 _ (.lit 0)) => true
+      | .returnU64 (.addU64 (.lit 0) _) => true
+      | _ => false) do
+    throwError "wrap64mix did not add the wrapped 2^64 literal to a runtime cell"
+  unless (evm.entries.find? (·.ixName == "wrap64mix")).isSome do
+    throwError "EVM Lang lost wrap64mix"
 
 #pf_guard_uint64_ofnat_wrap
 
