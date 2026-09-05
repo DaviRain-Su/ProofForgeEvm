@@ -44,8 +44,9 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   bounded delayed default-admin.
   Remaining named restriction on that row is enumeration/manager.
   Row 13 (`IERC3156*` / `IERC4626` / `IERC6909`) stays PARTIAL after bounded ERC-4626 floor
-  `assets * (totalSupply + 1) / (totalAssets + 1)` via full-precision `mulDiv` with virtual +1,
-  ceiling `previewMint` via `mulDivCeil`, ceiling `previewWithdraw` via `mulDivCeil`, and fixed-id ERC-6909.
+  `assets * (totalSupply + 10) / (totalAssets + 1)` via full-precision `mulDiv` with compile-time
+  `_decimalsOffset() == 1` (virtual shares 10), ceiling `previewMint` via `mulDivCeil`,
+  ceiling `previewWithdraw` via `mulDivCeil`, and fixed-id ERC-6909.
   Remaining named restriction on that row is flash/777/1363.
   Row 22 (`token/ERC6909`) stays PARTIAL after bounded fixed-id ERC-6909.
   Remaining named restriction on that row is dynamic multi-id registration.

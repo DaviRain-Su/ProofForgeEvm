@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fail when ERC-4626 docs still claim 1:1 conversion or lose floor/ceiling math.
 
-Erc4626.convertToShares is floor assets * (totalSupply + 1) / (totalAssets + 1) via mulDivOffset.
+Erc4626.convertToShares is floor assets * (totalSupply + 10) / (totalAssets + 1) via mulDivOffset.
 Erc4626.previewMint is ceiling shares * totalAssets / totalSupply via mulDivCeil.
 Erc4626.previewWithdraw is ceiling assets * totalSupply / totalAssets via mulDivCeil.
-Empty supply is 1:1. Virtual +1 when supply is nonzero (OZ `_decimalsOffset() == 0`).
+Empty supply is 1:1. Compile-time `_decimalsOffset() == 1` (virtual shares 10).
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -33,6 +33,10 @@ STALE_PHRASES = (
     "Ceiling conversions still use checked 256-bit mul. Virtual-offset is Phase 33",
     "Ceiling `previewWithdraw` still uses checked 256-bit mul",
     "if UInt256.eq (UInt256.mod prod totalAssets) UInt256.zero then q",
+    "Nonzero `_decimalsOffset` stays out",
+    "virtual-offset convertToShares(6) is 1",
+    "donated convertToAssets is 199",
+    "donated convertToShares is 50",
 )
 
 REQUIRED = (
@@ -62,7 +66,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
-        "mulDivOffset shares totalAssets totalSupply",
+        "mulDivOffsetRev shares totalAssets totalSupply",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
@@ -86,6 +90,10 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Runtime.lean",
+        "def evmMulDivOffsetRev256 (a b denom : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Runtime.lean",
         "def evmMulDivCeil256 (a b denom : UInt256) : UInt256 :=",
     ),
     (
@@ -98,6 +106,10 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "WideWord.lean",
+        "| mulDivOffsetRev256 (limb : Nat)",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "WideWord.lean",
         "| mulDivCeil256 (limb : Nat)",
     ),
     (
@@ -107,6 +119,10 @@ REQUIRED = (
     (
         ROOT / "ProofForge" / "Extract" / "Decode.lean",
         "endsWith baseE \".evmMulDivOffset256\" then some (.mulDivOffset256 limb.toNat)",
+    ),
+    (
+        ROOT / "ProofForge" / "Extract" / "Decode.lean",
+        "endsWith baseE \".evmMulDivOffsetRev256\" then some (.mulDivOffsetRev256 limb.toNat)",
     ),
     (
         ROOT / "ProofForge" / "Extract" / "Decode.lean",
@@ -162,19 +178,19 @@ REQUIRED = (
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
-        '"donated convertToAssets is 199"',
+        '"donated convertToAssets is 182"',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
-        '"donated convertToShares is 50"',
+        '"donated convertToShares is 54"',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
-        '"virtual-offset convertToShares(6) is 1"',
+        '"decimals-offset convertToShares(6) is 5"',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
-        '"second deposit mints 50"',
+        '"second deposit mints 54"',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
@@ -182,7 +198,7 @@ REQUIRED = (
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
-        '"floor convertToAssets(1) is 2"',
+        '"floor convertToAssets(1) is 1"',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
@@ -210,7 +226,7 @@ REQUIRED = (
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
-        '"full-precision convertToShares(2^128) is 2^128"',
+        '"full-precision convertToShares(2^128) is 2^128+8"',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
@@ -243,6 +259,26 @@ REQUIRED = (
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 ceiling `previewWithdraw` via `mulDivCeil`",
+    ),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "ERC-4626 compile-time `_decimalsOffset() == 1`",
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"full-precision convertToAssets(2^128) is 2^128-9"',
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "def mulDivOffsetRev (left right denom : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "def decimalsOffset : UInt64 := 1",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "def virtualShares : UInt256 := ⟨10, 0, 0, 0⟩",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",

@@ -2,10 +2,11 @@ import ProofForge.Evm.Sdk
 
 /-!
 Bounded ERC-4626 vault consumer: compile-time fixed underlying asset, floor
-`assets * (totalSupply + 1) / (totalAssets + 1)` share ledger via `mulDivOffset`,
-ceiling `previewMint` via `mulDivCeil`, ceiling `previewWithdraw` via `mulDivCeil`, closed ERC-20 asset
-movement, and ordered reentrancy lock around external calls. Empty supply is 1:1. Virtual +1 when
-supply is nonzero.
+`assets * (totalSupply + 10) / (totalAssets + 1)` share ledger via `mulDivOffset`
+(OZ `_decimalsOffset() == 1`), ceiling `previewMint` via `mulDivCeil`, ceiling
+`previewWithdraw` via `mulDivCeil`, closed ERC-20 asset movement, and ordered
+reentrancy lock around external calls. Empty supply is 1:1. Virtual shares 10
+and virtual +1 asset when supply is nonzero.
 -/
 
 namespace Examples.Evm.Vault4626Link

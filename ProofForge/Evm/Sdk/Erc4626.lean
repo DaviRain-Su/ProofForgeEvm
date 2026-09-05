@@ -5,15 +5,15 @@ namespace ProofForge.Evm.Sdk.Erc4626
 /-!
 # EVM SDK bounded ERC-4626 vault profile
 
-Compile-time fixed underlying asset, floor `assets * (totalSupply + 1) / (totalAssets + 1)` and floor
-`shares * (totalAssets + 1) / (totalSupply + 1)` conversion via `mulDivOffset`, ceiling
-`previewMint` via `mulDivCeil`, ceiling `previewWithdraw` via `mulDivCeil`, and closed ERC-20 call
-policy helpers. Empty supply is 1:1 so the first depositor is not divided by zero. Floor conversions
-add a virtual +1 share and +1 asset when supply is nonzero (OZ `_decimalsOffset() == 0`), folded into
-one WideWord query. There is no fee accrual, flash-loan
+Compile-time fixed underlying asset, floor `assets * (totalSupply + 10) / (totalAssets + 1)` and
+floor `shares * (totalAssets + 1) / (totalSupply + 10)` conversion via `mulDivOffset` /
+`mulDivOffsetRev` (OZ `_decimalsOffset() == 1`), ceiling `previewMint` via `mulDivCeil`, ceiling
+`previewWithdraw` via `mulDivCeil`, and closed ERC-20 call policy helpers. Empty supply is 1:1 so the
+first depositor is not divided by zero. Floor conversions add virtual shares `10` and virtual +1
+asset when supply is nonzero, folded into WideWord queries. There is no fee accrual, flash-loan
 callback, or dynamic asset rotation. Ceiling `previewMint` and `previewWithdraw` use full-precision
-`mulDivCeil` and omit the virtual offset. Nonzero `_decimalsOffset` stays out. Consumers pair this
-module with `Fungible.Balances`
+`mulDivCeil` and omit the virtual offset. Runtime or `n > 1` `_decimalsOffset` stays out. Consumers
+pair this module with `Fungible.Balances`
 for share ledger storage, `Sdk.Reentrancy` around external asset movement, and closed
 `ERC20` / `SafeErc20` facades.
 
@@ -36,33 +36,45 @@ rounding stays out. -/
 @[pf_inline] def mulDiv (left right denom : UInt256) : UInt256 :=
   UInt256.mulDiv left right denom
 
-/-- Floor `(left * (right + 1)) / (denom + 1)` (OZ `_decimalsOffset() == 0`).
-Checked `+ 1` reverts on overflow. -/
+/-- Floor `(left * (right + 10)) / (denom + 1)` (OZ `_decimalsOffset() == 1`).
+Checked `+ 10` / `+ 1` revert on overflow. -/
 @[pf_inline] def mulDivOffset (left right denom : UInt256) : UInt256 :=
   UInt256.mulDivOffset left right denom
+
+/-- Floor `(left * (right + 1)) / (denom + 10)` (OZ `_decimalsOffset() == 1` reverse).
+Checked `+ 1` / `+ 10` revert on overflow. -/
+@[pf_inline] def mulDivOffsetRev (left right denom : UInt256) : UInt256 :=
+  UInt256.mulDivOffsetRev left right denom
 
 /-- Ceiling `(left * right) / denom` with a 512-bit intermediate (OZ `Math.mulDiv` + round up).
 Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. -/
 @[pf_inline] def mulDivCeil (left right denom : UInt256) : UInt256 :=
   UInt256.mulDivCeil left right denom
 
-/-- Virtual +1 share and +1 asset (OZ `_decimalsOffset() == 0`). -/
+/-- Compile-time OZ `_decimalsOffset() == 1`. Runtime or `n > 1` stays out. -/
+@[pf_inline] def decimalsOffset : UInt64 := 1
+
+/-- Virtual shares `10^decimalsOffset` (here 10). -/
+@[pf_inline] def virtualShares : UInt256 := ⟨10, 0, 0, 0⟩
+
+/-- Virtual +1 asset (OZ always adds 1 to `totalAssets`). -/
 @[pf_inline] def virtualOne : UInt256 := ⟨1, 0, 0, 0⟩
 
-/-- Floor `assets * (totalSupply + 1) / (totalAssets + 1)` when the vault already has shares.
+/-- Floor `assets * (totalSupply + 10) / (totalAssets + 1)` when the vault already has shares.
 Empty supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0.
-The virtual +1 is folded into `mulDivOffset` so the vault stays under EIP-170. Callers that
-already passed `canVault` use this so a stored mint amount does not mention `Immutable.address`. -/
+The virtual shares/asset pair is folded into `mulDivOffset` so the vault stays under EIP-170.
+Callers that already passed `canVault` use this so a stored mint amount does not mention
+`Immutable.address`. -/
 @[pf_inline] def sharesForDeposit (assets totalSupply totalAssets : UInt256) : UInt256 :=
   if UInt256.eq totalSupply UInt256.zero then assets
   else if UInt256.eq totalAssets UInt256.zero then UInt256.zero
   else mulDivOffset assets totalSupply totalAssets
 
-/-- Floor `shares * (totalAssets + 1) / (totalSupply + 1)` when the vault already has shares. Empty
-supply answers `shares` (1:1). -/
+/-- Floor `shares * (totalAssets + 1) / (totalSupply + 10)` when the vault already has shares.
+Empty supply answers `shares` (1:1). -/
 @[pf_inline] def assetsForRedeem (shares totalSupply totalAssets : UInt256) : UInt256 :=
   if UInt256.eq totalSupply UInt256.zero then shares
-  else mulDivOffset shares totalAssets totalSupply
+  else mulDivOffsetRev shares totalAssets totalSupply
 
 /-- Ceiling `shares * totalAssets / totalSupply` when the vault already has shares.
 Empty supply answers `shares` (1:1). A nonzero remainder adds one asset.
@@ -80,13 +92,13 @@ because a zero denominator reverts. A nonzero remainder adds one share.
   else if UInt256.eq totalAssets UInt256.zero then UInt256.zero
   else mulDivCeil assets totalSupply totalAssets
 
-/-- Floor `assets * (totalSupply + 1) / (totalAssets + 1)` when the vault already has shares. Empty
+/-- Floor `assets * (totalSupply + 10) / (totalAssets + 1)` when the vault already has shares. Empty
 supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0. -/
 @[pf_inline] def convertToShares (asset : Address)
     (assets totalSupply totalAssets : UInt256) : UInt256 :=
   if canVault asset then sharesForDeposit assets totalSupply totalAssets else UInt256.zero
 
-/-- Floor `shares * (totalAssets + 1) / (totalSupply + 1)` when the vault already has shares. Empty
+/-- Floor `shares * (totalAssets + 1) / (totalSupply + 10)` when the vault already has shares. Empty
 supply answers `shares` (1:1). -/
 @[pf_inline] def convertToAssets (asset : Address)
     (shares totalSupply totalAssets : UInt256) : UInt256 :=
