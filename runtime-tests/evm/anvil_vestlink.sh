@@ -82,10 +82,6 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint2
   0 "rejected release keeps accounting"
 
 quarter=$((start_ts + duration / 4))
-"$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$quarter" >/dev/null
-"$cast" rpc --rpc-url "$rpc" evm_mine >/dev/null
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasable()(uint256)')" \
-  250000000000000000 "a quarter releasable at start + duration/4"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(uint64)(uint256)' \
   "$quarter")" 250000000000000000 "vestedAmount at the quarter mark"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(uint64)(uint256)' \
@@ -93,6 +89,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(uint6
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(uint64)(uint256)' \
   "$((start_ts + duration))")" 1000000000000000000 "vestedAmount at the end"
 
+pf_evm_stamp_next "$quarter"
 quarter_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'release()')"
 pf_evm_typed_event_check "$abi" "$quarter_receipt" EtherReleased "$topic0" \

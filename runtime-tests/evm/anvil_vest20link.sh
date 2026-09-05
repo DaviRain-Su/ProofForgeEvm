@@ -88,16 +88,13 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
 fi
 
 quarter=$((start_ts + duration / 4))
-"$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$quarter" >/dev/null
-"$cast" rpc --rpc-url "$rpc" evm_mine >/dev/null
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasable(address)(uint256)' "$token")" \
-  250 "a quarter releasable at start + duration/4"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(address,uint64)(uint256)' \
   "$token" "$quarter")" 250 "vestedAmount at the quarter mark"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasable(address)(uint256)' "$token_b")" \
-  100 "second token vests on its own balance"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'vestedAmount(address,uint64)(uint256)' \
+  "$token_b" "$quarter")" 100 "second token vestedAmount at the quarter mark"
 
 topic0="$("$cast" keccak 'ERC20Released(address,uint256)')"
+pf_evm_stamp_next "$quarter"
 release_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'release(address)' "$token")"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$beneficiary")" \

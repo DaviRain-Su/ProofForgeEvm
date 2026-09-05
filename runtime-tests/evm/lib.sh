@@ -253,6 +253,13 @@ pf_evm_start_anvil() {
   pf_evm_require_rpc_chain_id "launched Anvil chain identity mismatch"
 }
 
+# Stamp the next mined block. Do not evm_mine after this when the following
+# send must land on that exact timestamp. A mined empty block consumes the stamp
+# and Anvil's following tx is parent+1.
+pf_evm_stamp_next() {
+  "$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$1" >/dev/null
+}
+
 pf_evm_deploy_ctor_u64() {
   local bytecode="$1"
   local initial="$2"
