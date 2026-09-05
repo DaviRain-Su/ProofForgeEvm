@@ -694,6 +694,8 @@ def extractMethod (env : Environment) (kind : Core.IR.MethodKind) (n : Name) :
             (flipVal fuel' g) (flipVal fuel' h)
       | .evmRevertUnauthorized a b c =>
           .evmRevertUnauthorized (flipVal fuel' a) (flipVal fuel' b) (flipVal fuel' c)
+      | .evmRevertOwnableInvalidOwner a b c =>
+          .evmRevertOwnableInvalidOwner (flipVal fuel' a) (flipVal fuel' b) (flipVal fuel' c)
       | .evmRevertZeroAddress => .evmRevertZeroAddress
       | .evmRevertPaused => .evmRevertPaused
       | .evmRevertCapExceeded => .evmRevertCapExceeded
@@ -1140,6 +1142,7 @@ private def opFields : Ops.Op → Array FieldUse
       valFields a ++ valFields b ++ valFields c ++ valFields d ++
         valFields e ++ valFields f ++ valFields g ++ valFields h
   | .evmRevertUnauthorized a b c => valFields a ++ valFields b ++ valFields c
+  | .evmRevertOwnableInvalidOwner a b c => valFields a ++ valFields b ++ valFields c
   | .evmRevertZeroAddress => #[]
   | .evmRevertPaused => #[]
   | .evmRevertCapExceeded => #[]
@@ -1346,6 +1349,9 @@ private def resolveVectorLeaves (p : IR.Program) : Except String IR.Program := d
             (← normalizeVal g) (← normalizeVal h)
       | .evmRevertUnauthorized a b c =>
           return .evmRevertUnauthorized (← normalizeVal a) (← normalizeVal b) (← normalizeVal c)
+      | .evmRevertOwnableInvalidOwner a b c =>
+          return .evmRevertOwnableInvalidOwner (← normalizeVal a) (← normalizeVal b)
+            (← normalizeVal c)
       | .evmRevertZeroAddress => pure .evmRevertZeroAddress
       | .evmRevertPaused => pure .evmRevertPaused
       | .evmRevertCapExceeded => pure .evmRevertCapExceeded
@@ -1510,6 +1516,8 @@ private partial def opEscapedArg (limit : Nat) : Ops.Op → Option Nat
   | .evmRevertInsufficient a b c d e f g h =>
       #[a, b, c, d, e, f, g, h].findSome? (valEscapedArg limit)
   | .evmRevertUnauthorized a b c =>
+      #[a, b, c].findSome? (valEscapedArg limit)
+  | .evmRevertOwnableInvalidOwner a b c =>
       #[a, b, c].findSome? (valEscapedArg limit)
   | .evmRevertZeroAddress => none
   | .evmRevertPaused => none

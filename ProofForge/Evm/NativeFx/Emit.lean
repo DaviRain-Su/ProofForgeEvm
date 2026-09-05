@@ -279,6 +279,17 @@ private def emitRevertUnauthorized (context : Context σ)
   let txt := p0 ++ p1 ++ p2 ++ Codec.Emit.bindAddrWord indent "pf_who" a0 a1 a2 ++ errTxt
   return (txt, a0, s2)
 
+private def emitRevertOwnableInvalidOwner (context : Context σ)
+    (w0 w1 w2 : Ops.Val) (st : σ) : Except String (String × String × σ) := do
+  let indent := context.indent
+  let (p0, a0, s0) ← context.materialize w0 st
+  let (p1, a1, s1) ← context.materialize w1 s0
+  let (p2, a2, s2) ← context.materialize w2 s1
+  let errTxt ← LogError.Emit.emitRevert context.logError
+    { selector := Keccak.selector "OwnableInvalidOwner" #["address"], args := #["pf_owner"] }
+  let txt := p0 ++ p1 ++ p2 ++ Codec.Emit.bindAddrWord indent "pf_owner" a0 a1 a2 ++ errTxt
+  return (txt, a0, s2)
+
 private def emitRevertZeroAddress (context : Context σ) (st : σ) :
     Except String (String × String × σ) := do
   let txt ← LogError.Emit.emitRevert context.logError
@@ -319,6 +330,7 @@ def emitCall (context : Context σ) (call : NativeFx.Call Ops.Val) (st : σ) :
   | .revertInsufficient h0 h1 h2 h3 w0 w1 w2 w3 =>
       emitRevertInsufficient context h0 h1 h2 h3 w0 w1 w2 w3 st
   | .revertUnauthorized w0 w1 w2 => emitRevertUnauthorized context w0 w1 w2 st
+  | .revertOwnableInvalidOwner w0 w1 w2 => emitRevertOwnableInvalidOwner context w0 w1 w2 st
   | .revertZeroAddress => emitRevertZeroAddress context st
   | .revertPaused => emitRevertPaused context st
   | .revertCapExceeded => emitRevertCapExceeded context st

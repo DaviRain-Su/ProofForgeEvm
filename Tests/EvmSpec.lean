@@ -93,6 +93,16 @@ open ProofForge.Evm
     == "elog3.Transfer(x,x,x,x,x,x,x,x,x,x)"
 #guard
   (ProofForge.Evm.NativeFx.Call.canonical (fun _ => "x")
+    (.revertUnauthorized (.lit 0) (.lit 0) (.lit 0)
+      : ProofForge.Evm.NativeFx.Call ProofForge.Evm.Ops.Val))
+    == "err.Unauthorized(x,x,x)"
+#guard
+  (ProofForge.Evm.NativeFx.Call.canonical (fun _ => "x")
+    (.revertOwnableInvalidOwner (.lit 0) (.lit 0) (.lit 0)
+      : ProofForge.Evm.NativeFx.Call ProofForge.Evm.Ops.Val))
+    == "err.OwnableInvalidOwner(x,x,x)"
+#guard
+  (ProofForge.Evm.NativeFx.Call.canonical (fun _ => "x")
     (.revertZeroAddress : ProofForge.Evm.NativeFx.Call ProofForge.Evm.Ops.Val))
     == "err.ZeroAddress"
 #guard

@@ -6,7 +6,8 @@ ERC-20 vesting consumer. Constructor stores the beneficiary and cliff duration, 
 `release(address)` pays the currently releasable amount through `SafeErc20.transfer`, matching
 OpenZeppelin `release(address token)`. `transferOwnership` is one-step Ownable rotation of the
 stored beneficiary. Native-ETH `release()` / `release(uint256)` stay on `VestLink`. There is no
-arbitrary schedule mutation. A zero beneficiary reverts `ZeroAddress` in the constructor. The success path emits
+arbitrary schedule mutation. A zero beneficiary reverts `OwnableInvalidOwner(address)` in the
+constructor. The success path emits
 `OwnershipTransferred(address(0), beneficiary)`. Before
 the cliff, `vestedAmount` is 0. After the cliff the linear formula still uses `timestamp - start`.
 
@@ -46,7 +47,7 @@ inductive Error where
 def init (beneficiary : Address) (_start _duration cliffDuration : UInt64) : State :=
   let _ :=
     if Address.isZero beneficiary then
-      Revert.zeroAddress
+      Revert.ownableInvalidOwner beneficiary
     else
       Ownable.Log.constructorTransferred beneficiary
   { owner := beneficiary, cliffDuration := cliffDuration, dummy := 0, guard := Reentrancy.notEntered }
@@ -146,13 +147,13 @@ def vestedAmount (s : State) (token : Address) (timestamp : UInt64) : UInt256 :=
     UInt256.zero
 
 /-- One-step Ownable rotation of the stored beneficiary. Zero `newOwner` reverts
-`ZeroAddress`. Non-owner reverts `Unauthorized(caller)`. Success emits
+`OwnableInvalidOwner(newOwner)`. Non-owner reverts `Unauthorized(caller)`. Success emits
 `OwnershipTransferred(previous, newOwner)`. -/
 @[pf_entry]
 def transferOwnership (s : State) (newOwner : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
     if Address.isZero newOwner then
-      .ok (s, Revert.zeroAddress)
+      .ok (s, Revert.ownableInvalidOwner newOwner)
     else
       .ok ({ s with owner := newOwner }, Ownable.Log.ownershipTransferred s.owner newOwner)
   else

@@ -131,6 +131,7 @@ run_guards() {
   python3 scripts/check_vest_cliff_honesty.py
   python3 scripts/check_vest_zero_owner_honesty.py
   python3 scripts/check_vest_ctor_log_honesty.py
+  python3 scripts/check_vest_invalid_owner_honesty.py
   python3 scripts/check_safe3_honesty.py
   python3 scripts/check_erc721_enum_honesty.py
 }

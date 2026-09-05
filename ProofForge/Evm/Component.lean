@@ -172,6 +172,10 @@ def Call.emitsUnauthorized : Call V → Bool
   | .nativeFx call => call.emitsUnauthorized
   | _ => false
 
+def Call.emitsOwnableInvalidOwner : Call V → Bool
+  | .nativeFx call => call.emitsOwnableInvalidOwner
+  | _ => false
+
 def Call.emitsInsufficient : Call V → Bool
   | .nativeFx call => call.emitsInsufficient
   | _ => false

@@ -29,10 +29,10 @@ open Lean Elab Command
 #guard Vesting.vestedAmount ⟨1000, 0, 0, 0⟩ (100 : UInt64) (1000 : UInt64) (500 : UInt64)
     (1100 : UInt64) == ⟨1000, 0, 0, 0⟩
 
-private partial def ctorHasZeroAddress (ops : Array IR.Op) : Bool :=
+private partial def ctorHasOwnableInvalidOwner (ops : Array IR.Op) : Bool :=
   ops.any fun
-    | .component call => call.emitsZeroAddress
-    | .ite _ _ _ t f => ctorHasZeroAddress t || ctorHasZeroAddress f
+    | .component call => call.emitsOwnableInvalidOwner
+    | .ite _ _ _ t f => ctorHasOwnableInvalidOwner t || ctorHasOwnableInvalidOwner f
     | _ => false
 
 private partial def ctorHasConstructorTransferred (ops : Array IR.Op) : Bool :=
@@ -92,10 +92,10 @@ private def expectVestLink : CommandElabM Unit := do
     throwError s!"VestLink ABI lost vesting surface:\n{abi}"
   unless !abi.contains "\"name\":\"royaltyInfo\"" do
     throwError "VestLink must not grow a royalty surface"
-  unless abi.contains "\"name\":\"ZeroAddress\"" do
-    throwError "VestLink ABI lost ZeroAddress"
-  unless ctorHasZeroAddress program.constructor.ops do
-    throwError "VestLink constructor lost ZeroAddress revert"
+  unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
+    throwError "VestLink ABI lost OwnableInvalidOwner"
+  unless ctorHasOwnableInvalidOwner program.constructor.ops do
+    throwError "VestLink constructor lost OwnableInvalidOwner revert"
   unless ctorHasConstructorTransferred program.constructor.ops do
     throwError "VestLink constructor lost OwnershipTransferred log"
   let yul ←
@@ -103,8 +103,10 @@ private def expectVestLink : CommandElabM Unit := do
     | .ok yul => pure yul
     | .error reason => throwError reason
   let ctorYul := (yul.splitOn "_runtime")[0]!
-  unless ctorYul.contains "0xd92e233d" do
-    throwError s!"VestLink constructor Yul lost ZeroAddress:\n{ctorYul}"
+  let invalidOwnerSel :=
+    "0x" ++ ProofForge.Evm.Keccak.selector "OwnableInvalidOwner" #["address"]
+  unless ctorYul.contains invalidOwnerSel do
+    throwError s!"VestLink constructor Yul lost OwnableInvalidOwner:\n{ctorYul}"
   let ownershipTopic :=
     "0x" ++ ProofForge.Crypto.Keccak.keccak256HexOfString "OwnershipTransferred(address,address)"
   unless ctorYul.contains ownershipTopic do
@@ -118,7 +120,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "2d53b56c1d9429f9" do
+  unless IR.digestHex program == "b9471739ac722d35" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

@@ -268,6 +268,15 @@ private def mockNativeCtx : NativeFx.Emit.Context Nat :=
           "  mstore(4, pf_who)\n  revert(0, 36)\n" &&
         ret == "0" && st == 0
 
+#guard
+  match NativeFx.Emit.emitCall mockNativeCtx (.revertOwnableInvalidOwner lit lit lit) 0 with
+  | .error _ => false
+  | .ok (txt, ret, st) =>
+      txt == "  let pf_owner := 0\n" ++
+          s!"  mstore(0, shl(224, 0x{Keccak.selector "OwnableInvalidOwner" #["address"]}))\n" ++
+          "  mstore(4, pf_owner)\n  revert(0, 36)\n" &&
+        ret == "0" && st == 0
+
 -- Consumer regression: the selector-only NativeFx errors consume the shared interpreter,
 -- byte-exact.
 #guard

@@ -23,10 +23,10 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   after `Collectible.safeTransferFrom__id` shipped the three-argument overload. Row 5
   (`finance/VestingWallet`) stays PARTIAL after `VestLink` shipped stored-beneficiary
   `transferOwnership`, parameterless `release()`, a constructor-stored OZ cliff
-  (`cliffDuration`, `cliff()`), and CREATE of a zero beneficiary that reverts `ZeroAddress()`.
-  Remaining named gap on that row is CREATE reverting `ZeroAddress()` rather than
-  OZ `OwnableInvalidOwner(address)`. The constructor
-  `OwnershipTransferred(address(0), owner)` log lowers on VestLink and Vest20Link.
+  (`cliffDuration`, `cliff()`), CREATE of a zero beneficiary that reverts
+  `OwnableInvalidOwner(address)`, and constructor `OwnershipTransferred(address(0), owner)`.
+  Remaining named gap on that row is `Unauthorized(address)` rather than OZ
+  `OwnableUnauthorizedAccount(address)`, plus the split native-ETH / ERC-20 wallets.
   `temporaryGapCount` stays 0.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,

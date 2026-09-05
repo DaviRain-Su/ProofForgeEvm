@@ -322,6 +322,45 @@ if have != int('$have') or want != int('$want'):
 "
 }
 
+# eth_call must revert with ABI error OwnableInvalidOwner(address).
+pf_evm_require_ownable_invalid_owner() {
+  local addr="$1" from="$2" data="$3" who="$4" message="$5"
+  local sel
+  sel="$("$cast" keccak 'OwnableInvalidOwner(address)')"
+  sel="${sel#0x}"
+  sel="$(printf '%s' "$sel" | cut -c1-8 | tr 'A-Z' 'a-z')"
+  who="$(printf '%s' "$who" | tr 'A-Z' 'a-z')"
+  who="${who#0x}"
+  "$python" -I -S -c "
+import json, urllib.request, urllib.error
+rpc='$rpc'
+payload={
+  'jsonrpc':'2.0','id':1,'method':'eth_call',
+  'params':[{'to':'$addr','from':'$from','data':'$data'}, 'latest']
+}
+req=urllib.request.Request(rpc, data=json.dumps(payload).encode(),
+  headers={'Content-Type':'application/json'})
+try:
+    raw=urllib.request.urlopen(req).read().decode()
+except urllib.error.HTTPError as e:
+    raw=e.read().decode()
+resp=json.loads(raw)
+err=resp.get('error') or {}
+blob=(err.get('data') or '')
+if isinstance(blob, dict):
+    blob=blob.get('data') or blob.get('raw') or ''
+blob=str(blob).lower()
+if blob.startswith('0x'):
+    blob=blob[2:]
+sel='$sel'
+if len(blob) < 8+64 or not blob.startswith(sel):
+    raise SystemExit('FAIL: $message: missing OwnableInvalidOwner(owner) (got '+repr(err)+')')
+got=blob[8+24:8+64]
+if got != '$who':
+    raise SystemExit(f'FAIL: $message: OwnableInvalidOwner(0x{got}) != 0x$who')
+"
+}
+
 # eth_call must revert with ABI error Unauthorized(address).
 pf_evm_require_unauthorized() {
   local addr="$1" from="$2" data="$3" who="$4" message="$5"
@@ -575,12 +614,13 @@ if len(blob) < 8 or not blob.startswith(sel):
 "
 }
 
-# CREATE simulation must revert with ABI error ZeroAddress(). BYTECODE is the
-# creation hex without 0x. ENCODED is the ABI-encoded constructor args including 0x.
-pf_evm_require_create_zero_address() {
+# CREATE simulation must revert with ABI error OwnableInvalidOwner(address(0)).
+# BYTECODE is the creation hex without 0x. ENCODED is the ABI-encoded constructor
+# args including 0x.
+pf_evm_require_create_ownable_invalid_owner() {
   local bytecode="$1" encoded="$2" from="$3" message="$4"
   local sel data
-  sel="$("$cast" keccak 'ZeroAddress()')"
+  sel="$("$cast" keccak 'OwnableInvalidOwner(address)')"
   sel="${sel#0x}"
   sel="$(printf '%s' "$sel" | cut -c1-8 | tr 'A-Z' 'a-z')"
   data="0x${bytecode}${encoded#0x}"
@@ -606,17 +646,20 @@ blob=str(blob).lower()
 if blob.startswith('0x'):
     blob=blob[2:]
 sel='$sel'
-if len(blob) < 8 or not blob.startswith(sel):
-    raise SystemExit('FAIL: $message: missing ZeroAddress() (got '+repr(err)+')')
+if len(blob) < 8+64 or not blob.startswith(sel):
+    raise SystemExit('FAIL: $message: missing OwnableInvalidOwner(owner) (got '+repr(err)+')')
+got=blob[8+24:8+64]
+if got != '0'*40:
+    raise SystemExit(f'FAIL: $message: OwnableInvalidOwner(0x{got}) != address(0)')
 "
 }
 
-# CREATE simulation must succeed. Used after stripping the constructor ZeroAddress
-# guard. Fails if that mutation still reverts ZeroAddress().
+# CREATE simulation must succeed. Used after stripping the constructor
+# OwnableInvalidOwner guard. Fails if that mutation still reverts OwnableInvalidOwner.
 pf_evm_require_create_ok() {
   local bytecode="$1" encoded="$2" from="$3" message="$4"
   local sel data
-  sel="$("$cast" keccak 'ZeroAddress()')"
+  sel="$("$cast" keccak 'OwnableInvalidOwner(address)')"
   sel="${sel#0x}"
   sel="$(printf '%s' "$sel" | cut -c1-8 | tr 'A-Z' 'a-z')"
   data="0x${bytecode}${encoded#0x}"
@@ -650,10 +693,10 @@ raise SystemExit('FAIL: $message: CREATE still reverted ('+repr(err)+')')
 "
 }
 
-# Write DEST_YUL from SRC_YUL with the constructor-only ZeroAddress revert removed
-# once. NAME is the Yul object (VestLink / Vest20Link). The runtime object must keep
-# 0xd92e233d so transferOwnership is not stripped.
-pf_evm_strip_ctor_zero_guard() {
+# Write DEST_YUL from SRC_YUL with the constructor-only OwnableInvalidOwner revert
+# removed once. NAME is the Yul object (VestLink / Vest20Link). The runtime object
+# must keep 0x1e4fbdf7 so transferOwnership is not stripped.
+pf_evm_strip_ctor_invalid_owner_guard() {
   local src="$1" name="$2" dest="$3"
   "$python" -I -S -c "
 from pathlib import Path
@@ -665,16 +708,20 @@ if idx < 0:
     sys.stderr.write(f'FAIL: missing {marker}\\n')
     sys.exit(1)
 head, tail = src[:idx], src[idx:]
-pat = r'mstore\\(0, shl\\(224, 0xd92e233d\\)\\)\\s*revert\\(0, 4\\)'
+pat = (
+    r'let pf_owner := [^\\n]+\\n'
+    r'\\s*mstore\\(0, shl\\(224, 0x1e4fbdf7\\)\\)\\s*'
+    r'mstore\\(4, pf_owner\\)\\s*revert\\(0, 36\\)'
+)
 out, k = re.subn(pat, '', head, count=1)
 if k != 1:
-    sys.stderr.write(f'FAIL: constructor ZeroAddress revert not found (k={k})\\n')
+    sys.stderr.write(f'FAIL: constructor OwnableInvalidOwner revert not found (k={k})\\n')
     sys.exit(1)
-if '0xd92e233d' not in tail:
-    sys.stderr.write('FAIL: runtime lost ZeroAddress selector after constructor strip\\n')
+if '0x1e4fbdf7' not in tail:
+    sys.stderr.write('FAIL: runtime lost OwnableInvalidOwner selector after constructor strip\\n')
     sys.exit(1)
 Path('$dest').write_text(out + tail)
-print('stripped one constructor ZeroAddress revert; runtime selector kept')
+print('stripped one constructor OwnableInvalidOwner revert; runtime selector kept')
 "
 }
 
