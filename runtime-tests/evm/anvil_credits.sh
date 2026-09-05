@@ -11,25 +11,30 @@ source "$here/lib.sh"
 pf_evm_evm_init evm-anvil-credits
 bin="$root/build/evm/Credits.bin"
 abi="$root/build/evm/Credits.abi.json"
-if [[ ! -f "$bin" || ! -f "$abi" ]]; then
-  echo "building Credits.bin" >&2
-  lake exe pf -- build --target evm --out "$root/build/evm" Credits \
-    || { echo "FAIL: pf build Credits failed" >&2; exit 1; }
-fi
+echo "building Credits.bin" >&2
+lake exe pf -- build --target evm --out "$root/build/evm" Credits \
+  || { echo "FAIL: pf build Credits failed" >&2; exit 1; }
 [[ -f "$bin" ]] || { echo "FAIL: missing $bin" >&2; exit 1; }
 [[ -f "$abi" ]] || { echo "FAIL: missing $abi" >&2; exit 1; }
 pf_evm_start_anvil "${PF_EVM_PORT:-18561}" "$root/build/evm/anvil-credits.log"
+
+solc_bin=""
+for c in /opt/homebrew/bin/solc /usr/local/bin/solc solc; do
+  if command -v "$c" >/dev/null 2>&1 || [[ -x "$c" ]]; then
+    solc_bin="$c"
+    break
+  fi
+done
 
 bytecode="$(tr -d '\n\r ' < "$bin")"
 [[ -n "$bytecode" ]] || { echo "FAIL: empty Credits.bin" >&2; exit 1; }
 
 sender="$("$cast" wallet address --private-key "$private_key")"
-addr="$(pf_evm_deploy_ctor_address "$bytecode" "$sender")"
-# Anvil default account 1 and 2.
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
 third_key="0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
 third="$("$cast" wallet address --private-key "$third_key")"
+zero="0x0000000000000000000000000000000000000000"
 
 sig_own="$(pf_evm_typed_event_sig "$abi" OwnershipTransferred)"
 sig_started="$(pf_evm_typed_event_sig "$abi" OwnershipTransferStarted)"
@@ -45,6 +50,14 @@ topic_own="$("$cast" keccak "$sig_own")"
 topic_started="$("$cast" keccak "$sig_started")"
 topic_paused="$("$cast" keccak "$sig_paused")"
 topic_unpaused="$("$cast" keccak "$sig_unpaused")"
+
+encoded="$("$cast" abi-encode 'constructor(address)' "$sender")"
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${bytecode}${encoded#0x}")"
+addr="$(printf '%s' "$receipt" | pf_evm_contract_address)"
+pf_evm_typed_event_check "$abi" "$receipt" OwnershipTransferred "$topic_own" \
+  "{\"previousOwner\": \"$zero\", \"newOwner\": \"$sender\"}" \
+  "CREATE OwnershipTransferred LOG3"
 
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'ownerOf()(address)')" \
   "$sender" "ownerOf after init"
@@ -208,4 +221,73 @@ pf_evm_require_ownable_unauthorized_account "$addr" "$third" \
   "$("$cast" calldata 'grant(address,uint256)' "$third" 1)" "$third" \
   "owner action after renounce"
 
-echo "evm-anvil-credits: ok (Access reuse + ownership transfer/renounce LOG3 + Paused/Unpaused LOG1)"
+zero_encoded="$("$cast" abi-encode 'constructor(address)' "$zero")"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    --create "0x${bytecode}${zero_encoded#0x}" >/dev/null 2>&1; then
+  echo "FAIL: zero-owner constructor CREATE unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_create_ownable_invalid_owner "$bytecode" "$zero_encoded" "$sender" \
+  "zero owner CREATE"
+
+if [[ -z "$solc_bin" ]]; then
+  echo "evm-anvil-credits: ok (Access reuse + CREATE OwnershipTransferred + zero-owner CREATE, solc skip)"
+  exit 0
+fi
+yul="$root/build/evm/Credits.yul"
+[[ -f "$yul" ]] || { echo "FAIL: missing $yul" >&2; exit 1; }
+ctor_mut_dir="$root/build/evm/credits-ctor-mut"
+rm -rf "$ctor_mut_dir"
+mkdir -p "$ctor_mut_dir"
+pf_evm_strip_ctor_invalid_owner_guard "$yul" Credits "$ctor_mut_dir/Credits.yul" 0
+ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$ctor_mut_dir/Credits.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc produced no Credits constructor-guard mutation bytecode')
+print(hexes[-1])
+")"
+pf_evm_require_create_ok "$ctor_mut_code" "$zero_encoded" "$sender" \
+  "constructor-guard mutation CREATE"
+ctor_mut_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${ctor_mut_code}${zero_encoded#0x}")" \
+  || { echo "FAIL: mutation unexpectedly still reverted" >&2; exit 1; }
+ctor_mut_addr="$(printf '%s' "$ctor_mut_receipt" | "$python" -I -S -c "
+import json,sys
+r=json.load(sys.stdin)
+st=str(r.get('status') or '').lower()
+if st not in ('0x1','1'):
+    raise SystemExit('FAIL: mutation unexpectedly still reverted')
+addr=r.get('contractAddress') or ''
+if not addr or set(addr[2:])=={'0'}:
+    raise SystemExit('FAIL: mutation unexpectedly still reverted')
+print(addr)
+")"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$ctor_mut_addr" 'ownerOf()(address)')" \
+  "$zero" "constructor-guard mutation stored a zero owner"
+
+log_mut_dir="$root/build/evm/credits-ctor-log-mut"
+rm -rf "$log_mut_dir"
+mkdir -p "$log_mut_dir"
+pf_evm_strip_ctor_ownership_log "$yul" Credits "$log_mut_dir/Credits.yul"
+log_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$log_mut_dir/Credits.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc produced no Credits constructor-log mutation bytecode')
+print(hexes[-1])
+")"
+log_mut_encoded="$("$cast" abi-encode 'constructor(address)' "$sender")"
+log_mut_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${log_mut_code}${log_mut_encoded#0x}")"
+log_mut_addr="$(printf '%s' "$log_mut_receipt" | pf_evm_contract_address)"
+pf_evm_typed_event_check "$abi" "$log_mut_receipt" OwnershipTransferred "$topic_own" \
+  '{}' "constructor-log mutation CREATE" 0
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$log_mut_addr" 'ownerOf()(address)')" \
+  "$sender" "constructor-log mutation still stored the owner"
+
+echo "evm-anvil-credits: ok (Access reuse + CREATE OwnershipTransferred + zero-owner CREATE + constructor mutations + ownership transfer/renounce LOG3 + Paused/Unpaused LOG1)"

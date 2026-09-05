@@ -14,8 +14,9 @@ shape whose get/condition/put binding `Examples.Evm.Token` already proves end to
 policy and typed State writes stay in this file; reusable balance debit mechanics live in
 `Sdk.Fungible`. Successful `transferOwnership` emits `OwnershipTransferStarted`; successful
 `acceptOwnership` and `renounceOwnership` emit `OwnershipTransferred`; renunciation clears both
-owner and pending nominee. Successful `pause` / `unpause` emit `Paused` / `Unpaused`. Constructor
-init stores the owner argument and empty pending state; it does not log.
+owner and pending nominee. Successful `pause` / `unpause` emit `Paused` / `Unpaused`. CREATE of a zero owner reverts
+`OwnableInvalidOwner(address)`. The success path emits `OwnershipTransferred(address(0), owner)`.
+Nominate-zero on `transferOwnership` still reverts `ZeroAddress()`.
 -/
 
 structure State where
@@ -34,6 +35,11 @@ inductive Error where
 
 @[pf_entry]
 def init (owner : Address) : State :=
+  let _ :=
+    if Address.isZero owner then
+      Revert.ownableInvalidOwner owner
+    else
+      Ownable.Log.constructorTransferred owner
   { owner, paused := Pausable.running, total := UInt256.zero,
     ownership := Access.Ownership.none }
 

@@ -6,10 +6,11 @@ import Examples.Evm.Credits
 import Examples.Evm.Capped
 
 /-!
-S4b/W3/W5: canonical Ownable `OwnershipTransferred` (LOG3) on accept/renounce, Ownable2Step
-`OwnershipTransferStarted` (LOG3) on nominate, and Pausable `Paused`/`Unpaused` (LOG1).
-Constructor init does not log. TwoStepCounter/Credits adopt both Ownable events, including
-renunciation to the zero owner; Capped adopts pause events only (immutable owner). Live receipt matrices live in
+S4b/W3/W5: canonical Ownable `OwnershipTransferred` (LOG3) on CREATE, accept, and renounce,
+Ownable2Step `OwnershipTransferStarted` (LOG3) on nominate, and Pausable `Paused`/`Unpaused`
+(LOG1). CREATE of a zero owner reverts `OwnableInvalidOwner(address)`. TwoStepCounter/Credits
+adopt both Ownable events, including renunciation to the zero owner; Capped adopts pause
+events only (immutable owner). Live receipt matrices live in
 `runtime-tests/evm/anvil_twostep_counter.sh`, `anvil_credits.sh`, and `anvil_capped.sh`.
 -/
 
@@ -55,6 +56,18 @@ private def pausedTopic : String :=
 
 private def unpausedTopic : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString "Unpaused(address)"
+
+private partial def ctorHasOwnableInvalidOwner (ops : Array IR.Op) : Bool :=
+  ops.any fun
+    | .component call => call.emitsOwnableInvalidOwner
+    | .ite _ _ _ t f => ctorHasOwnableInvalidOwner t || ctorHasOwnableInvalidOwner f
+    | _ => false
+
+private partial def ctorHasConstructorTransferred (ops : Array IR.Op) : Bool :=
+  ops.any fun
+    | .component call => call.isConstructorTransferred (fun | .lit 0 => true | _ => false)
+    | .ite _ _ _ t f => ctorHasConstructorTransferred t || ctorHasConstructorTransferred f
+    | _ => false
 
 private partial def sourceTypedFrames (ops : Array ProofForge.Extract.IR.Op) :
     Array (ProofForge.Core.Ops.EventFrame ProofForge.Extract.IR.Val) :=
@@ -129,8 +142,11 @@ private def expectPolicyEvents (moduleName : Name) (wantOwnership : Bool) : Comm
         startFrames[0]!.args[0]!.type == .address20 do
       throwError s!"{moduleName}.transferOwnership OwnershipTransferStarted frame diverged: {repr startFrames}"
     let initFrames := sourceTypedFrames (← methodOps source "initialize")
-    unless initFrames.isEmpty do
-      throwError s!"{moduleName}.init unexpectedly contains typed events: {repr initFrames}"
+    unless initFrames.size == 1 &&
+        eventMatches initFrames[0]! "OwnershipTransferred"
+          #[("previousOwner", true), ("newOwner", true)] &&
+        initFrames[0]!.args[0]!.type == .address20 do
+      throwError s!"{moduleName}.init lost constructor OwnershipTransferred: {repr initFrames}"
   let evm ←
     match IR.fromExtracted source with
     | .ok program => pure program
@@ -146,6 +162,12 @@ private def expectPolicyEvents (moduleName : Name) (wantOwnership : Bool) : Comm
   if wantOwnership then
     unless abi.contains ownershipAbi && abi.contains ownershipStartedAbi do
       throwError s!"{moduleName} ABI lost OwnershipTransferred/OwnershipTransferStarted:\n{abi}"
+    unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
+      throwError s!"{moduleName} ABI lost OwnableInvalidOwner"
+    unless ctorHasOwnableInvalidOwner evm.constructor.ops do
+      throwError s!"{moduleName} constructor lost OwnableInvalidOwner revert"
+    unless ctorHasConstructorTransferred evm.constructor.ops do
+      throwError s!"{moduleName} constructor lost OwnershipTransferred log"
   else
     unless !abi.contains ownershipAbi && !abi.contains ownershipStartedAbi do
       throwError s!"{moduleName} ABI unexpectedly contains Ownable events:\n{abi}"
@@ -168,8 +190,8 @@ private def expectOzPolicy : CommandElabM Unit := do
   expectPolicyEvents `Examples.Evm.TwoStepCounter true
   expectPolicyEvents `Examples.Evm.Credits true
   expectPolicyEvents `Examples.Evm.Capped false
-  expectDigest `Examples.Evm.TwoStepCounter "9e15126afbbbc091"
-  expectDigest `Examples.Evm.Credits "11d0c531446287ce"
+  expectDigest `Examples.Evm.TwoStepCounter "5c233c3f25cd6488"
+  expectDigest `Examples.Evm.Credits "cd76930e05d07045"
   expectDigest `Examples.Evm.Capped "b0b0b7244ebb8aed"
 
 elab "#pf_guard_evm_oz_policy_events" : command => expectOzPolicy

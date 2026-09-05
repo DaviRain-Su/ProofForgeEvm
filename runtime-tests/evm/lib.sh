@@ -733,10 +733,12 @@ raise SystemExit('FAIL: $message: CREATE still reverted ('+repr(err)+')')
 }
 
 # Write DEST_YUL from SRC_YUL with the constructor-only OwnableInvalidOwner revert
-# removed once. NAME is the Yul object (VestLink / Vest20Link). The runtime object
-# must keep 0x1e4fbdf7 so transferOwnership is not stripped.
+# removed once. NAME is the Yul object (VestLink / Vest20Link / TwoStepCounter / Credits).
+# Fourth argument 0 skips the runtime-selector check for consumers whose transferOwnership
+# still uses ZeroAddress.
 pf_evm_strip_ctor_invalid_owner_guard() {
   local src="$1" name="$2" dest="$3"
+  local need_runtime="${4:-1}"
   "$python" -I -S -c "
 from pathlib import Path
 import re, sys
@@ -756,7 +758,8 @@ out, k = re.subn(pat, '', head, count=1)
 if k != 1:
     sys.stderr.write(f'FAIL: constructor OwnableInvalidOwner revert not found (k={k})\\n')
     sys.exit(1)
-if '0x1e4fbdf7' not in tail:
+need_runtime = int('$need_runtime')
+if need_runtime and '0x1e4fbdf7' not in tail:
     sys.stderr.write('FAIL: runtime lost OwnableInvalidOwner selector after constructor strip\\n')
     sys.exit(1)
 Path('$dest').write_text(out + tail)

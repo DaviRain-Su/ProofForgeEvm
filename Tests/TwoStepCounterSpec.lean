@@ -186,7 +186,8 @@ elab "#pf_guard_twostep_counter" : command => do
   unless yul.contains "revert(0, 36)" && yul.contains "revert(0, 4)" do
     throwError "TwoStepCounter yul missing OwnableUnauthorizedAccount(address)/Paused()/ZeroAddress() payloads"
   let abi := ProofForge.Evm.Emit.emitAbi program
-  for name in #["\"name\":\"OwnableUnauthorizedAccount\"", "\"name\":\"Paused\"", "\"name\":\"ZeroAddress\"",
+  for name in #["\"name\":\"OwnableUnauthorizedAccount\"", "\"name\":\"OwnableInvalidOwner\"",
+      "\"name\":\"Paused\"", "\"name\":\"ZeroAddress\"",
       "\"name\":\"transferOwnership\"", "\"name\":\"cancelOwnership\"",
       "\"name\":\"acceptOwnership\"", "\"name\":\"renounceOwnership\"", "\"name\":\"bump\"", "\"name\":\"pendingOf\"",
       "\"name\":\"pendingOwner\""] do
