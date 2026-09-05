@@ -87,8 +87,9 @@ namespace Ownership
 @[pf_inline] def callerIsPending (o : Ownership) : Bool :=
   Ownership.isPending o Context.caller
 
-/-- Replace the sole nominee. The consumer explicitly stores the returned value and must gate the
-operation with `Access.requireOwner` and reject the zero address. -/
+/-- Replace the sole nominee. The consumer explicitly stores the returned value and must
+gate the operation with `Access.requireOwner`. Zero candidate is the OZ Ownable2Step
+cancel path (`pendingOwner = 0`). CREATE still rejects a zero initial owner. -/
 @[pf_inline] def nominate (_o : Ownership) (candidate : Address) : Address :=
   candidate
 

@@ -71,11 +71,11 @@ def other : Addr20 := ⟨4, 5, 6⟩
   | .ok (st, ret) => ret == 0 && st.owner == sample
   | .error _ => false
 
-/- Host: `Address.isZero` stub is always true, so transferOwnership takes the zero-address
-    revert terminal (0) and keeps state; the explicit pending-address write is exercised on-chain. -/
+/- Host: owner gate stub passes. Zero candidate nominates zero (OZ cancel). -/
 #guard
-  match transferOwnership (init sample) other with
-  | .ok (st, ret) => ret == 0 && st.owner == sample
+  match transferOwnership (init sample) Address.zero with
+  | .ok (st, ret) =>
+      ret == 0 && st.owner == sample && st.ownership == Address.zero
   | .error _ => false
 
 #guard

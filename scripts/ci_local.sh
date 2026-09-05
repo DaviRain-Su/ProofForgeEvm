@@ -137,7 +137,7 @@ run_guards() {
   python3 scripts/check_vest_unauthorized_honesty.py
   python3 scripts/check_vest_dual_honesty.py
   python3 scripts/check_twostep_ctor_honesty.py
-  python3 scripts/check_nominate_invalid_owner_honesty.py
+  python3 scripts/check_ownable2step_cancel_honesty.py
   python3 scripts/check_vest_released_honesty.py
   python3 scripts/check_vest_ownable2step_honesty.py
   python3 scripts/check_vest_eth_only_honesty.py

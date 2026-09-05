@@ -361,7 +361,20 @@ if got != '$who':
 "
 }
 
-# eth_call must revert with ABI error Unauthorized(address).
+# OZ Ownable2Step: transferOwnership(0) nominates zero (cancels pending).
+# pendingOwner() becomes address(0). Emits OwnershipTransferStarted(owner, 0).
+pf_evm_require_ownable2step_cancel_via_zero() {
+  local addr="$1" owner="$2" owner_key="$3" abi="$4" topic="$5" message="$6"
+  local receipt
+  receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$owner_key" \
+    "$addr" 'transferOwnership(address)' \
+    0x0000000000000000000000000000000000000000)"
+  pf_evm_typed_event_check "$abi" "$receipt" OwnershipTransferStarted "$topic" \
+    "{\"previousOwner\": \"$owner\", \"newOwner\": \"0x0000000000000000000000000000000000000000\"}" \
+    "$message OwnershipTransferStarted LOG3"
+  pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'pendingOwner()(address)')" \
+    "0x0000000000000000000000000000000000000000" "pendingOwner after $message"
+}
 pf_evm_require_unauthorized() {
   local addr="$1" from="$2" data="$3" who="$4" message="$5"
   local sel
@@ -734,11 +747,12 @@ raise SystemExit('FAIL: $message: CREATE still reverted ('+repr(err)+')')
 
 # Write DEST_YUL from SRC_YUL with the constructor-only OwnableInvalidOwner revert
 # removed once. NAME is the Yul object (VestLink / Vest20Link / TwoStepCounter / Credits).
-# Fourth argument 0 skips the runtime-selector check. Default 1 requires the runtime
-# object to keep OwnableInvalidOwner because nominate-zero uses that selector.
+# Fourth argument 0 skips the runtime-selector check. Default 0: runtime no longer
+# keeps OwnableInvalidOwner after transferOwnership(0) became the OZ cancel path.
+# Pass 1 only when a runtime method still emits that selector.
 pf_evm_strip_ctor_invalid_owner_guard() {
   local src="$1" name="$2" dest="$3"
-  local need_runtime="${4:-1}"
+  local need_runtime="${4:-0}"
   "$python" -I -S -c "
 from pathlib import Path
 import re, sys

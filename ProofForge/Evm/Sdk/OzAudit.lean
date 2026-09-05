@@ -41,8 +41,8 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   Remaining named restriction on that row is the remaining draft interfaces.
   Row 1 (`access/Ownable`, `Ownable2Step`) stays PARTIAL after TwoStepCounter/Credits CREATE
   reverts `OwnableInvalidOwner(address)` and logs `OwnershipTransferred(address(0), owner)`,
-  and after nominate-zero also reverts `OwnableInvalidOwner(address)`.
-  Nominate-zero reverts `OwnableInvalidOwner(address)`.
+  and after `transferOwnership(0)` nominates zero (OZ cancel).
+  Nominate-zero nominates the zero address (OZ cancel).
   Remaining named restriction on that row is the bounded two-step profile.
   `temporaryGapCount` stays 0.)
 

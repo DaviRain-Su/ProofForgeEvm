@@ -2,7 +2,7 @@
 """Fail when product docs still list Vest CREATE OwnableInvalidOwner as missing.
 
 VestLink and Vest20Link revert OwnableInvalidOwner(address) on CREATE of
-address(0). transferOwnership(address(0)) reverts OwnableInvalidOwner(address).
+address(0). transferOwnership(address(0)) nominates zero (OZ cancel).
 Sdk.OzAudit.temporaryGapCount stays 0. A doc that still lists CREATE OwnableInvalidOwner as the
 VestingWallet gap is a lying inventory. Remaining named restriction is VestLink is the
 ETH-only smaller profile (Vest20Link is dual-asset).
@@ -42,10 +42,10 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "evmRevertOwnableInvalidOwner"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "OwnableUnauthorizedAccount(address)"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "86c8363611ee3cc7"'),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "86c8363611ee3cc7"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "9a9cce6e0d2a58a2"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "9a9cce6e0d2a58a2"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "fef481a06aef2a5d"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "fef481a06aef2a5d"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "a12b192153112fb4"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "a12b192153112fb4"'),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_require_create_ownable_invalid_owner"),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_strip_ctor_invalid_owner_guard"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "zero new owner"),
