@@ -93,7 +93,9 @@ def deposit (s : State) (assets : UInt256) (receiver : Address) :
     Except Error (State × UInt64) :=
   if Erc4626.canVault Immutable.address then
     if Reentrancy.canEnter s.guard then
-      let sharesAmt := convertShares s assets
+      let base := hold s
+      let totalAssets := ERC20.balanceOfSelf Immutable.address
+      let sharesAmt := Erc4626.sharesForDeposit assets base.totalShares totalAssets
       if !Address.isZero receiver &&
           Fungible.Balances.canCredit shares receiver sharesAmt then
         let _ := Reentrancy.enter declared.handle.guard
@@ -120,7 +122,8 @@ def redeem (s : State) (sharesAmt : UInt256) (receiver : Address) (owner : Addre
       if Address.eq Context.caller owner then
         if !Address.isZero receiver &&
             Fungible.Balances.canDebit shares owner sharesAmt then
-          let assets := convertAssets s sharesAmt
+          let totalAssets := ERC20.balanceOfSelf Immutable.address
+          let assets := Erc4626.assetsForRedeem sharesAmt s.totalShares totalAssets
           let _ := Reentrancy.enter declared.handle.guard
           let _ := Fungible.Balances.debit shares owner sharesAmt
           let _ := ERC20.transfer Immutable.address receiver assets

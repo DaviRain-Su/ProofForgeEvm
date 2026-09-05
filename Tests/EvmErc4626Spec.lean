@@ -29,6 +29,22 @@ private def expectVault4626Link : CommandElabM Unit := do
     | .error reason => throwError reason
   unless abi.contains "\"name\":\"Deposit\"" && abi.contains "\"name\":\"Withdraw\"" do
     throwError s!"Vault4626Link ABI lost vault surface:\n{abi}"
+  let rec collectStores (fuel : Nat) (ops : Array IR.Op) (acc : Array String) : Array String :=
+    match fuel with
+    | 0 => acc
+    | fuel' + 1 =>
+      ops.foldl (init := acc) fun acc op =>
+        match op with
+        | .storeField actual _ => acc.push actual
+        | .ite _ _ _ thn els =>
+            collectStores fuel' els (collectStores fuel' thn acc)
+        | .forBody _ body => collectStores fuel' body acc
+        | _ => acc
+  let some deposit := program.entries.find? (·.ixName == "deposit")
+    | throwError "Vault4626Link is missing deposit"
+  let names := collectStores 64 deposit.ops #[]
+  unless names.any (· == "totalShares_w0") do
+    throwError s!"Vault4626Link.deposit stores {names} but not totalShares_w0"
   logInfo m!"vault4626link: digest={IR.digestHex program} abi-ok"
 
 elab "#pf_guard_evm_erc4626" : command => expectVault4626Link

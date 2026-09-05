@@ -37,7 +37,19 @@ REQUIRED = (
     ),
     (
         ROOT / "Examples" / "Evm" / "Vault4626Link.lean",
-        "let sharesAmt := convertShares s assets",
+        "let base := hold s",
+    ),
+    (
+        ROOT / "Examples" / "Evm" / "Vault4626Link.lean",
+        "let totalAssets := ERC20.balanceOfSelf Immutable.address",
+    ),
+    (
+        ROOT / "Examples" / "Evm" / "Vault4626Link.lean",
+        "let sharesAmt := Erc4626.sharesForDeposit assets base.totalShares totalAssets",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "def sharesForDeposit (assets totalSupply totalAssets : UInt256) : UInt256 :=",
     ),
     (
         ROOT / "Tests" / "EvmErc4626Spec.lean",
@@ -50,6 +62,14 @@ REQUIRED = (
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
         '"donated convertToShares is 50"',
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"second deposit mints 50"',
+    ),
+    (
+        ROOT / "Tests" / "EvmErc4626Spec.lean",
+        "unless names.any (· == \"totalShares_w0\") do",
     ),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",

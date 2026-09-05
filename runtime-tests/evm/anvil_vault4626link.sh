@@ -52,6 +52,7 @@ dep_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key"
 pf_evm_typed_event_check "$abi" "$dep_receipt" Deposit "$topic_dep" \
   "{\"sender\": \"$sender\", \"owner\": \"$sender\", \"assets\": 100, \"shares\": 100}" "deposit"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 100 "totalAssets"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint256)')" 100 "totalSupply after deposit"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'balanceOf(address)(uint256)' "$sender")" 100 "shares"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 100)" 100 \
   "funded 1:1 still 100 shares"
@@ -62,6 +63,16 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(ui
   "donated convertToShares is 50"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' 100)" 200 \
   "donated convertToAssets is 200"
+
+dep2_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" "$addr" 'deposit(uint256,address)' 100 "$sender")"
+pf_evm_typed_event_check "$abi" "$dep2_receipt" Deposit "$topic_dep" \
+  "{\"sender\": \"$sender\", \"owner\": \"$sender\", \"assets\": 100, \"shares\": 50}" "second deposit"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint256)')" 150 \
+  "second deposit mints 50"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'balanceOf(address)(uint256)' "$sender")" 150 \
+  "shares after second deposit"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 300 \
+  "totalAssets after second deposit"
 
 wdr_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" "$addr" 'redeem(uint256,address,address)' 50 "$dest" "$sender")"
 pf_evm_typed_event_check "$abi" "$wdr_receipt" Withdraw "$topic_wdr" \

@@ -26,24 +26,29 @@ Fail-closed gates:
   wellFormedAsset asset
 
 /-- Floor `assets * totalSupply / totalAssets` when the vault already has shares. Empty
+supply answers `assets` (1:1). `DIV` of a zero `totalAssets` answers 0. Callers that already
+passed `canVault` use this so a stored mint amount does not mention `Immutable.address`. -/
+@[pf_inline] def sharesForDeposit (assets totalSupply totalAssets : UInt256) : UInt256 :=
+  if UInt256.eq totalSupply UInt256.zero then assets
+  else UInt256.div (UInt256.mul assets totalSupply) totalAssets
+
+/-- Floor `shares * totalAssets / totalSupply` when the vault already has shares. Empty
+supply answers `shares` (1:1). -/
+@[pf_inline] def assetsForRedeem (shares totalSupply totalAssets : UInt256) : UInt256 :=
+  if UInt256.eq totalSupply UInt256.zero then shares
+  else UInt256.div (UInt256.mul shares totalAssets) totalSupply
+
+/-- Floor `assets * totalSupply / totalAssets` when the vault already has shares. Empty
 supply answers `assets` (1:1). `DIV` of a zero `totalAssets` answers 0. -/
 @[pf_inline] def convertToShares (asset : Address)
     (assets totalSupply totalAssets : UInt256) : UInt256 :=
-  if canVault asset then
-    if UInt256.eq totalSupply UInt256.zero then assets
-    else UInt256.div (UInt256.mul assets totalSupply) totalAssets
-  else
-    UInt256.zero
+  if canVault asset then sharesForDeposit assets totalSupply totalAssets else UInt256.zero
 
 /-- Floor `shares * totalAssets / totalSupply` when the vault already has shares. Empty
 supply answers `shares` (1:1). -/
 @[pf_inline] def convertToAssets (asset : Address)
     (shares totalSupply totalAssets : UInt256) : UInt256 :=
-  if canVault asset then
-    if UInt256.eq totalSupply UInt256.zero then shares
-    else UInt256.div (UInt256.mul shares totalAssets) totalSupply
-  else
-    UInt256.zero
+  if canVault asset then assetsForRedeem shares totalSupply totalAssets else UInt256.zero
 
 @[pf_inline] def previewDeposit (asset : Address)
     (assets totalSupply totalAssets : UInt256) : UInt256 :=
