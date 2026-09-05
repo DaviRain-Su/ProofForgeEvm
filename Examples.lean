@@ -39,6 +39,7 @@ import Examples.Evm.EvmOpenCall
 import Examples.Evm.EvmPriceBand
 import Examples.Evm.GuardedPayout
 import Examples.Evm.Collectible
+import Examples.Evm.Gallery
 import Examples.Evm.Badge
 import Examples.Evm.TipJar
 import Examples.Evm.Vault

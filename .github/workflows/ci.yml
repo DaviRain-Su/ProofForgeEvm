@@ -163,6 +163,9 @@ jobs:
       - name: Check DuplicateId product honesty
         run: python3 scripts/check_product_honesty.py
 
+      - name: Check ERC-721 enumerable honesty
+        run: python3 scripts/check_erc721_enum_honesty.py
+
       - name: Build Lean libraries
         run: lake build
 

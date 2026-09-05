@@ -34,7 +34,9 @@ product boundary, not the standard's: `data` carries at most 32 bytes (`Hook` sp
 because the open-call decoder wants one), and the three-argument `safeTransferFrom` overload has
 no home because one Lean name is one ABI name; callers pass `0x` for no data. A `pf` contract
 answers the hook by returning `onReceivedSelector` as `Bytes4`; `Examples.Evm.ReceiverLink` is
-that shape. Enumeration and the rest of IERC721 stay out.
+that shape. Bounded IERC721Enumerable (`totalSupply` / `tokenByIndex` /
+`tokenOfOwnerByIndex`, UInt64 ids, compile-time capacity 4) lives in `Enum` and
+`Examples.Evm.Gallery`. Unbounded enumeration and the rest of IERC721 stay out.
 -/
 
 /-- UInt256 unit used only for application event amount limbs. -/
@@ -247,5 +249,39 @@ namespace Log
   Event.emit (Notice.ApprovalForAll (Event.indexed owner) (Event.indexed operator) approved)
 
 end Log
+
+/-!
+Bounded IERC721Enumerable packing. Token ids that use more than the low UInt64 limb cannot
+enter the global `U64Map` index, so `canEnumerate` is the consumer gate. `indexKey` packs a
+0-based owner-list slot into the pair-map's second address; slot 0 is the zero address as a
+key, not as an account. `StorageEnumerableSet` owns the live-prefix arithmetic. Applications
+own the `Vector` writes and the owner-list pair-map puts, the same split as `EvmAllowlist`.
+-/
+namespace Enum
+
+/-- Compile-time live-token ceiling shared with `Examples.Evm.Gallery`. -/
+@[pf_inline] def capU64 : UInt64 := 4
+
+/-- True when `tokenId` fits the global `U64Map` key (limbs `w1..w3` are zero). -/
+@[pf_inline] def canEnumerate (tokenId : UInt256) : Bool :=
+  tokenId.w1 == 0 && tokenId.w2 == 0 && tokenId.w3 == 0
+
+/-- ABI `uint256` view of a stored UInt64 id. -/
+@[pf_inline] def wideId (id : UInt64) : UInt256 :=
+  ⟨id, 0, 0, 0⟩
+
+/-- Low limb of an enumerable id. Precondition: `canEnumerate tokenId`. -/
+@[pf_inline] def narrowId (tokenId : UInt256) : UInt64 :=
+  tokenId.w0
+
+/-- Address key for a UInt64 token id. Same packing as `tokenKey (wideId id)`. -/
+@[pf_inline] def idAddr (id : UInt64) : Address :=
+  ⟨id, 0, 0⟩
+
+/-- Pair-map slot key for a 0-based owner-list index. Index 0 packs to the zero address. -/
+@[pf_inline] def indexKey (index : UInt64) : Address :=
+  ⟨index, 0, 0⟩
+
+end Enum
 
 end ProofForge.Evm.Sdk.Erc721

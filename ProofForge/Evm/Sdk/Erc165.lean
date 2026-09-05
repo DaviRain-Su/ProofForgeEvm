@@ -30,6 +30,12 @@ abbrev InterfaceId := Bytes4
 @[pf_inline] def erc721 : InterfaceId :=
   ⟨0xcd58ac80, 0, 0, 0⟩
 
+/-- `IERC721Enumerable`: `0x780e9d63`. Advertise only when the consumer implements the complete
+IERC721 surface plus `totalSupply` / `tokenByIndex` / `tokenOfOwnerByIndex`. A bounded
+enumerable profile that still omits IERC721 methods must return false. -/
+@[pf_inline] def erc721Enumerable : InterfaceId :=
+  ⟨0x639d0e78, 0, 0, 0⟩
+
 /-- `IERC1155`: `0xd9b67a26`, packed in the source fixed-bytes limb order. -/
 @[pf_inline] def erc1155 : InterfaceId :=
   ⟨0x267ab6d9, 0, 0, 0⟩
