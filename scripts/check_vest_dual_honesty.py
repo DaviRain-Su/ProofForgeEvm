@@ -4,8 +4,7 @@
 Vest20Link is the dual-asset wallet: receive plus release() for native ETH, and
 release(address) for ERC-20. Sdk.OzAudit.temporaryGapCount stays 0. A doc that
 still lists the split wallets as the VestingWallet remainder is a lying
-inventory. Remaining remainder is no Ownable2Step and ABI releasedOf rather
-than OZ released.
+inventory. Remaining remainder is no Ownable2Step.
 
 Usage:
     python3 scripts/check_vest_dual_honesty.py
@@ -35,6 +34,7 @@ STALE_PHRASES = (
     "Native-ETH `release()` stays on `VestLink`. `temporaryGapCount` stays 0.",
     "Vest20Link must not grow a native receive path",
     "Vest20Link must not grow an EtherReleased surface",
+    "no Ownable2Step and ABI `releasedOf`",
 )
 
 REQUIRED = (
@@ -43,13 +43,13 @@ REQUIRED = (
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "nativeReleased"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Vesting.Log.etherReleased"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
-    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "no Ownable2Step and ABI `releasedOf`"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "ac851caa6b77b626"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "ac851caa6b77b626"'),
+    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "Remaining named gap on that row is no Ownable2Step."),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "d105175ac1ff37bd"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "d105175ac1ff37bd"'),
     (ROOT / "Tests" / "EvmVest20Spec.lean", "Vest20Link lost release()"),
     (ROOT / "Tests" / "EvmVest20Spec.lean", "ABI lost dual-asset vesting surface"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "releasable()(uint256)"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "releasedOf()(uint256)"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "released()(uint256)"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "EtherReleased"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh",
      "native released stays zero after ERC-20 quarter"),

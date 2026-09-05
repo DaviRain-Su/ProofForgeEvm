@@ -190,6 +190,9 @@ jobs:
       - name: Check TwoStep/Credits CREATE honesty
         run: python3 scripts/check_twostep_ctor_honesty.py
 
+      - name: Check vesting released() honesty
+        run: python3 scripts/check_vest_released_honesty.py
+
       - name: Check ERC-721 3-arg safeTransferFrom honesty
         run: python3 scripts/check_safe3_honesty.py
 

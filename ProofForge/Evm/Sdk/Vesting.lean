@@ -19,7 +19,7 @@ fails closed. CREATE of a zero beneficiary reverts `OwnableInvalidOwner(address)
 `OwnershipTransferred(address(0), owner)` lowers as the else-arm of that revert-guard.
 `Vest20Link` is the dual-asset wallet: native ETH `release()` plus ERC-20 `release(address)`.
 VestLink stays the ETH-only smaller profile. The remaining named gap on this row is no
-Ownable2Step and ABI `releasedOf` rather than OZ `released`. Only-owner reverts are
+Ownable2Step. ABI `released()` / `released(address)` match OZ. Only-owner reverts are
 `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`.
 
 Fail-closed gates:

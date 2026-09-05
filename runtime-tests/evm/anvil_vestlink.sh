@@ -76,7 +76,7 @@ zero_release="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key
   "$addr" 'release()')"
 pf_evm_typed_event_check "$abi" "$zero_release" EtherReleased "$topic0" \
   '{"amount": 0}' "pre-start release() logs zero"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released()(uint256)')" \
   0 "pre-start release() leaves released at zero"
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$addr")" \
   1000000000000000000 "pre-start release() keeps the 1 ETH"
@@ -88,7 +88,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
 fi
 pf_evm_require_insufficient "$addr" "$beneficiary" \
   "$("$cast" calldata 'release(uint256)' 1)" 0 1 "pre-vesting release(uint256)"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released()(uint256)')" \
   0 "rejected release keeps accounting"
 
 quarter=$((start_ts + duration / 4))
@@ -104,7 +104,7 @@ quarter_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_
   "$addr" 'release()')"
 pf_evm_typed_event_check "$abi" "$quarter_receipt" EtherReleased "$topic0" \
   '{"amount": 250000000000000000}' "release() pays the quarter"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released()(uint256)')" \
   250000000000000000 "released counter after quarter release()"
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$addr")" \
   750000000000000000 "wallet kept three quarters"
@@ -140,7 +140,7 @@ rest_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key
   "$addr" 'release()')"
 pf_evm_typed_event_check "$abi" "$rest_receipt" EtherReleased "$topic0" \
   '{"amount": 750000000000000000}' "release() after rotation pays the remainder"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released()(uint256)')" \
   1000000000000000000 "released counter after full release"
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$addr")" \
   0 "wallet empty after remainder"
