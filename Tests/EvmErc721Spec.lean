@@ -27,6 +27,7 @@ open Lean Elab Command
 #guard Erc721.packAddress ⟨1, 2, 3⟩ == (⟨1, 2, 3, 0⟩ : UInt256)
 #guard Erc721.unpackAddress ⟨1, 2, 3, 9⟩ == (⟨1, 2, 3⟩ : Address)
 #guard Erc721.one == (⟨1, 0, 0, 0⟩ : UInt256)
+#guard Erc721.onReceivedSelector == (⟨0x027a0b15, 0, 0, 0⟩ : Bytes4)
 
 #guard Erc721.Log.transfer ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
 #guard Erc721.Log.approval ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0

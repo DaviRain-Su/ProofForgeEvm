@@ -73,4 +73,39 @@ contract ReceiverMock {
         }
         answer();
     }
+
+    uint256 public seenBatchLength;
+    bytes32 public seenIdsHash;
+    bytes32 public seenValuesHash;
+    uint256 public seenBatchBalance;
+
+    function onERC1155BatchReceived(
+        address operator,
+        address from,
+        uint256[] calldata ids,
+        uint256[] calldata values,
+        bytes calldata data
+    ) external returns (bytes4) {
+        seenOperator = operator;
+        seenFrom = from;
+        seenBatchLength = ids.length;
+        if (ids.length != 0) {
+            seenId = ids[0];
+        }
+        if (values.length != 0) {
+            seenValue = values[0];
+        }
+        seenIdsHash = keccak256(abi.encodePacked(ids));
+        seenValuesHash = keccak256(abi.encodePacked(values));
+        seenDataHash = keccak256(data);
+        if (ids.length != 0) {
+            (bool ok, bytes memory ret) = msg.sender.staticcall(
+                abi.encodeWithSignature("balanceOf(address,uint256)", address(this), ids[0])
+            );
+            if (ok && ret.length == 32) {
+                seenBatchBalance = abi.decode(ret, (uint256));
+            }
+        }
+        answer();
+    }
 }

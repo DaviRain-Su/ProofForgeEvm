@@ -80,6 +80,23 @@ private def boundedBytesFieldType? (ty : Expr) : Option Nat := do
   guard (args.size == 1)
   natLiteral? args[0]!
 
+/-- Element type and literal capacity of a `BoundedVec α n` field type. -/
+private def boundedVecFieldType? (ty : Expr) : Option (Expr × Nat) := do
+  let ty := ty.consumeMData
+  guard (ty.getAppFn.constName? == some boundedVecName)
+  let args := ty.getAppArgs
+  guard (args.size == 2)
+  let capacity ← natLiteral? args[1]!
+  return (args[0]!, capacity)
+
+/-- Source spelling of `field.values[slot]`, the same `GetElem` application the scalar leaf
+decoders already read, so a tail element takes the exact path a single `ids.values[0]` takes. -/
+private def boundedVecSlotExpr (elementType : Expr) (capacity : Nat) (field : Expr) (slot : Nat) :
+    Expr :=
+  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedVec.values)
+    #[elementType, mkNatLit capacity, field]
+  mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro]
+
 /-- User-written explicit binders only. Hygienic `_`, implicit/instance binders, and generated
 numeric names must not become ABI field names. -/
 private def explicitEventFieldBinder (fieldName : Name) (binderInfo : BinderInfo) : Bool :=
@@ -1252,9 +1269,20 @@ private partial def decodeBytesArgParts (env : Environment) (capacity : Nat) (fi
     parts := parts.push byte
   return parts
 
-/-- Preserve a typed open-call constructor as one ABI plan. Names, closed scalar types, and the
-literal capacity of a `BoundedBytes` field stay structured; unsupported shapes must not degrade
-to raw calldata. -/
+/-- Length limb plus every slot's scalar limbs, the same frame a log tail already carries. -/
+private partial def decodeArrayArgParts (env : Environment) (elementType : Expr)
+    (scalar : Core.Codec.Scalar) (capacity : Nat) (field : Expr) : Option (Array Ops.Val) := do
+  let length ← val env (mkAppN (mkConst ``ProofForge.Core.Value.BoundedVec.length)
+    #[elementType, mkNatLit capacity, field])
+  let mut parts : Array Ops.Val := #[length]
+  for slot in [0:capacity] do
+    let slotParts ← eventPartsOf env scalar (boundedVecSlotExpr elementType capacity field slot)
+    parts := parts ++ slotParts
+  return parts
+
+/-- Preserve a typed open-call constructor as one ABI plan. Names, closed scalar types, the
+literal capacity of a `BoundedBytes` field, and the literal capacity of a `BoundedVec` field
+stay structured; unsupported shapes must not degrade to raw calldata. -/
 private partial def decodeOpenCallArgs (env : Environment) (applied : Expr) :
     Except String (String × Array (Evm.OpenCall.Arg Ops.Val)) :=
   let applied := peelLets (strip applied)
@@ -1294,24 +1322,42 @@ private partial def decodeOpenCallArgs (env : Environment) (applied : Expr) :
                 | return .error "open-call lost field value"
               let fieldExpr := peelLets (strip fieldExpr)
               let arg : Evm.OpenCall.Arg Ops.Val ←
-                match boundedBytesFieldType? domain with
-                | some capacity =>
-                  let argType := Evm.OpenCall.ArgType.bytes capacity
+                match boundedVecFieldType? domain with
+                | some (elementType, capacity) =>
+                  let some scalar := eventScalarOfLeanType elementType
+                    | return .error "open-call array element type is not a closed EVM scalar"
+                  let argType := Evm.OpenCall.ArgType.array capacity scalar
                   unless argType.supported do
-                    return .error "open-call bytes argument exceeds the bounded bytes capacity"
-                  unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxBytesArgs do
-                    return .error "open-call supports at most one bytes argument"
-                  let some parts := decodeBytesArgParts env capacity fieldExpr
-                    | return .error "open-call bytes argument is not a bounded bytes value"
+                    return .error "open-call array argument exceeds the bounded array capacity"
+                  unless (args.filter (·.type.isArray)).size < Evm.OpenCall.maxArrayArgs do
+                    return .error "open-call supports at most two array arguments"
+                  unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxDynamicArgs do
+                    return .error "open-call supports at most three dynamic arguments"
+                  let some parts :=
+                      decodeArrayArgParts env elementType scalar capacity fieldExpr
+                    | return .error "open-call array argument is not a bounded vector value"
                   pure { name := fieldName, type := argType, parts }
                 | none =>
-                  let some scalar := eventScalarOfLeanType domain
-                    | return .error "open-call field type is not a closed EVM scalar"
-                  unless Evm.OpenCall.argScalarSupported scalar do
-                    return .error "open-call field type is not a closed EVM scalar"
-                  let some parts := eventPartsOf env scalar fieldExpr
-                    | return .error "open-call field is not a scalar value"
-                  pure { name := fieldName, type := .scalar scalar, parts }
+                  match boundedBytesFieldType? domain with
+                  | some capacity =>
+                    let argType := Evm.OpenCall.ArgType.bytes capacity
+                    unless argType.supported do
+                      return .error "open-call bytes argument exceeds the bounded bytes capacity"
+                    unless (args.filter (·.type.isBytes)).size < Evm.OpenCall.maxBytesArgs do
+                      return .error "open-call supports at most one bytes argument"
+                    unless (args.filter (·.type.isDynamic)).size < Evm.OpenCall.maxDynamicArgs do
+                      return .error "open-call supports at most three dynamic arguments"
+                    let some parts := decodeBytesArgParts env capacity fieldExpr
+                      | return .error "open-call bytes argument is not a bounded bytes value"
+                    pure { name := fieldName, type := argType, parts }
+                  | none =>
+                    let some scalar := eventScalarOfLeanType domain
+                      | return .error "open-call field type is not a closed EVM scalar"
+                    unless Evm.OpenCall.argScalarSupported scalar do
+                      return .error "open-call field type is not a closed EVM scalar"
+                    let some parts := eventPartsOf env scalar fieldExpr
+                      | return .error "open-call field is not a scalar value"
+                    pure { name := fieldName, type := .scalar scalar, parts }
               names := names.push fieldName
               args := args.push arg
               type := body
@@ -3069,23 +3115,6 @@ private inductive DecodedEvent where
   | notEvent
   | typed (frame : Core.Ops.EventFrame Ops.Val) (tails : Array (Evm.NativeFx.LogTail Ops.Val))
   | unsupported (reason : String)
-
-/-- Element type and literal capacity of a `BoundedVec α n` event field type. -/
-private def boundedVecFieldType? (ty : Expr) : Option (Expr × Nat) := do
-  let ty := ty.consumeMData
-  guard (ty.getAppFn.constName? == some boundedVecName)
-  let args := ty.getAppArgs
-  guard (args.size == 2)
-  let capacity ← natLiteral? args[1]!
-  return (args[0]!, capacity)
-
-/-- Source spelling of `field.values[slot]`, the same `GetElem` application the scalar leaf
-decoders already read, so a tail element takes the exact path a single `ids.values[0]` takes. -/
-private def boundedVecSlotExpr (elementType : Expr) (capacity : Nat) (field : Expr) (slot : Nat) :
-    Expr :=
-  let values := mkAppN (mkConst ``ProofForge.Core.Value.BoundedVec.values)
-    #[elementType, mkNatLit capacity, field]
-  mkAppN (mkConst ``GetElem.getElem) #[values, mkNatLit slot, mkConst ``True.intro]
 
 /-- One bounded dynamic-array event field as an EVM log tail: the runtime length leaf plus the
 limbs of every slot in order. -/

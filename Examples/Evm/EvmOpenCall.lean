@@ -3,13 +3,14 @@ import ProofForge.Evm.Sdk
 /-!
 S3 source consumer of typed external CALL. Constructor name + fields are the ABI contract;
 the target may be a parameter or a stored `Address`. A `BoundedBytes` field is the one
-`bytes` argument a call may carry. No raw calldata, selector string, return-buffer length,
-or opcode is accepted. Reentrancy is application-visible.
+`bytes` argument a call may carry; a `BoundedVec` field is one dynamic-array argument.
+No raw calldata, selector string, return-buffer length, or opcode is accepted. Reentrancy
+is application-visible.
 -/
 
 namespace Examples.Evm.EvmOpenCall
 open ProofForge.Evm.Sdk
-open ProofForge.Core.Value (BoundedBytes)
+open ProofForge.Core.Value (BoundedBytes BoundedVec)
 
 structure State where
   dummy : UInt64
@@ -37,6 +38,8 @@ inductive Remote where
   | sink (tag : UInt256) (data : BoundedBytes 8)
   | calldataHash (data : BoundedBytes 8)
   | onERC721Received (operator origin : Address) (tokenId : UInt256) (data : BoundedBytes 8)
+  | onERC1155BatchReceived (operator origin : Address)
+      (ids values : BoundedVec UInt256 4) (data : BoundedBytes 8)
   deriving Inhabited
 
 @[pf_entry]
@@ -209,6 +212,20 @@ def notifyReceiver (s : State) (target operator origin : Address) (tokenId : UIn
     .ok ({ s with dummy := 0 },
       Effect.thenTrue
         (OpenCall.callMagic target (Remote.onERC721Received operator origin tokenId data)))
+  else
+    .error .overflow
+
+/-- Batch receiver hook: two `uint256[]` arguments and one `bytes` tail through the same
+magic policy. The arrays are bounded to four slots. -/
+@[pf_entry]
+def notifyBatchReceiver (s : State) (target operator origin : Address)
+    (ids values : BoundedVec UInt256 4) (data : BoundedBytes 8) :
+    Except Error (State × Bool) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ s with dummy := 0 },
+      Effect.thenTrue
+        (OpenCall.callMagic target
+          (Remote.onERC1155BatchReceived operator origin ids values data)))
   else
     .error .overflow
 

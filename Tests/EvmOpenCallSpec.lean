@@ -100,12 +100,18 @@ private def sinkPlan : OpenCall.Plan Ops.Val := {
 }
 
 #guard OpenCall.maxBytesArgs == 1
+#guard OpenCall.maxArrayArgs == 2
+#guard OpenCall.maxDynamicArgs == 3
 #guard (OpenCall.ArgType.bytes 8).limbCount == 9
 #guard (OpenCall.ArgType.bytes 8).abiType matches .ok "bytes"
 #guard (OpenCall.ArgType.bytes 8).canonical == "bytes8"
 #guard (OpenCall.ArgType.bytes 65).supported
 #guard !(OpenCall.ArgType.bytes 66).supported
 #guard OpenCall.ArgType.supported (.bytes Codec.maxPackedBytesCapacity)
+#guard (OpenCall.ArgType.array 4 .uint256).limbCount == 17
+#guard (OpenCall.ArgType.array 4 .uint256).abiType matches .ok "uint256[]"
+#guard (OpenCall.ArgType.array 4 .uint256).supported
+#guard !(OpenCall.ArgType.array 16 .uint256).supported
 #guard sinkPlan.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard sinkPlan.headBytes == 68
 #guard sinkPlan.inSize == 100
@@ -135,6 +141,41 @@ private def edgeTail : OpenCall.Plan Ops.Val :=
 #guard !shortTail.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard edgeTail.wellFormed (·.wellFormed Ops.ValKind.arity)
 #guard edgeTail.inSize == 68
+
+private def arrayArg (name : String) (capacity : Nat) : OpenCall.Arg Ops.Val :=
+  { name, type := .array capacity .uint256,
+    parts := Array.replicate (1 + capacity * 4) lit }
+
+private def batchHookPlan : OpenCall.Plan Ops.Val := {
+  name := "onERC1155BatchReceived"
+  args := #[
+    { name := "operator", type := .scalar .address20, parts := #[lit, lit, lit] },
+    { name := "from", type := .scalar .address20, parts := #[lit, lit, lit] },
+    arrayArg "ids" 4,
+    arrayArg "values" 4,
+    bytesArg "data" 32
+  ]
+  target := #[lit, lit, lit]
+  kind := .call
+  policy := .magicBytes4 "bc197c81"
+}
+
+#guard batchHookPlan.wellFormed (·.wellFormed Ops.ValKind.arity)
+#guard batchHookPlan.usesCursor
+#guard batchHookPlan.headBytes == 164
+#guard batchHookPlan.inSize == 164
+#guard batchHookPlan.abiTypes matches
+  .ok #["address", "address", "uint256[]", "uint256[]", "bytes"]
+#guard
+  match batchHookPlan.selectorHex (·.wellFormed Ops.ValKind.arity) with
+  | .ok sel => sel == "bc197c81" &&
+      sel == Keccak.selector "onERC1155BatchReceived"
+        #["address", "address", "uint256[]", "uint256[]", "bytes"]
+  | .error _ => false
+
+private def threeArrays : OpenCall.Plan Ops.Val :=
+  { batchHookPlan with args := #[arrayArg "a" 1, arrayArg "b" 1, arrayArg "c" 1] }
+#guard !threeArrays.wellFormed (·.wellFormed Ops.ValKind.arity)
 
 private def badName : OpenCall.Plan Ops.Val := { pingPlan with name := "" }
 private def nineArgs : OpenCall.Plan Ops.Val :=
@@ -459,7 +500,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "51c5a865c623b474"
+#guard Registry.digestOf "EvmOpenCall" == some "1ad6b5bb1eea81d4"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -617,6 +658,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost sinkBytes"
   let some hook := source.methods.find? (·.ixName == "notifyReceiver")
     | throwError "open-call example lost notifyReceiver"
+  let some batchHook := source.methods.find? (·.ixName == "notifyBatchReceiver")
+    | throwError "open-call example lost notifyBatchReceiver"
   let pingPlans := sourceOpenCalls ping.ops
   let storedPlans := sourceOpenCalls stored.ops
   let xferPlans := sourceOpenCalls xfer.ops
@@ -662,6 +705,19 @@ elab "#pf_guard_evm_open_call_source" : command => do
       hookPlans[0]!.policy.copiedWordCount == 1 &&
       hookPlans[0]!.policy.wordKinds == #[.bytes4] do
     throwError s!"notifyReceiver plan diverged: {repr hookPlans}"
+  let batchPlans := sourceOpenCalls batchHook.ops
+  let batchSelector := ProofForge.Evm.Keccak.selector "onERC1155BatchReceived"
+    #["address", "address", "uint256[]", "uint256[]", "bytes"]
+  unless batchSelector == "bc197c81" do
+    throwError s!"onERC1155BatchReceived selector is {batchSelector}"
+  unless batchPlans.size == 1 && batchPlans[0]!.name == "onERC1155BatchReceived" &&
+      batchPlans[0]!.kind == .call && batchPlans[0]!.policy == .magicBytes4 batchSelector &&
+      batchPlans[0]!.args.size == 5 &&
+      batchPlans[0]!.args[2]!.type == .array 4 .uint256 &&
+      batchPlans[0]!.args[3]!.type == .array 4 .uint256 &&
+      batchPlans[0]!.args[4]!.type == .bytes 8 &&
+      batchPlans[0]!.usesCursor && batchPlans[0]!.inSize == 164 do
+    throwError s!"notifyBatchReceiver plan diverged: {repr batchPlans}"
 
   let evm ←
     match ProofForge.Evm.IR.fromExtracted source with
@@ -686,6 +742,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
     throwError s!"open-call Yul omitted CALL/STATICCALL gates or selectors"
   unless yul.contains s!"shl(224, 0x{hookSelector}))) \{ revert(0, 0) }" do
     throwError "notifyReceiver Yul lost the magic equality gate"
+  unless yul.contains s!"shl(224, 0x{batchSelector}))) \{ revert(0, 0) }" do
+    throwError "notifyBatchReceiver Yul lost the magic equality gate"
 
   -- Queries lower through Component.Query.openCall, not Call.invoke. Each read binds exactly
   -- the limbs its source carrier needs: four for `UInt256`, three for `Address`, one for `Bool`.
