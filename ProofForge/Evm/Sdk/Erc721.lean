@@ -29,10 +29,10 @@ partial state remains and the callee's reason is not bubbled); a recipient witho
 called. The result is a CALL carrier, so it stands only as the entry's result word under
 `Effect.thenTrue`, with the ledger movement and `Log.transfer` in the state word. The extractor
 orders the hashed-map stores, then the log, then the hook, so a receiver that reads `ownerOf`
-inside the hook sees itself as the owner, as under OZ `_safeTransfer`. Two bounds are the
-product boundary, not the standard's: `data` carries at most 32 bytes (`Hook` spells the literal
-because the open-call decoder wants one), and the three-argument `safeTransferFrom` overload has
-no home because one Lean name is one ABI name; callers pass `0x` for no data. A `pf` contract
+inside the hook sees itself as the owner, as under OZ `_safeTransfer`. `data` carries at most 32
+bytes (`Hook` spells the literal because the open-call decoder wants one). The three-argument
+`safeTransferFrom(address,address,uint256)` overload is the same move with empty `data`; Lean
+names it `safeTransferFrom__id` so the ABI name stays `safeTransferFrom`. A `pf` contract
 answers the hook by returning `onReceivedSelector` as `Bytes4`; `Examples.Evm.ReceiverLink` is
 that shape. Bounded IERC721Enumerable (`totalSupply` / `tokenByIndex` /
 `tokenOfOwnerByIndex`, UInt64 ids, compile-time capacity 4) lives in `Enum` and

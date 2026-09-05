@@ -73,13 +73,14 @@ def transferFrom (s : State) (source to : Address) (tokenId : UInt256) :
   else
     .ok (s, Revert.unauthorized Context.caller)
 
-/-- `safeTransferFrom(address,address,uint256,bytes)`: `transferFrom` followed by OZ's receiver
-check. The ledger move and the `Transfer` log land before the hook runs, so a receiver that
-reads `ownerOf` inside `onERC721Received` sees itself; a recipient without code is not called;
-a hook answer other than its own selector reverts the whole transaction. `data` is bounded to
-32 bytes; there is no three-argument overload, so callers pass `0x` for no data. -/
-@[pf_entry]
-def safeTransferFrom (s : State) (source to : Address) (tokenId : UInt256)
+/-- Empty hook payload for the three-argument `safeTransferFrom` overload. -/
+@[pf_inline]
+def noData : BoundedBytes 32 :=
+  { length := 0, values := Vector.replicate 32 0 }
+
+/-- Shared body of both `safeTransferFrom` ABI overloads. -/
+@[pf_inline]
+def runSafeTransfer (s : State) (source to : Address) (tokenId : UInt256)
     (data : BoundedBytes 32) : Except Error (State × Bool) :=
   if !Erc721.isApprovedOrOwner owners approvals operators Context.caller tokenId then
     Effect.abort s (Revert.unauthorized Context.caller)
@@ -91,6 +92,22 @@ def safeTransferFrom (s : State) (source to : Address) (tokenId : UInt256)
       Effect.thenTrue (Erc721.checkOnReceived to Context.caller source tokenId data))
   else
     Effect.abort s (Revert.unauthorized Context.caller)
+
+/-- `safeTransferFrom(address,address,uint256,bytes)`: `transferFrom` followed by OZ's receiver
+check. The ledger move and the `Transfer` log land before the hook runs, so a receiver that
+reads `ownerOf` inside `onERC721Received` sees itself; a recipient without code is not called;
+a hook answer other than its own selector reverts the whole transaction. `data` is bounded to
+32 bytes. The three-argument overload is `safeTransferFrom__id`. -/
+@[pf_entry]
+def safeTransferFrom (s : State) (source to : Address) (tokenId : UInt256)
+    (data : BoundedBytes 32) : Except Error (State × Bool) :=
+  runSafeTransfer s source to tokenId data
+
+/-- `safeTransferFrom(address,address,uint256)`: same move with empty `data`. -/
+@[pf_entry]
+def safeTransferFrom__id (s : State) (source to : Address) (tokenId : UInt256) :
+    Except Error (State × Bool) :=
+  runSafeTransfer s source to tokenId noData
 
 /-- Packed owner (`⟨w0,w1,w2,0⟩`). Address-typed returns from map reads still expand to four
 UInt256 limbs under Extract, so consumers expose the packed word until Emit grows a 3-limb

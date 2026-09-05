@@ -657,6 +657,12 @@ def fromExtracted (src : Extract.IR.Program) : Except String Program := do
       view
       payable := !view && (hasEvmDeposit ops || hasEvmReceive ops)
     }
+  let mut seenSel : Array String := #[]
+  for m in entries do
+    unless m.ixName == "receive" do
+      if seenSel.contains m.selector then
+        throw s!"extract/unsupported: duplicate selector 0x{m.selector} ({m.ixName})"
+      seenSel := seenSel.push m.selector
   let slots := source.slots.mapIdx fun i s =>
     { place := (source.schema.leaves[i]?).map (·.place), name := s.name, index := i,
       width := s.width }
@@ -767,7 +773,8 @@ def canonical (p : Program) : String :=
     else s!":{p.constructor.outputPolicy}"
   let ctor := s!"ctor:{p.constructor.paramCount}{ctorPolicy}{ctorOutput}:[{opsCanon p.constructor.ops}]"
   let entries :=
-    (p.entries.qsort (fun a b => a.ixName < b.ixName)).toList.map fun m =>
+    (p.entries.qsort (fun a b =>
+      a.ixName < b.ixName || (a.ixName == b.ixName && a.selector < b.selector))).toList.map fun m =>
       let tag := if m.view then "view" else if m.payable then "pay" else "mut"
       let policy := if m.inputPolicy.isEmpty then "" else s!":{m.inputPolicy}"
       let output := if m.outputPolicy.isEmpty then "" else s!":{m.outputPolicy}"

@@ -3,6 +3,7 @@ import ProofForge.Evm.Commands
 import ProofForge.Evm.Emit
 import Examples.Evm.Collectible
 import Examples.Evm.Badge
+import Tests.EvmAbiOverloadMisuse
 
 /-!
 EVM-SDK-7a focused suite: ERC-721 core predicates, token-id encoding limits, and two independent
@@ -28,6 +29,15 @@ open Lean Elab Command
 #guard Erc721.unpackAddress ⟨1, 2, 3, 9⟩ == (⟨1, 2, 3⟩ : Address)
 #guard Erc721.one == (⟨1, 0, 0, 0⟩ : UInt256)
 #guard Erc721.onReceivedSelector == (⟨0x027a0b15, 0, 0, 0⟩ : Bytes4)
+
+#guard
+  match ProofForge.Extract.abiNameOfLean "safeTransferFrom__id" with
+  | .ok n => n == "safeTransferFrom"
+  | .error _ => false
+#guard
+  match ProofForge.Extract.abiNameOfLean "init" with
+  | .ok n => n == "initialize"
+  | .error _ => false
 
 #guard Erc721.Log.transfer ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
 #guard Erc721.Log.approval ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 0, 0, 0⟩ == 0
@@ -74,6 +84,13 @@ private def safeTransferFromAbi : String :=
     "{\"name\":\"arg2\",\"type\":\"uint256\"},{\"name\":\"arg3\",\"type\":\"bytes\"}]," ++
     "\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}]}"
 
+/-- `safeTransferFrom(address,address,uint256)`, the OZ three-argument overload. -/
+private def safeTransferFromIdAbi : String :=
+  "{\"type\":\"function\",\"name\":\"safeTransferFrom\",\"stateMutability\":\"nonpayable\"," ++
+    "\"inputs\":[{\"name\":\"arg0\",\"type\":\"address\"},{\"name\":\"arg1\",\"type\":\"address\"}," ++
+    "{\"name\":\"arg2\",\"type\":\"uint256\"}]," ++
+    "\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}]}"
+
 private def transferTopic : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString "Transfer(address,address,uint256)"
 
@@ -118,6 +135,12 @@ private def methodOps (source : ProofForge.Extract.IR.Program) (name : String) :
     | throwError s!"method {name} missing"
   return method.ops
 
+private def methodOpsArity (source : ProofForge.Extract.IR.Program) (name : String) (arity : Nat) :
+    CommandElabM (Array ProofForge.Extract.IR.Op) := do
+  let some method := source.methods.find? (fun m => m.ixName == name && m.paramCount == arity)
+    | throwError s!"method {name}/{arity} missing"
+  return method.ops
+
 private def expectMethodNames (program : IR.Program) (names : Array String) : CommandElabM Unit := do
   let got := program.entries.map (·.ixName)
   unless got.size == names.size && names.all (got.contains ·) && got.all (names.contains ·) do
@@ -158,7 +181,7 @@ private def expectCollectibleEvents : CommandElabM Unit := do
       eventMatches transferFrames[0]! "Transfer"
         #[("from", true), ("to", true), ("tokenId", true)] do
     throwError s!"Collectible.transferFrom Transfer frame diverged: {repr transferFrames}"
-  let safeOps ← methodOps source "safeTransferFrom"
+  let safeOps ← methodOpsArity source "safeTransferFrom" 4
   let safeFrames := sourceTypedFrames safeOps
   unless safeFrames.size == 1 &&
       eventMatches safeFrames[0]! "Transfer"
@@ -179,13 +202,18 @@ private def expectCollectibleEvents : CommandElabM Unit := do
       hookPlans[0]!.args[3]!.type == .bytes 32 && hookPlans[0]!.inSize == 164 &&
       hookPlans[0]!.abiTypes matches .ok #["address", "address", "uint256", "bytes"] do
     throwError s!"Collectible.safeTransferFrom hook plan diverged: {repr hookPlans}"
+  let safe3Ops ← methodOpsArity source "safeTransferFrom" 3
+  let safe3Plans := sourceOpenCalls safe3Ops
+  unless safe3Plans.size == 1 && safe3Plans[0]!.name == "onERC721Received" &&
+      safe3Plans[0]!.args[3]!.type == .bytes 32 && safe3Plans[0]!.inSize == 164 do
+    throwError s!"Collectible.safeTransferFrom(address,address,uint256) hook plan diverged: {repr safe3Plans}"
   let evm ←
     match IR.fromExtracted source with
     | .ok program => pure program
     | .error reason => throwError reason
   expectMethodNames evm
-    #["mint", "approve", "transferFrom", "safeTransferFrom", "ownerOf", "getApproved", "balanceOf",
-      "supportsInterface"]
+    #["mint", "approve", "transferFrom", "safeTransferFrom", "safeTransferFrom", "ownerOf",
+      "getApproved", "balanceOf", "supportsInterface"]
   let abi ←
     match Emit.emitAbiChecked evm with
     | .ok abi => pure abi
@@ -196,6 +224,12 @@ private def expectCollectibleEvents : CommandElabM Unit := do
     throwError s!"Collectible ABI lost ERC-721 Transfer/Approval:\n{abi}"
   unless abi.contains safeTransferFromAbi do
     throwError s!"Collectible ABI lost safeTransferFrom(address,address,uint256,bytes):\n{abi}"
+  unless abi.contains safeTransferFromIdAbi do
+    throwError s!"Collectible ABI lost safeTransferFrom(address,address,uint256):\n{abi}"
+  let selectors :=
+    (evm.entries.filter (·.ixName == "safeTransferFrom")).map (·.selector)
+  unless selectors.contains "42842e0e" && selectors.contains "b88d4fde" && selectors.size == 2 do
+    throwError s!"Collectible safeTransferFrom selectors diverged: {selectors}"
   let yul ←
     match Emit.emitYul evm with
     | .ok yul => pure yul
@@ -262,9 +296,15 @@ private def expectBadgeEvents : CommandElabM Unit := do
     throwError "Badge Yul omitted LOG4 Transfer or LOG3 ApprovalForAll"
 
 private def expectErc721 : CommandElabM Unit := do
+  let env ← getEnv
+  match ProofForge.Extract.extractModuleIR env `Tests.EvmAbiOverloadMisuse with
+  | .error reason =>
+    unless reason.contains "duplicate ABI bump()" do
+      throwError s!"overload misuse reason diverged: {reason}"
+  | .ok _ => throwError "duplicate bump() extracted"
   expectCollectibleEvents
   expectBadgeEvents
-  expectDigest `Examples.Evm.Collectible "f20c52e156029cfc"
+  expectDigest `Examples.Evm.Collectible "19250482fbd80a03"
   expectDigest `Examples.Evm.Badge "bdb4d1d1a4e9baa7"
 
 elab "#pf_guard_evm_erc721" : command => expectErc721
