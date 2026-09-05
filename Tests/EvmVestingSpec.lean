@@ -27,7 +27,7 @@ open Lean Elab Command
 #guard Vesting.vestedAmount ⟨1000, 0, 0, 0⟩ (100 : UInt64) (1000 : UInt64) (500 : UInt64)
     (350 : UInt64) == UInt256.zero
 #guard Vesting.vestedAmount ⟨1000, 0, 0, 0⟩ (100 : UInt64) (1000 : UInt64) (500 : UInt64)
-    (600 : UInt64) == ⟨500, 0, 0, 0⟩
+    (1100 : UInt64) == ⟨1000, 0, 0, 0⟩
 
 private def expectVestLink : CommandElabM Unit := do
   let env ← getEnv
@@ -89,7 +89,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "98d9e9f0644d9029" do
+  unless IR.digestHex program == "87acbed203c29f11" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

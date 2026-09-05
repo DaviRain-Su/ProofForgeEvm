@@ -165,7 +165,9 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
           let _ := Reentrancy.enter declared.handle.guard
           let _ := SafeErc20.transfer token s.owner UInt256.zero
           let _ := Reentrancy.leave declared.handle.guard
-          .ok ({ s with dummy := released.put token paid, guard := Reentrancy.notEntered },
+          .ok ({ owner := s.owner, cliffDuration := s.cliffDuration,
+                 dummy := released.put token paid,
+                 guard := Reentrancy.notEntered },
             Vesting.TokenLog.erc20Released token UInt256.zero)
         else if Context.timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
           let paid := released.get token
@@ -176,7 +178,8 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
               let _ := Reentrancy.enter declared.handle.guard
               let _ := SafeErc20.transfer token s.owner payout
               let _ := Reentrancy.leave declared.handle.guard
-              .ok ({ s with dummy := released.put token (UInt256.add paid payout),
+              .ok ({ owner := s.owner, cliffDuration := s.cliffDuration,
+                     dummy := released.put token (UInt256.add paid payout),
                      guard := Reentrancy.notEntered },
                 Vesting.TokenLog.erc20Released token payout)
             else
@@ -197,7 +200,8 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
               let _ := Reentrancy.enter declared.handle.guard
               let _ := SafeErc20.transfer token s.owner payout
               let _ := Reentrancy.leave declared.handle.guard
-              .ok ({ s with dummy := released.put token (UInt256.add paid payout),
+              .ok ({ owner := s.owner, cliffDuration := s.cliffDuration,
+                     dummy := released.put token (UInt256.add paid payout),
                      guard := Reentrancy.notEntered },
                 Vesting.TokenLog.erc20Released token payout)
             else
@@ -206,7 +210,9 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
             let _ := Reentrancy.enter declared.handle.guard
             let _ := SafeErc20.transfer token s.owner UInt256.zero
             let _ := Reentrancy.leave declared.handle.guard
-            .ok ({ s with dummy := released.put token paid, guard := Reentrancy.notEntered },
+            .ok ({ owner := s.owner, cliffDuration := s.cliffDuration,
+                   dummy := released.put token paid,
+                   guard := Reentrancy.notEntered },
               Vesting.TokenLog.erc20Released token UInt256.zero)
       else
         .error .reentrantCall
