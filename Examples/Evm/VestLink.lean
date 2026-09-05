@@ -1,10 +1,13 @@
 import ProofForge.Evm.Sdk
 
 /-!
-Single-beneficiary native-ETH vesting consumer. Constructor immutables are the beneficiary,
-`start`, and `duration`; a `released` counter tracks payouts and an ordered storage lock protects
-the native-ETH call. The ERC-20 `released[token]` map lives on `Vest20Link`. There is no
-beneficiary rotation or schedule mutation.
+Native-ETH vesting consumer. Constructor stores the beneficiary and bakes `start` / `duration`
+as immutables. `released` tracks payouts and an ordered storage lock protects the native-ETH
+call. `transferOwnership` is one-step Ownable rotation of that stored beneficiary.
+`release()` pays the currently releasable amount (OZ ABI). `release(uint256)` still permits a
+partial payout. The ERC-20 `released[token]` map lives on `Vest20Link`. There is no cliff or
+schedule mutation.
+
 Invalid configuration (zero beneficiary or overflowing `start + duration`) fails closed to zero
 views and a no-op `release`.
 
@@ -16,6 +19,7 @@ namespace Examples.Evm.VestLink
 open ProofForge.Evm.Sdk
 
 structure State where
+  owner : Address
   released : UInt256
   guard : UInt64
   deriving Repr, DecidableEq, Inhabited
@@ -24,7 +28,8 @@ structure Handles where
   guard : Storage.Static.Handle UInt64
 
 @[pf_inline] def declared : Storage.Static.Allocated Handles :=
-  let released := Storage.Static.Layout.root.uint256 "released"
+  let owner := Storage.Static.Layout.root.address "owner"
+  let released := owner.next.uint256 "released"
   let guard := released.next.uint64 "guard"
   { handle := { guard := guard.handle }, next := guard.next }
 
@@ -34,47 +39,51 @@ inductive Error where
   deriving Repr, DecidableEq, Inhabited, BEq
 
 @[pf_entry]
-def init (_beneficiary : Address) (_start _duration : UInt64) : State :=
-  { released := UInt256.zero, guard := Reentrancy.notEntered }
+def init (beneficiary : Address) (_start _duration : UInt64) : State :=
+  { owner := beneficiary, released := UInt256.zero, guard := Reentrancy.notEntered }
 
 @[pf_entry]
-def beneficiary (_s : State) : Address :=
-  if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
-    Immutable.address
+def beneficiary (s : State) : Address :=
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+    s.owner
   else
     Address.zero
 
 @[pf_entry]
-def start (_s : State) : UInt256 :=
-  if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
+def owner (s : State) : Address :=
+  s.owner
+
+@[pf_entry]
+def start (s : State) : UInt256 :=
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
     ⟨Immutable.u64, 0, 0, 0⟩
   else
     UInt256.zero
 
 @[pf_entry]
-def duration (_s : State) : UInt256 :=
-  if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
+def duration (s : State) : UInt256 :=
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
     ⟨Immutable.u64b, 0, 0, 0⟩
   else
     UInt256.zero
 
 @[pf_entry]
-def endTime (_s : State) : UInt256 :=
-  if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
+def endTime (s : State) : UInt256 :=
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
     ⟨Vesting.endAt Immutable.u64 Immutable.u64b, 0, 0, 0⟩
   else
     UInt256.zero
 
 @[pf_entry]
 def releasedOf (s : State) : UInt256 :=
-  if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
     s.released
   else
     UInt256.zero
 
 @[pf_entry]
 def releasable (s : State) : UInt256 :=
-  if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
     if Context.timestamp < Immutable.u64 then
       UInt256.zero
     else if Context.timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
@@ -91,7 +100,7 @@ def releasable (s : State) : UInt256 :=
 
 @[pf_entry]
 def vestedAmount (s : State) (timestamp : UInt64) : UInt256 :=
-  if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
     if !Vesting.wellFormedDuration Immutable.u64 Immutable.u64b then
       UInt256.zero
     else if timestamp < Immutable.u64 then
@@ -106,19 +115,32 @@ def vestedAmount (s : State) (timestamp : UInt64) : UInt256 :=
   else
     UInt256.zero
 
-/-- Release at most the currently releasable native ETH to the immutable beneficiary. The
+/-- One-step Ownable rotation of the stored beneficiary. Zero `newOwner` reverts
+`ZeroAddress`. Non-owner reverts `Unauthorized(caller)`. Success emits
+`OwnershipTransferred(previous, newOwner)`. -/
+@[pf_entry]
+def transferOwnership (s : State) (newOwner : Address) : Except Error (State × UInt64) :=
+  if Access.requireOwner s.owner then
+    if Address.isZero newOwner then
+      .ok (s, Revert.zeroAddress)
+    else
+      .ok ({ s with owner := newOwner }, Ownable.Log.ownershipTransferred s.owner newOwner)
+  else
+    .ok (s, Access.ownerViolation)
+
+/-- Release at most the currently releasable native ETH to the stored beneficiary. The
 parameter permits a partial payout; an over-release reverts with `Insufficient`. The ordered
 guard is visible before the external call and restored afterwards. -/
 @[pf_entry]
 def release (s : State) (payout : UInt256) : Except Error (State × UInt64) :=
-  if Vesting.canSchedule Immutable.address Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
     if Reentrancy.canEnter s.guard then
       if Context.timestamp < Immutable.u64 then
         if UInt256.le payout UInt256.zero then
           let _ := Reentrancy.enter declared.handle.guard
-          let _ := Ether.send Immutable.address payout
+          let _ := Ether.send s.owner payout
           let _ := Reentrancy.leave declared.handle.guard
-          .ok ({ released := UInt256.add s.released payout, guard := Reentrancy.notEntered },
+          .ok (({ s with released := UInt256.add s.released payout, guard := Reentrancy.notEntered }),
             Vesting.Log.etherReleased payout)
         else
           .ok (s, Revert.insufficient UInt256.zero payout)
@@ -126,9 +148,9 @@ def release (s : State) (payout : UInt256) : Except Error (State × UInt64) :=
         let available := UInt256.sub (UInt256.add Context.selfBalance s.released) s.released
         if UInt256.le payout available then
           let _ := Reentrancy.enter declared.handle.guard
-          let _ := Ether.send Immutable.address payout
+          let _ := Ether.send s.owner payout
           let _ := Reentrancy.leave declared.handle.guard
-          .ok ({ released := UInt256.add s.released payout, guard := Reentrancy.notEntered },
+          .ok (({ s with released := UInt256.add s.released payout, guard := Reentrancy.notEntered }),
             Vesting.Log.etherReleased payout)
         else
           .ok (s, Revert.insufficient available payout)
@@ -142,12 +164,49 @@ def release (s : State) (payout : UInt256) : Except Error (State × UInt64) :=
             s.released
         if UInt256.le payout available then
           let _ := Reentrancy.enter declared.handle.guard
-          let _ := Ether.send Immutable.address payout
+          let _ := Ether.send s.owner payout
           let _ := Reentrancy.leave declared.handle.guard
-          .ok ({ released := UInt256.add s.released payout, guard := Reentrancy.notEntered },
+          .ok (({ s with released := UInt256.add s.released payout, guard := Reentrancy.notEntered }),
             Vesting.Log.etherReleased payout)
         else
           .ok (s, Revert.insufficient available payout)
+    else
+      .error .reentrantCall
+  else
+    .ok (s, 0)
+
+/-- Pay the currently releasable native ETH. ABI name `release()` (OZ `VestingWallet.release()`).
+A zero payout still logs `EtherReleased(0)` and sends 0. -/
+@[pf_entry]
+def release__all (s : State) : Except Error (State × UInt64) :=
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+    if Reentrancy.canEnter s.guard then
+      if Context.timestamp < Immutable.u64 then
+        let _ := Reentrancy.enter declared.handle.guard
+        let _ := Ether.send s.owner UInt256.zero
+        let _ := Reentrancy.leave declared.handle.guard
+        .ok (({ s with guard := Reentrancy.notEntered }),
+          Vesting.Log.etherReleased UInt256.zero)
+      else if Context.timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
+        let available := UInt256.sub (UInt256.add Context.selfBalance s.released) s.released
+        let _ := Reentrancy.enter declared.handle.guard
+        let _ := Ether.send s.owner available
+        let _ := Reentrancy.leave declared.handle.guard
+        .ok (({ s with released := UInt256.add s.released available, guard := Reentrancy.notEntered }),
+          Vesting.Log.etherReleased available)
+      else
+        let available :=
+          UInt256.sub
+            (UInt256.div
+              (UInt256.mul (UInt256.add Context.selfBalance s.released)
+                ⟨Context.timestamp - Immutable.u64, 0, 0, 0⟩)
+              ⟨Immutable.u64b, 0, 0, 0⟩)
+            s.released
+        let _ := Reentrancy.enter declared.handle.guard
+        let _ := Ether.send s.owner available
+        let _ := Reentrancy.leave declared.handle.guard
+        .ok (({ s with released := UInt256.add s.released available, guard := Reentrancy.notEntered }),
+          Vesting.Log.etherReleased available)
     else
       .error .reentrantCall
   else

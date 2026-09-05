@@ -5,8 +5,9 @@ import Examples.Evm.Vest20Link
 
 /-!
 Bounded ERC-20 vesting map: `Vest20Link.release(address)` pays `releasable(token)` through
-`SafeErc20.transfer`, `releasedOf` is a hashed `token → paid` map, and `ERC20Released` is the
-typed log. Native-ETH `release(uint256)` stays on `VestLink`. `temporaryGapCount` stays 0.
+`SafeErc20.transfer`, `releasedOf` is a hashed `token → paid` map, `transferOwnership` rotates
+the stored beneficiary, and `ERC20Released` is the typed log. Native-ETH `release()` stays on
+`VestLink`. `temporaryGapCount` stays 0.
 -/
 
 namespace Tests.EvmVest20Spec
@@ -27,8 +28,8 @@ private def expectVest20Link : CommandElabM Unit := do
     | .ok source => pure source
     | .error reason => throwError reason
   for ixName in
-      #["beneficiary", "start", "duration", "endTime", "releasedOf", "releasable", "vestedAmount",
-        "release"] do
+      #["beneficiary", "owner", "start", "duration", "endTime", "releasedOf", "releasable",
+        "vestedAmount", "transferOwnership", "release"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"Vest20Link is missing {ixName}"
   unless !(source.methods.any (·.ixName == "receive")) do
@@ -45,6 +46,11 @@ private def expectVest20Link : CommandElabM Unit := do
     | throwError "Vest20Link EVM IR lost release"
   unless releaseEntry.selector == ProofForge.Crypto.Keccak.selector "release" #["address"] do
     throwError s!"release selector drifted: {releaseEntry.selector}"
+  let some transferEntry := program.entries.find? (·.ixName == "transferOwnership")
+    | throwError "Vest20Link EVM IR lost transferOwnership"
+  unless transferEntry.selector ==
+      ProofForge.Crypto.Keccak.selector "transferOwnership" #["address"] do
+    throwError s!"transferOwnership selector drifted: {transferEntry.selector}"
   let abi ←
     match Emit.emitAbiChecked program with
     | .ok abi => pure abi
@@ -54,6 +60,9 @@ private def expectVest20Link : CommandElabM Unit := do
       abi.contains "\"name\":\"releasable\"" &&
       abi.contains "\"name\":\"vestedAmount\"" &&
       abi.contains "\"name\":\"release\"" &&
+      abi.contains "\"name\":\"owner\"" &&
+      abi.contains "\"name\":\"transferOwnership\"" &&
+      abi.contains "\"name\":\"OwnershipTransferred\"" &&
       abi.contains "\"name\":\"ERC20Released\"" do
     throwError s!"Vest20Link ABI lost ERC-20 vesting surface:\n{abi}"
   unless !abi.contains "\"name\":\"EtherReleased\"" do
@@ -66,7 +75,7 @@ private def expectVest20Link : CommandElabM Unit := do
       | throwError s!"Vest20Link canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" do
       throwError s!"{ixName} lost the linear formula"
-  unless IR.digestHex program == "b1fb5c908d419901" do
+  unless IR.digestHex program == "9b0f93079d650ddd" do
     throwError s!"Vest20Link digest drifted: {IR.digestHex program}"
   logInfo m!"vest20link: digest={IR.digestHex program} abi-ok"
 

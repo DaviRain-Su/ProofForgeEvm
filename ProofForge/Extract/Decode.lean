@@ -6107,6 +6107,51 @@ def decodeExpr (env : Environment) (fuel : Nat) (e : Expr)
           | .ok continuationOps => return .ok (effectOps ++ continuationOps)
           | .error reason =>
               return .error s!"extract/unsupported: effectful let continuation: {reason}"
+      else if body.hasLooseBVar 0 then
+        -- asVal maps leftover bvars to ABI args. A used let whose value contains a query
+        -- must become locals so later stores do not load `arg 0` as `w0`.
+        if ty.consumeMData.getAppFn.constName? == some ``UInt64 then
+          match localScalarValue? env (if deepScalars then 128 else 32) value with
+          | some localValue =>
+            let marker := mkApp (mkConst ``localRef) (mkNatLit localDepth)
+            match decodeExpr env fuel' (body.instantiate1 marker)
+                (stateful := stateful) (preserveLocals := preserveLocals)
+                (localDepth := localDepth + 1) (stateType? := stateType?)
+                (deepScalars := deepScalars) with
+            | .ok continuationOps =>
+                return .ok (#[.letLocal localDepth localValue] ++ continuationOps)
+            | .error reason =>
+                return .error s!"extract/unsupported: effectful let continuation: {reason}"
+          | none => pure ()
+        else if let some limbCount := fixedLimbBindCount? env ty then
+          let limbOps? : Option (Array Ops.Op) :=
+            if limbCount == 4 then
+              let (a0, a1, a2, a3) := uint256Leaves env value
+              some #[
+                .letLocal localDepth a0,
+                .letLocal (localDepth + 1) a1,
+                .letLocal (localDepth + 2) a2,
+                .letLocal (localDepth + 3) a3]
+            else if limbCount == 3 then
+              let (w0, w1, w2) := addr20Leaves env value
+              some #[
+                .letLocal localDepth w0,
+                .letLocal (localDepth + 1) w1,
+                .letLocal (localDepth + 2) w2]
+            else none
+          match limbOps? with
+          | some locals =>
+            let boundArg := boundaryBindArg localDepth ty
+            match decodeExpr env fuel' (body.instantiate1 boundArg)
+                (stateful := stateful) (preserveLocals := preserveLocals)
+                (localDepth := localDepth + limbCount) (stateType? := stateType?)
+                (deepScalars := deepScalars) with
+            | .ok continuationOps => return .ok (locals ++ continuationOps)
+            | .error reason =>
+                return .error s!"extract/unsupported: effectful let continuation: {reason}"
+          | none => pure ()
+        else
+          pure ()
     | _ => pure ()
     if let some producer := nestedSequencedScalarHelper? env e then
       match decodeExpr env fuel' producer (preserveLocals := preserveLocals)

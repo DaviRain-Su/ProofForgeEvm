@@ -5,10 +5,11 @@ namespace ProofForge.Evm.Sdk.Vesting
 /-!
 # EVM SDK bounded single-beneficiary vesting schedule
 
-Compile-time beneficiary plus constructor immutables for `start` and `duration`, a linear vesting
+Constructor-stored beneficiary plus immutables for `start` and `duration`, a linear vesting
 curve over `Context.timestamp`, and typed `EtherReleased` / `ERC20Released` logs. Native-ETH
 accounting is one `released` counter on `VestLink`. ERC-20 accounting is a hashed `token → paid`
-map on `Vest20Link`. There is no beneficiary rotation or arbitrary schedule mutation. Consumers
+map on `Vest20Link`. Consumers rotate the beneficiary with one-step `transferOwnership`
+(Ownable `OwnershipTransferred`). There is no cliff or arbitrary schedule mutation. Consumers
 must validate `canSchedule` before advertising schedule views or `release`.
 
 Fail-closed gates:
