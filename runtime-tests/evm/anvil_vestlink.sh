@@ -209,8 +209,7 @@ mut_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64)' "$benefic
 mut_addr="$(printf '%s' "$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   --create "0x${mut_code}${mut_encoded#0x}")" | pf_evm_contract_address)"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$mut_addr" --value 1ether >/dev/null
-"$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$after_end" >/dev/null
-"$cast" rpc --rpc-url "$rpc" evm_mine >/dev/null
+# Happy path already mined at after_end. Reusing that timestamp reverts on Anvil.
 if ! "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
     "$mut_addr" 'release()' >/dev/null 2>&1; then
   echo "FAIL: zero-value CALL mutation unexpectedly reverted" >&2
