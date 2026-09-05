@@ -5,15 +5,21 @@ namespace ProofForge.Evm.Sdk.Vesting
 /-!
 # EVM SDK bounded single-beneficiary vesting schedule
 
-Constructor-stored beneficiary plus immutables for `start` and `duration`, a linear vesting
-curve over `Context.timestamp`, and typed `EtherReleased` / `ERC20Released` logs. Native-ETH
-accounting is one `released` counter on `VestLink`. ERC-20 accounting is a hashed `token → paid`
-map on `Vest20Link`. Consumers rotate the beneficiary with one-step `transferOwnership`
-(Ownable `OwnershipTransferred`). There is no cliff or arbitrary schedule mutation. Consumers
-must validate `canSchedule` before advertising schedule views or `release`.
+Constructor-stored beneficiary plus immutables for `start` and `duration`, a constructor-stored
+cliff duration, a linear vesting curve over `Context.timestamp`, and typed `EtherReleased` /
+`ERC20Released` logs. Native-ETH accounting is one `released` counter on `VestLink`. ERC-20
+accounting is a hashed `token → paid` map on `Vest20Link`. Consumers rotate the beneficiary with
+one-step `transferOwnership` (Ownable `OwnershipTransferred`). There is no arbitrary schedule
+mutation. Consumers must validate `canSchedule` before advertising schedule views or `release`.
+
+The cliff matches OpenZeppelin `VestingWalletCliff`: vested amount is 0 until
+`start + cliffDuration`, then the linear formula still runs from `start` (a jump at the cliff
+when `cliffDuration > 0`). `cliffDuration = 0` is the linear wallet. `cliffDuration > duration`
+fails closed. Constructor zero-owner revert is still not lowered.
 
 Fail-closed gates:
-- Zero beneficiary or overflowing `start + duration` should yield zero views and no release.
+- Zero beneficiary, overflowing `start + duration`, or `cliffDuration > duration` yield zero
+  views and no release.
 - `releasable` never underflows; zero duration behaves as a timelock at `start`.
 
 Extract note: `pf_entry` schedule views must gate on `canSchedule` at the consumer boundary
@@ -36,23 +42,35 @@ closed CALL. -/
 @[pf_inline] def wellFormedDuration (start duration : UInt64) : Bool :=
   duration == 0 || start ≤ u64Max - duration
 
-/-- Schedule views and release may run only with a nonzero beneficiary and non-overflowing end. -/
-@[pf_inline] def canSchedule (beneficiary : Address) (start duration : UInt64) : Bool :=
-  wellFormedBeneficiary beneficiary && wellFormedDuration start duration
+/-- True when `cliffDuration` fits in the schedule (`≤ duration`). Combined with
+`wellFormedDuration start duration`, `start + cliffDuration` cannot overflow. -/
+@[pf_inline] def wellFormedCliff (start duration cliffDuration : UInt64) : Bool :=
+  wellFormedDuration start duration && cliffDuration ≤ duration
+
+/-- Schedule views and release may run only with a nonzero beneficiary, a non-overflowing
+end, and a cliff that does not exceed duration. -/
+@[pf_inline] def canSchedule (beneficiary : Address) (start duration cliffDuration : UInt64) : Bool :=
+  wellFormedBeneficiary beneficiary && wellFormedCliff start duration cliffDuration
 
 /-- End timestamp; zero when the duration gate fails. -/
 @[pf_inline] def endAt (start duration : UInt64) : UInt64 :=
   if wellFormedDuration start duration then start + duration else 0
 
+/-- Cliff timestamp (`start + cliffDuration`); zero when the cliff gate fails. -/
+@[pf_inline] def cliffAt (start duration cliffDuration : UInt64) : UInt64 :=
+  if wellFormedCliff start duration cliffDuration then start + cliffDuration else 0
+
 /-- OZ-style allocation: current balance plus already released wei. -/
 @[pf_inline] def totalAllocation (balance released : UInt256) : UInt256 :=
   UInt256.add balance released
 
-/-- Linear vesting amount at `timestamp`; zero when the schedule is ill-formed or before `start`. -/
-@[pf_inline] def vestedAmount (totalAllocation : UInt256) (start duration timestamp : UInt64) : UInt256 :=
-  if !wellFormedDuration start duration then
+/-- Linear vesting amount at `timestamp`; zero when the schedule is ill-formed or before the
+cliff. After the cliff the formula still uses `timestamp - start`, matching OZ. -/
+@[pf_inline] def vestedAmount (totalAllocation : UInt256) (start duration cliffDuration timestamp : UInt64) :
+    UInt256 :=
+  if !wellFormedCliff start duration cliffDuration then
     UInt256.zero
-  else if timestamp < start then
+  else if timestamp < cliffAt start duration cliffDuration then
     UInt256.zero
   else if timestamp ≥ endAt start duration then
     totalAllocation
@@ -62,9 +80,9 @@ closed CALL. -/
     UInt256.div (UInt256.mul totalAllocation elapsed) span
 
 /-- Releasable wei at `timestamp`; zero when nothing has vested beyond `released`. -/
-@[pf_inline] def releasable (totalAllocation released : UInt256) (start duration timestamp : UInt64) :
-    UInt256 :=
-  let vested := vestedAmount totalAllocation start duration timestamp
+@[pf_inline] def releasable (totalAllocation released : UInt256)
+    (start duration cliffDuration timestamp : UInt64) : UInt256 :=
+  let vested := vestedAmount totalAllocation start duration cliffDuration timestamp
   if UInt256.ge vested released then UInt256.sub vested released else UInt256.zero
 
 /-- Canonical OpenZeppelin `EtherReleased` typed event. -/

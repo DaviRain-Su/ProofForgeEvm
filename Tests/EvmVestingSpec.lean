@@ -4,9 +4,10 @@ import ProofForge.Evm.Emit
 import Examples.Evm.VestLink
 
 /-!
-Bounded native-ETH vesting: linear schedule, stored beneficiary with one-step
-`transferOwnership`, OZ `release()` plus partial `release(uint256)`, ordered reentrancy lock,
-fail-closed schedule gates, EtherReleased typed event. `temporaryGapCount` stays 0.
+Bounded native-ETH vesting: linear schedule with a constructor-stored OZ cliff, stored
+beneficiary with one-step `transferOwnership`, OZ `release()` plus partial `release(uint256)`,
+ordered reentrancy lock, fail-closed schedule gates, EtherReleased typed event.
+`temporaryGapCount` stays 0.
 -/
 
 namespace Tests.EvmVestingSpec
@@ -16,9 +17,17 @@ open ProofForge.Evm.Sdk
 open Lean Elab Command
 
 #guard Vesting.wellFormedDuration (100 : UInt64) (900 : UInt64)
+#guard Vesting.wellFormedCliff (100 : UInt64) (900 : UInt64) (0 : UInt64)
+#guard Vesting.wellFormedCliff (100 : UInt64) (900 : UInt64) (900 : UInt64)
+#guard !Vesting.wellFormedCliff (100 : UInt64) (900 : UInt64) (901 : UInt64)
 #guard !Vesting.wellFormedBeneficiary Address.zero
-#guard !Vesting.canSchedule Address.zero (100 : UInt64) (900 : UInt64)
+#guard !Vesting.canSchedule Address.zero (100 : UInt64) (900 : UInt64) (0 : UInt64)
 #guard Vesting.endAt (100 : UInt64) (900 : UInt64) == (1000 : UInt64)
+#guard Vesting.cliffAt (100 : UInt64) (900 : UInt64) (400 : UInt64) == (500 : UInt64)
+#guard Vesting.vestedAmount ⟨1000, 0, 0, 0⟩ (100 : UInt64) (1000 : UInt64) (500 : UInt64)
+    (350 : UInt64) == UInt256.zero
+#guard Vesting.vestedAmount ⟨1000, 0, 0, 0⟩ (100 : UInt64) (1000 : UInt64) (500 : UInt64)
+    (1100 : UInt64) == ⟨1000, 0, 0, 0⟩
 
 private def expectVestLink : CommandElabM Unit := do
   let env ← getEnv
@@ -27,8 +36,8 @@ private def expectVestLink : CommandElabM Unit := do
     | .ok source => pure source
     | .error reason => throwError reason
   for ixName in
-      #["beneficiary", "owner", "start", "duration", "endTime", "releasedOf", "releasable",
-        "vestedAmount", "transferOwnership", "release", "receive"] do
+      #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "releasedOf",
+        "releasable", "vestedAmount", "transferOwnership", "release", "receive"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"VestLink is missing {ixName}"
   let program ←
@@ -57,6 +66,7 @@ private def expectVestLink : CommandElabM Unit := do
   unless abi.contains "\"name\":\"beneficiary\"" &&
       abi.contains "\"name\":\"start\"" &&
       abi.contains "\"name\":\"duration\"" &&
+      abi.contains "\"name\":\"cliff\"" &&
       abi.contains "\"name\":\"endTime\"" &&
       abi.contains "\"name\":\"releasedOf\"" &&
       abi.contains "\"name\":\"releasable\"" &&
@@ -79,7 +89,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "98d9e9f0644d9029" do
+  unless IR.digestHex program == "87acbed203c29f11" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

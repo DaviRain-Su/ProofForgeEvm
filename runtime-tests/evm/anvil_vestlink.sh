@@ -38,7 +38,7 @@ other="$("$cast" wallet address --private-key "$other_key")"
 now_block="$(pf_evm_to_dec "$("$cast" block --rpc-url "$rpc" latest --json | "$python" -I -S -c 'import json,sys; print(json.load(sys.stdin)["timestamp"])')")"
 start_ts=$((now_block + 100))
 duration=1000
-encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64)' "$beneficiary" "$start_ts" "$duration")"
+encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$beneficiary" "$start_ts" "$duration" 0)"
 receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   --create "0x${bytecode}${encoded#0x}")"
 addr="$(printf '%s' "$receipt" | pf_evm_contract_address)"
@@ -51,6 +51,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'start()(uint256)')
   "$start_ts" "constructor start"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'duration()(uint256)')" \
   "$duration" "constructor duration"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'cliff()(uint256)')" \
+  "$start_ts" "zero cliffDuration makes cliff equal start"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'endTime()(uint256)')" \
   "$((start_ts + duration))" "start + duration"
 
@@ -147,7 +149,7 @@ if after - before != 750000000000000000:
     raise SystemExit(f'FAIL: rotated beneficiary delta {after-before}, want 750000000000000000')
 "
 
-zero_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64)' "$zero" "$start_ts" "$duration")"
+zero_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$zero" "$start_ts" "$duration" 0)"
 zero_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   --create "0x${bytecode}${zero_encoded#0x}")"
 zero_addr="$(printf '%s' "$zero_receipt" | pf_evm_contract_address)"
@@ -157,8 +159,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$zero_addr" 'releasable()(
   0 "zero beneficiary fails closed on releasable"
 
 max_u64=18446744073709551615
-bad_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64)' \
-  "$beneficiary" "$max_u64" 1)"
+bad_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' \
+  "$beneficiary" "$max_u64" 1 0)"
 bad_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   --create "0x${bytecode}${bad_encoded#0x}")"
 bad_addr="$(printf '%s' "$bad_receipt" | pf_evm_contract_address)"
@@ -166,6 +168,38 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$bad_addr" 'beneficiary()
   "$zero" "overflowing schedule hides beneficiary"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$bad_addr" 'endTime()(uint256)')" \
   0 "overflowing schedule hides end"
+
+now_cliff="$(pf_evm_to_dec "$("$cast" block --rpc-url "$rpc" latest --json | "$python" -I -S -c 'import json,sys; print(json.load(sys.stdin)["timestamp"])')")"
+c_start=$((now_cliff + 100))
+c_duration=1000
+c_cliff=500
+c_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' \
+  "$beneficiary" "$c_start" "$c_duration" "$c_cliff")"
+c_addr="$(printf '%s' "$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${bytecode}${c_encoded#0x}")" | pf_evm_contract_address)"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$c_addr" --value 1ether >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$c_addr" 'cliff()(uint256)')" \
+  "$((c_start + c_cliff))" "cliff is start + cliffDuration"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$c_addr" 'vestedAmount(uint64)(uint256)' \
+  "$((c_start + 250))")" 0 "vestedAmount is 0 before the cliff"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$c_addr" 'vestedAmount(uint64)(uint256)' \
+  "$((c_start + c_cliff))")" 500000000000000000 "OZ jump at the cliff is half the allocation"
+pf_evm_stamp_next "$((c_start + c_cliff))"
+c_release="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$c_addr" 'release()')"
+pf_evm_typed_event_check "$abi" "$c_release" EtherReleased "$topic0" \
+  '{"amount": 500000000000000000}' "release() at the cliff pays the jump"
+pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$c_addr")" \
+  500000000000000000 "cliff wallet kept the unvested half"
+
+over_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' \
+  "$beneficiary" "$c_start" "$c_duration" "$((c_duration + 1))")"
+over_addr="$(printf '%s' "$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${bytecode}${over_encoded#0x}")" | pf_evm_contract_address)"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$over_addr" 'cliff()(uint256)')" \
+  0 "cliff longer than duration fails closed"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$over_addr" 'start()(uint256)')" \
+  0 "cliff longer than duration hides start"
 
 if [[ -z "$solc_bin" ]]; then
   echo "evm-anvil-vestlink: ok (release() + transferOwnership, solc skip, $runtime_bytes bytes)"
@@ -202,7 +236,7 @@ if not hexes:
     raise SystemExit('FAIL: solc produced no VestLink mutation bytecode')
 print(hexes[-1])
 ")"
-mut_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64)' "$beneficiary" "$start_ts" "$duration")"
+mut_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$beneficiary" "$start_ts" "$duration" 0)"
 mut_addr="$(printf '%s' "$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   --create "0x${mut_code}${mut_encoded#0x}")" | pf_evm_contract_address)"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$mut_addr" --value 1ether >/dev/null
@@ -215,4 +249,4 @@ fi
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$mut_addr")" \
   1000000000000000000 "zero-value CALL mutation left the mutated wallet funded"
 
-echo "evm-anvil-vestlink: ok (release() + transferOwnership + value mutation, $runtime_bytes bytes)"
+echo "evm-anvil-vestlink: ok (release() + transferOwnership + cliff + value mutation, $runtime_bytes bytes)"
