@@ -127,7 +127,7 @@ pf_evm_typed_event_check "$abi" "$wdr_receipt" Withdraw "$topic_wdr" \
   "{\"sender\": \"$sender\", \"receiver\": \"$dest\", \"owner\": \"$sender\", \"assets\": 99, \"shares\": 50}" "redeem"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$dest")" 99 "dest token"
 
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'burn(address,uint256)' "$addr" 200 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'burn(address,uint256)' "$addr" 201 >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 0 "drained totalAssets"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint256)')" 100 \
   "shares remain after drain"
