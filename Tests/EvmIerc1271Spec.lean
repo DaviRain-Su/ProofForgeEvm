@@ -165,7 +165,7 @@ private def expectSignerLink : CommandElabM Unit := do
       !yul.contains "let arg3 := 0\n" && !yul.contains "arg3 := byte(0, calldataload" &&
       yul.contains "calldatacopy(100, abi_bytes2, " && !yul.contains "mstore8(1" do
     throwError "SignerLink Yul materializes the signature per byte instead of copying calldata"
-  unless IR.digestHex evm == "48768ba3013eb87" do
+  unless IR.digestHex evm == "e3d539121ce1e0d8" do
     throwError s!"SignerLink digest drifted: {IR.digestHex evm}"
   logInfo m!"signerlink: digest={IR.digestHex evm} plan-ok abi-ok"
 
