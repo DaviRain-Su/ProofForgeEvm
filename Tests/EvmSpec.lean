@@ -59,8 +59,10 @@ open ProofForge.Evm
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.arith256 5 0)
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.mulmod256 3)
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.mulDiv256 3)
+#guard ProofForge.Evm.WideWord.Query.wellFormed (.mulDivOffset256 3)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulmod256 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulDiv256 4)
+#guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulDivOffset256 4)
 #guard ProofForge.Evm.ClosedCall.Query.wellFormed (.balance256 0)
 #guard !ProofForge.Evm.ClosedCall.Query.wellFormed (.allowance256 4)
 #guard ProofForge.Evm.ClosedCall.Query.wellFormed .authorizationState

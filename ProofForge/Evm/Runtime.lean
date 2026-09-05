@@ -340,6 +340,10 @@ returns `a`. -/
 @[irreducible] def evmMulDiv256 (a b denom : UInt256) : UInt256 :=
   let _ := b; let _ := denom; a
 
+/-- Floor `(a * (b + 1)) / (denom + 1)` (OZ virtual offset 0). Checked `+ 1`. Host returns `a`. -/
+@[irreducible] def evmMulDivOffset256 (a b denom : UInt256) : UInt256 :=
+  let _ := b; let _ := denom; a
+
 /-- `a ≥ b`。Yul 比打包后的 256-bit word。宿主返回 `true`。 -/
 @[irreducible] def evmGe256 (_a _b : UInt256) : Bool := true
 

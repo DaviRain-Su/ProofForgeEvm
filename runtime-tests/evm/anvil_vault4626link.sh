@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Vault4626Link: bounded ERC-4626 vault — floor assets * totalSupply / totalAssets, closed ERC-20, reentrancy guard.
+# Vault4626Link: bounded ERC-4626 vault — floor assets * (totalSupply+1) / (totalAssets+1), closed ERC-20, reentrancy guard.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,6 +45,24 @@ pf_evm_require_equal "${got_asset,,}" "${token,,}" "asset"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 100)" 100 \
   "empty vault is 1:1 shares"
 
+# Virtual +1: deposit 1, donate 10, convertToShares(6)==1 (naive mulDiv is 0).
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
+  'mint(address,uint256)' "$sender" 1 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
+  'approve(address,uint256)' "$addr" 1 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
+  'deposit(uint256,address)' 1 "$sender" >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
+  'mint(address,uint256)' "$addr" 10 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 6)" 1 \
+  "virtual-offset convertToShares(6) is 1"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
+  'redeem(uint256,address,address)' 1 "$sender" "$sender" >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
+  'burn(address,uint256)' "$addr" 5 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint256)')" 0 \
+  "cleared inflation fixture"
+
 # 2^128 * 2^128 overflows checked 256-bit mul; mulDiv keeps convertToShares 1:1.
 two128=340282366920938463463374607431768211456
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
@@ -78,8 +96,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(ui
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 200 "donated totalAssets"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 100)" 50 \
   "donated convertToShares is 50"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' 100)" 200 \
-  "donated convertToAssets is 200"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' 100)" 199 \
+  "donated convertToAssets is 199"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 1)" 0 \
   "floor convertToShares(1) is 0"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewWithdraw(uint256)(uint256)' 1)" 1 \
@@ -106,10 +124,10 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint
 
 wdr_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" "$addr" 'redeem(uint256,address,address)' 50 "$dest" "$sender")"
 pf_evm_typed_event_check "$abi" "$wdr_receipt" Withdraw "$topic_wdr" \
-  "{\"sender\": \"$sender\", \"receiver\": \"$dest\", \"owner\": \"$sender\", \"assets\": 100, \"shares\": 50}" "redeem"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$dest")" 100 "dest token"
+  "{\"sender\": \"$sender\", \"receiver\": \"$dest\", \"owner\": \"$sender\", \"assets\": 99, \"shares\": 50}" "redeem"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$dest")" 99 "dest token"
 
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'burn(address,uint256)' "$addr" 200 >/dev/null
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'burn(address,uint256)' "$addr" 201 >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 0 "drained totalAssets"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint256)')" 100 \
   "shares remain after drain"

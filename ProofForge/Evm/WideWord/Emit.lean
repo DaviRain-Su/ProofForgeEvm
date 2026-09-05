@@ -186,8 +186,10 @@ private def emitMulmod256 (context : Context σ) (limb : Nat)
       return (txt, nm, t8)
 
 /-- OZ `Math.mulDiv`: 512-bit product, then odd-denominator Newton inverse.
-Wrapping `mul` / `sub` plus `mulmod` recover the high word. `^` is XOR. -/
-private def emitMulDiv256 (context : Context σ) (limb : Nat)
+Wrapping `mul` / `sub` plus `mulmod` recover the high word. `^` is XOR.
+When `offset` is true, the packed right and denom each take a checked `+ 1`
+(OZ `_decimalsOffset() == 0`). -/
+private def emitMulDiv256 (context : Context σ) (limb : Nat) (offset : Bool)
     (a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 : Ops.Val) (st : σ) :
     Except String (String × String × σ) := do
   let indent := context.indent
@@ -204,7 +206,8 @@ private def emitMulDiv256 (context : Context σ) (limb : Nat)
   let (r2, z2, u2) ← context.materialize d2 u1
   let (r3, z3, u3) ← context.materialize d3 u2
   let cacheKey :=
-    "mulDiv256|" ++ context.valKey a0 ++ "|" ++ context.valKey a1 ++ "|" ++
+    (if offset then "mulDivOffset256|" else "mulDiv256|") ++
+      context.valKey a0 ++ "|" ++ context.valKey a1 ++ "|" ++
       context.valKey a2 ++ "|" ++ context.valKey a3 ++ "|" ++ context.valKey b0 ++ "|" ++
       context.valKey b1 ++ "|" ++ context.valKey b2 ++ "|" ++ context.valKey b3 ++ "|" ++
       context.valKey d0 ++ "|" ++ context.valKey d1 ++ "|" ++ context.valKey d2 ++ "|" ++
@@ -229,11 +232,21 @@ private def emitMulDiv256 (context : Context σ) (limb : Nat)
       let newton :=
         indent ++ "    " ++ inverse ++ " := mul(" ++ inverse ++ ", sub(2, mul(" ++
           dv ++ ", " ++ inverse ++ ")))" ++ nl
+      let bump (name : String) : String :=
+        if offset then
+          indent ++ name ++ " := add(" ++ name ++ ", 1)" ++ nl ++
+          indent ++ "if iszero(" ++ name ++ ") { " ++ revert0 ++ " }" ++ nl
+        else ""
+      let zeroDenom :=
+        if offset then ""
+        else indent ++ "if iszero(" ++ dv ++ ") { " ++ revert0 ++ " }" ++ nl
       let txt := pre ++
         indent ++ "let " ++ xv ++ " := " ++ packU256 x0 x1 x2 x3 ++ nl ++
         indent ++ "let " ++ yv ++ " := " ++ packU256 y0 y1 y2 y3 ++ nl ++
+        bump yv ++
         indent ++ "let " ++ dv ++ " := " ++ packU256 z0 z1 z2 z3 ++ nl ++
-        indent ++ "if iszero(" ++ dv ++ ") { " ++ revert0 ++ " }" ++ nl ++
+        bump dv ++
+        zeroDenom ++
         indent ++ "let " ++ prod0 ++ " := mul(" ++ xv ++ ", " ++ yv ++ ")" ++ nl ++
         indent ++ "let " ++ mm ++ " := mulmod(" ++ xv ++ ", " ++ yv ++ ", not(0))" ++ nl ++
         indent ++ "let " ++ prod1 ++ " := sub(sub(" ++ mm ++ ", " ++ prod0 ++
@@ -534,7 +547,9 @@ def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array 
   | .mulmod256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, m0, m1, m2, m3] =>
       emitMulmod256 context limb a0 a1 a2 a3 b0 b1 b2 b3 m0 m1 m2 m3 st
   | .mulDiv256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, d0, d1, d2, d3] =>
-      emitMulDiv256 context limb a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
+      emitMulDiv256 context limb false a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
+  | .mulDivOffset256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, d0, d1, d2, d3] =>
+      emitMulDiv256 context limb true a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
   | .keccak256Pair32 limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitKeccak256Pair32 context limb a0 a1 a2 a3 b0 b1 b2 b3 st
   | .merkleVerify256, operands =>
