@@ -51,6 +51,8 @@ end UnsupportedConditionFixture
 -- The host stub has no code behind any address, so the receiver check is the skipped branch.
 #guard Erc1155.checkOnReceived ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 8, 9⟩ ⟨10, 0, 0, 0⟩ ⟨11, 0, 0, 0⟩
   { length := 0, values := Vector.replicate 32 0 } == 0
+#guard Erc1155.onReceivedSelector == (⟨0x616e3af2, 0, 0, 0⟩ : Bytes4)
+#guard Erc1155.onBatchReceivedSelector == (⟨0x817c19bc, 0, 0, 0⟩ : Bytes4)
 #guard Erc1155.checkOnBatchReceived ⟨1, 2, 3⟩ ⟨4, 5, 6⟩ ⟨7, 8, 9⟩
   ⟨0, #v[UInt256.zero, UInt256.zero, UInt256.zero, UInt256.zero]⟩
   ⟨0, #v[UInt256.zero, UInt256.zero, UInt256.zero, UInt256.zero]⟩

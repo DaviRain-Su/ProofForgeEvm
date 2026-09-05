@@ -68,8 +68,10 @@ def nonGoalNone : UInt8 := 0
 /-- Proxies, delegatecall, CREATE/CREATE2/CREATE3, storage-slot escape hatches. -/
 def nonGoalProxyCreateSlot : UInt8 := 1
 
-/-- Raw/arbitrary calldata, low-level calls, multicall, ERC-2771, and the receiving side of
-callback/receiver hooks. Calling a known hook with a fixed ABI through `OpenCall.callMagic` is in. -/
+/-- Raw/arbitrary calldata, low-level calls, multicall, ERC-2771, and callback/receiver hooks
+that are not a closed ABI. Bounded ERC-721/1155 receiving hooks (`onERC*Received`, `data` at most
+32 bytes, batch at most 4) are in. An ERC-1271 wallet stays out. Calling a known hook with a
+fixed ABI through `OpenCall.callMagic` is in. -/
 def nonGoalArbitraryCall : UInt8 := 2
 
 /-- Account abstraction, ERC-4337/7579 execution, paymasters. -/

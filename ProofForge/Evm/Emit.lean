@@ -1310,7 +1310,10 @@ private def emitCFGCase (p : IR.Program) (method : IR.Method)
               indent ++ "mstore(0, " ++ packU256 a0 a1 a2 a3 ++ ")" ++ nl ++
               indent ++ "return(0, 32)" ++ nl
           else if retTypes.size == 1 && Codec.isFixedBytesCarrier retTypes[0]! &&
-              values.size == Codec.limbCount retTypes[0]! then
+              values.size ≥ Codec.limbCount retTypes[0]! then
+            -- FixedBytes constructors always have four UInt64 fields. bytes4 has
+            -- limbCount 1, so requiring equality published four numeric words and
+            -- magicBytes4 refused the 128-byte frame.
             let mut pre := ""
             let mut limbs := #[]
             for value in values do

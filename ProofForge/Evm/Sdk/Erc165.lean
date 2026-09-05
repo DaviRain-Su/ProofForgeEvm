@@ -39,6 +39,16 @@ when the consumer implements the complete `royaltyInfo(uint256,uint256)` surface
 @[pf_inline] def erc2981 : InterfaceId :=
   ⟨0x5a20552a, 0, 0, 0⟩
 
+/-- `IERC721Receiver`: `0x150b7a02`. Advertise only when the consumer implements
+`onERC721Received`. Same packing as `Erc721.onReceivedSelector`. -/
+@[pf_inline] def erc721Receiver : InterfaceId :=
+  ⟨0x027a0b15, 0, 0, 0⟩
+
+/-- `IERC1155Receiver`: `0x4e2312e0`. Advertise only when the consumer implements both
+`onERC1155Received` and `onERC1155BatchReceived`. -/
+@[pf_inline] def erc1155Receiver : InterfaceId :=
+  ⟨0xe012234e, 0, 0, 0⟩
+
 /-- Equality over canonical ABI `bytes4` values, lowered through the closed two-operand runtime
 leaf rather than structural carrier inspection. -/
 @[pf_inline] def equal (left right : InterfaceId) : Bool :=

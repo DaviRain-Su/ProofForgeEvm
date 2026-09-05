@@ -10,9 +10,9 @@ movement. This contract owns the immutable minter gate, zero-address policy, err
 `ERC1155InvalidArrayLength` and `ERC1155InsufficientBalance` errors and logs one `TransferBatch`
 whose arrays carry exactly the submitted slots. The single transfer is `safeTransferFrom` with
 the SDK's outbound `onERC1155Received` check (`data` at most 32 bytes). The batch transfer is
-`safeBatchTransferFrom` with the outbound `onERC1155BatchReceived` check. There is no
-receiving-side callback; `supportsInterface` exposes IERC165 only, not the incomplete IERC1155
-interface.
+`safeBatchTransferFrom` with the outbound `onERC1155BatchReceived` check. `ReceiverLink` is the
+receiving-side callback; `supportsInterface` on this token exposes IERC165 only, not the
+incomplete IERC1155 interface.
 -/
 
 namespace Examples.Evm.MultiToken
