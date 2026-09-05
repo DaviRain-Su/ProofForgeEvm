@@ -6,10 +6,10 @@ import Examples.Evm.Vest20Link
 /-!
 Dual-asset vesting: `Vest20Link.release(address)` pays `releasable(token)` through
 `SafeErc20.transfer`, `released(address)` is a hashed `token → paid` map, `release()` pays
-`releasable()` native ETH, `released()` is the native counter, `transferOwnership` rotates
-the stored beneficiary, `cliff()` is the OZ `VestingWalletCliff` timestamp, and both
-`ERC20Released` and `EtherReleased` are typed logs. VestLink stays the ETH-only smaller
-profile. `temporaryGapCount` stays 0.
+`releasable()` native ETH, `released()` is the native counter, `transferOwnership` nominates
+and `acceptOwnership` rotates the stored beneficiary, `cliff()` is the OZ `VestingWalletCliff`
+timestamp, and both `ERC20Released` and `EtherReleased` are typed logs. VestLink stays the
+ETH-only smaller profile. `temporaryGapCount` stays 0.
 -/
 
 namespace Tests.EvmVest20Spec
@@ -44,7 +44,8 @@ private def expectVest20Link : CommandElabM Unit := do
     | .error reason => throwError reason
   for ixName in
       #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "released",
-        "releasable", "vestedAmount", "transferOwnership", "release", "receive"] do
+        "releasable", "vestedAmount", "transferOwnership", "acceptOwnership", "pendingOwner",
+        "release", "receive"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"Vest20Link is missing {ixName}"
   unless (source.methods.filter (·.ixName == "release")).size >= 2 do
@@ -100,7 +101,10 @@ private def expectVest20Link : CommandElabM Unit := do
       abi.contains "\"name\":\"release\"" &&
       abi.contains "\"name\":\"owner\"" &&
       abi.contains "\"name\":\"transferOwnership\"" &&
+      abi.contains "\"name\":\"acceptOwnership\"" &&
+      abi.contains "\"name\":\"pendingOwner\"" &&
       abi.contains "\"name\":\"OwnershipTransferred\"" &&
+      abi.contains "\"name\":\"OwnershipTransferStarted\"" &&
       abi.contains "\"name\":\"ERC20Released\"" &&
       abi.contains "\"name\":\"EtherReleased\"" &&
       abi.contains "\"type\":\"receive\"" do
@@ -138,7 +142,7 @@ private def expectVest20Link : CommandElabM Unit := do
       | throwError s!"Vest20Link canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" do
       throwError s!"{ixName} lost the linear formula"
-  unless IR.digestHex program == "d105175ac1ff37bd" do
+  unless IR.digestHex program == "226bbefeac922a65" do
     throwError s!"Vest20Link digest drifted: {IR.digestHex program}"
   logInfo m!"vest20link: digest={IR.digestHex program} abi-ok"
 

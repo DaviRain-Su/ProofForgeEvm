@@ -8,9 +8,10 @@ namespace ProofForge.Evm.Sdk.Vesting
 Constructor-stored beneficiary plus immutables for `start` and `duration`, a constructor-stored
 cliff duration, a linear vesting curve over `Context.timestamp`, and typed `EtherReleased` /
 `ERC20Released` logs. Native-ETH accounting is one `released` counter on `VestLink` and `nativeReleased` on
-`Vest20Link`. ERC-20 accounting is a hashed `token → paid` map on `Vest20Link`. Consumers rotate the beneficiary with
-one-step `transferOwnership` (Ownable `OwnershipTransferred`). There is no arbitrary schedule
-mutation. Consumers must validate `canSchedule` before advertising schedule views or `release`.
+`Vest20Link`. ERC-20 accounting is a hashed `token → paid` map on `Vest20Link`. Consumers rotate the beneficiary with Ownable2Step `transferOwnership`
+(`OwnershipTransferStarted`) plus `acceptOwnership` (`OwnershipTransferred`). There is no
+arbitrary schedule mutation. Consumers must validate `canSchedule` before advertising schedule
+views or `release`.
 
 The cliff matches OpenZeppelin `VestingWalletCliff`: vested amount is 0 until
 `start + cliffDuration`, then the linear formula still runs from `start` (a jump at the cliff
@@ -18,12 +19,13 @@ when `cliffDuration > 0`). `cliffDuration = 0` is the linear wallet. `cliffDurat
 fails closed. CREATE of a zero beneficiary reverts `OwnableInvalidOwner(address)`. Constructor
 `OwnershipTransferred(address(0), owner)` lowers as the else-arm of that revert-guard.
 `Vest20Link` is the dual-asset wallet: native ETH `release()` plus ERC-20 `release(address)`.
-VestLink stays the ETH-only smaller profile. The remaining named gap on this row is no
-Ownable2Step. ABI `released()` / `released(address)` match OZ. Only-owner reverts are
+VestLink stays the ETH-only smaller profile. The remaining named gap on this row is VestLink
+remains ETH-only. ABI `released()` / `released(address)` match OZ. Only-owner reverts are
 `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`.
 
 Fail-closed gates:
-- A zero beneficiary reverts `OwnableInvalidOwner` at CREATE and on `transferOwnership`.
+- A zero beneficiary reverts `OwnableInvalidOwner` at CREATE. Nominate-zero on
+  `transferOwnership` reverts `ZeroAddress()`.
 - Overflowing `start + duration`, or `cliffDuration > duration`, still deploy and yield zero
   views and no release.
 - `releasable` never underflows; zero duration behaves as a timelock at `start`.

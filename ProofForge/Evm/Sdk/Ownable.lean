@@ -17,8 +17,8 @@ VestLink, Vest20Link, TwoStepCounter, and Credits CREATE of `address(0)` revert
 `OwnableInvalidOwner(address)`. The else-arm of that dropped-let may emit
 `Log.constructorTransferred` (LOG3 `OwnershipTransferred(address(0), newOwner)`). CALL, map
 writes, value transfers, and any other constructor log stay refused
-(`extract/unsupported: EVM constructor effects are not lowered`). TwoStepCounter and Credits
-`transferOwnership` of a zero nominee still reverts `ZeroAddress()`.
+(`extract/unsupported: EVM constructor effects are not lowered`). VestLink, Vest20Link,
+TwoStepCounter, and Credits `transferOwnership` of a zero nominee still reverts `ZeroAddress()`.
 -/
 
 /-- Canonical Ownable / Ownable2Step events. Constructor and field names are the ABI surface.

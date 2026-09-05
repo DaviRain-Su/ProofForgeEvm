@@ -7,8 +7,9 @@ token's paid-out amount lives in a hashed address map. `release()` pays `releasa
 `Ether.send`. `release(address)` pays `releasable(token)` through `SafeErc20.transfer`.
 `released()` and `released(address)` are the OZ paid-amount views (`released__eth` /
 `released__token`; the hashed map stays `released`).
-`transferOwnership` is one-step Ownable rotation of the stored beneficiary. VestLink stays the
-smaller ETH-only profile, including `release(uint256)`. There is no arbitrary schedule mutation.
+`transferOwnership` nominates a pending owner. `acceptOwnership` rotates the stored beneficiary.
+VestLink stays the smaller ETH-only profile, including `release(uint256)`. There is no arbitrary
+schedule mutation.
 A zero beneficiary reverts `OwnableInvalidOwner(address)` in the constructor. The success path
 emits `OwnershipTransferred(address(0), beneficiary)`. Before the cliff, `vestedAmount` is 0.
 After the cliff the linear formula still uses `timestamp - start`.
@@ -26,6 +27,7 @@ structure State where
   nativeReleased : UInt256
   dummy : UInt64
   guard : UInt64
+  ownership : Address
   deriving Repr, DecidableEq, Inhabited
 
 structure Handles where
@@ -37,7 +39,8 @@ structure Handles where
   let nativeReleased := cliffDuration.next.uint256 "nativeReleased"
   let dummy := nativeReleased.next.uint64 "dummy"
   let guard := dummy.next.uint64 "guard"
-  { handle := { guard := guard.handle }, next := guard.next }
+  let ownership := guard.next.address "ownership"
+  { handle := { guard := guard.handle }, next := ownership.next }
 
 @[pf_inline] def released : Storage.AddressMap256 :=
   Storage.Layout.root.addressMap256.handle
@@ -55,7 +58,7 @@ def init (beneficiary : Address) (_start _duration cliffDuration : UInt64) : Sta
     else
       Ownable.Log.constructorTransferred beneficiary
   { owner := beneficiary, cliffDuration := cliffDuration, nativeReleased := UInt256.zero,
-    dummy := 0, guard := Reentrancy.notEntered }
+    dummy := 0, guard := Reentrancy.notEntered, ownership := Access.Ownership.none }
 
 @[pf_entry]
 def beneficiary (s : State) : Address :=
@@ -190,18 +193,35 @@ def vestedAmount__eth (s : State) (timestamp : UInt64) : UInt256 :=
   else
     UInt256.zero
 
-/-- One-step Ownable rotation of the stored beneficiary. Zero `newOwner` reverts
-`OwnableInvalidOwner(newOwner)`. Non-owner reverts `OwnableUnauthorizedAccount(caller)`. Success emits
-`OwnershipTransferred(previous, newOwner)`. -/
+/-- Step 1 of Ownable2Step rotation. Zero `newOwner` reverts `ZeroAddress()`. Non-owner reverts
+`OwnableUnauthorizedAccount(caller)`. Success emits `OwnershipTransferStarted(owner, newOwner)`. -/
 @[pf_entry]
 def transferOwnership (s : State) (newOwner : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
     if Address.isZero newOwner then
-      .ok (s, Revert.ownableInvalidOwner newOwner)
+      .ok (s, Revert.zeroAddress)
     else
-      .ok ({ s with owner := newOwner }, Ownable.Log.ownershipTransferred s.owner newOwner)
+      .ok ({ s with ownership := Access.Ownership.nominate s.ownership newOwner },
+        Ownable.Log.ownershipTransferStarted s.owner newOwner)
   else
     .ok (s, Access.ownerViolation)
+
+/-- Step 2. The nominee becomes the stored beneficiary. The owner-field write is explicit here
+so Extract keeps the owner stores beside the log. Non-nominee reverts
+`OwnableUnauthorizedAccount(caller)`. Success emits `OwnershipTransferred(previous, pending)`. -/
+@[pf_entry]
+def acceptOwnership (s : State) : Except Error (State × UInt64) :=
+  if Access.Ownership.callerIsPending s.ownership then
+    .ok ({ owner := s.ownership, cliffDuration := s.cliffDuration, nativeReleased :=
+      s.nativeReleased, dummy := s.dummy, guard := s.guard, ownership :=
+      Access.Ownership.consume s.ownership },
+      Ownable.Log.ownershipTransferred s.owner s.ownership)
+  else
+    .ok (s, Access.ownerViolation)
+
+@[pf_entry]
+def pendingOwner (s : State) : Address :=
+  s.ownership
 
 /-- Pay the currently releasable native ETH. ABI name `release()` (OZ `VestingWallet.release()`).
 A zero payout still logs `EtherReleased(0)` and sends 0. -/
@@ -256,7 +276,8 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
           .ok ({ owner := s.owner, cliffDuration := s.cliffDuration,
                  nativeReleased := s.nativeReleased,
                  dummy := released.put token paid,
-                 guard := Reentrancy.notEntered },
+                 guard := Reentrancy.notEntered,
+                 ownership := s.ownership },
             Vesting.TokenLog.erc20Released token UInt256.zero)
         else if Context.timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
           let paid := released.get token
@@ -270,7 +291,8 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
               .ok ({ owner := s.owner, cliffDuration := s.cliffDuration,
                      nativeReleased := s.nativeReleased,
                      dummy := released.put token (UInt256.add paid payout),
-                     guard := Reentrancy.notEntered },
+                     guard := Reentrancy.notEntered,
+                     ownership := s.ownership },
                 Vesting.TokenLog.erc20Released token payout)
             else
               .error .overflow
@@ -293,7 +315,8 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
               .ok ({ owner := s.owner, cliffDuration := s.cliffDuration,
                      nativeReleased := s.nativeReleased,
                      dummy := released.put token (UInt256.add paid payout),
-                     guard := Reentrancy.notEntered },
+                     guard := Reentrancy.notEntered,
+                     ownership := s.ownership },
                 Vesting.TokenLog.erc20Released token payout)
             else
               .error .overflow
@@ -304,7 +327,8 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
             .ok ({ owner := s.owner, cliffDuration := s.cliffDuration,
                    nativeReleased := s.nativeReleased,
                    dummy := released.put token paid,
-                   guard := Reentrancy.notEntered },
+                   guard := Reentrancy.notEntered,
+                   ownership := s.ownership },
               Vesting.TokenLog.erc20Released token UInt256.zero)
       else
         .error .reentrantCall

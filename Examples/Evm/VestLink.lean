@@ -3,10 +3,10 @@ import ProofForge.Evm.Sdk
 /-!
 Native-ETH vesting consumer. Constructor stores the beneficiary and cliff duration, and bakes
 `start` / `duration` as immutables. `released` tracks payouts and an ordered storage lock
-protects the native-ETH call. `transferOwnership` is one-step Ownable rotation of that stored
-beneficiary. `release()` pays the currently releasable amount (OZ ABI). `release(uint256)` still
-permits a partial payout. The ERC-20 `released[token]` map lives on `Vest20Link`. There is no
-arbitrary schedule mutation.
+protects the native-ETH call. `transferOwnership` nominates a pending owner (Ownable2Step
+`OwnershipTransferStarted`). `acceptOwnership` rotates the stored beneficiary. `release()` pays
+the currently releasable amount (OZ ABI). `release(uint256)` still permits a partial payout. The
+ERC-20 `released[token]` map lives on `Vest20Link`. There is no arbitrary schedule mutation.
 
 A zero beneficiary reverts `OwnableInvalidOwner(address)` in the constructor. The success path emits
 `OwnershipTransferred(address(0), beneficiary)`. Overflowing `start + duration` or
@@ -27,6 +27,7 @@ structure State where
   cliffDuration : UInt64
   released : UInt256
   guard : UInt64
+  ownership : Address
   deriving Repr, DecidableEq, Inhabited
 
 structure Handles where
@@ -37,7 +38,8 @@ structure Handles where
   let cliffDuration := owner.next.uint64 "cliffDuration"
   let released := cliffDuration.next.uint256 "released"
   let guard := released.next.uint64 "guard"
-  { handle := { guard := guard.handle }, next := guard.next }
+  let ownership := guard.next.address "ownership"
+  { handle := { guard := guard.handle }, next := ownership.next }
 
 inductive Error where
   | overflow
@@ -52,7 +54,7 @@ def init (beneficiary : Address) (_start _duration cliffDuration : UInt64) : Sta
     else
       Ownable.Log.constructorTransferred beneficiary
   { owner := beneficiary, cliffDuration := cliffDuration, released := UInt256.zero,
-    guard := Reentrancy.notEntered }
+    guard := Reentrancy.notEntered, ownership := Access.Ownership.none }
 
 @[pf_entry]
 def beneficiary (s : State) : Address :=
@@ -132,18 +134,34 @@ def vestedAmount (s : State) (timestamp : UInt64) : UInt256 :=
   else
     UInt256.zero
 
-/-- One-step Ownable rotation of the stored beneficiary. Zero `newOwner` reverts
-`OwnableInvalidOwner(newOwner)`. Non-owner reverts `OwnableUnauthorizedAccount(caller)`. Success emits
-`OwnershipTransferred(previous, newOwner)`. -/
+/-- Step 1 of Ownable2Step rotation. Zero `newOwner` reverts `ZeroAddress()`. Non-owner reverts
+`OwnableUnauthorizedAccount(caller)`. Success emits `OwnershipTransferStarted(owner, newOwner)`. -/
 @[pf_entry]
 def transferOwnership (s : State) (newOwner : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
     if Address.isZero newOwner then
-      .ok (s, Revert.ownableInvalidOwner newOwner)
+      .ok (s, Revert.zeroAddress)
     else
-      .ok ({ s with owner := newOwner }, Ownable.Log.ownershipTransferred s.owner newOwner)
+      .ok ({ s with ownership := Access.Ownership.nominate s.ownership newOwner },
+        Ownable.Log.ownershipTransferStarted s.owner newOwner)
   else
     .ok (s, Access.ownerViolation)
+
+/-- Step 2. The nominee becomes the stored beneficiary. The owner-field write is explicit here
+so Extract keeps the owner stores beside the log. Non-nominee reverts
+`OwnableUnauthorizedAccount(caller)`. Success emits `OwnershipTransferred(previous, pending)`. -/
+@[pf_entry]
+def acceptOwnership (s : State) : Except Error (State × UInt64) :=
+  if Access.Ownership.callerIsPending s.ownership then
+    .ok ({ owner := s.ownership, cliffDuration := s.cliffDuration, released := s.released, guard :=
+      s.guard, ownership := Access.Ownership.consume s.ownership },
+      Ownable.Log.ownershipTransferred s.owner s.ownership)
+  else
+    .ok (s, Access.ownerViolation)
+
+@[pf_entry]
+def pendingOwner (s : State) : Address :=
+  s.ownership
 
 /-- Release at most the currently releasable native ETH to the stored beneficiary. The
 parameter permits a partial payout; an over-release reverts with `Insufficient`. The ordered

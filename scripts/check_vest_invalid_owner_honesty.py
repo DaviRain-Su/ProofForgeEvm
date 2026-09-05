@@ -2,9 +2,9 @@
 """Fail when product docs still list Vest CREATE OwnableInvalidOwner as missing.
 
 VestLink and Vest20Link revert OwnableInvalidOwner(address) on CREATE of
-address(0) and on transferOwnership(address(0)). Sdk.OzAudit.temporaryGapCount
-stays 0. A doc that still lists that selector as the VestingWallet gap is a
-lying inventory. Remaining remainder is no Ownable2Step.
+address(0). transferOwnership(address(0)) now reverts ZeroAddress(), matching Ownable2Step.
+Sdk.OzAudit.temporaryGapCount stays 0. A doc that still lists CREATE OwnableInvalidOwner as the
+VestingWallet gap is a lying inventory. Remaining remainder is VestLink remains ETH-only.
 
 Usage:
     python3 scripts/check_vest_invalid_owner_honesty.py
@@ -36,17 +36,15 @@ STALE_PHRASES = (
 REQUIRED = (
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner beneficiary"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner beneficiary"),
-    (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner newOwner"),
-    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner newOwner"),
     (ROOT / "ProofForge" / "Evm" / "NativeFx.lean", "revertOwnableInvalidOwner"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "Base.lean", "def ownableInvalidOwner"),
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "evmRevertOwnableInvalidOwner"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "OwnableUnauthorizedAccount(address)"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "339e0387add0c97e"'),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "339e0387add0c97e"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "d105175ac1ff37bd"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "d105175ac1ff37bd"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "897a7934eb6291be"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "897a7934eb6291be"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "226bbefeac922a65"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "226bbefeac922a65"'),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_require_create_ownable_invalid_owner"),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_strip_ctor_invalid_owner_guard"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "zero new owner"),

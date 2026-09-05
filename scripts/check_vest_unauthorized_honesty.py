@@ -4,7 +4,7 @@
 Access.ownerViolation and VestLink/Vest20 transferOwnership revert
 OwnableUnauthorizedAccount(address). Sdk.OzAudit.temporaryGapCount stays 0.
 A doc that still lists Unauthorized versus OwnableUnauthorizedAccount as the
-VestingWallet remainder is a lying inventory. Remaining remainder is no Ownable2Step.
+VestingWallet remainder is a lying inventory. Remaining remainder is VestLink remains ETH-only.
 
 Usage:
     python3 scripts/check_vest_unauthorized_honesty.py
@@ -39,11 +39,11 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "NativeFx.lean", "revertOwnableUnauthorizedAccount"),
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "evmRevertOwnableUnauthorizedAccount"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
-    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "Remaining named gap on that row is no Ownable2Step."),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "339e0387add0c97e"'),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "339e0387add0c97e"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "d105175ac1ff37bd"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "d105175ac1ff37bd"'),
+    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "Remaining named gap on that row is VestLink remains ETH-only."),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "897a7934eb6291be"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "897a7934eb6291be"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "226bbefeac922a65"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "226bbefeac922a65"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", "VestLink ABI lost OwnableUnauthorizedAccount"),
     (ROOT / "Tests" / "EvmVest20Spec.lean", "Vest20Link ABI lost OwnableUnauthorizedAccount"),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_require_ownable_unauthorized_account"),

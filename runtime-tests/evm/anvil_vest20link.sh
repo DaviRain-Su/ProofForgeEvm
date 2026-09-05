@@ -60,6 +60,10 @@ sig_own="$(pf_evm_typed_event_sig "$abi" OwnershipTransferred)"
 pf_evm_require_equal "$sig_own" 'OwnershipTransferred(address,address)' \
   "ABI OwnershipTransferred signature"
 topic_own="$("$cast" keccak "$sig_own")"
+sig_started="$(pf_evm_typed_event_sig "$abi" OwnershipTransferStarted)"
+pf_evm_require_equal "$sig_started" 'OwnershipTransferStarted(address,address)' \
+  "ABI OwnershipTransferStarted signature"
+topic_started="$("$cast" keccak "$sig_started")"
 pf_evm_typed_event_check "$abi" "$receipt" OwnershipTransferred "$topic_own" \
   "{\"previousOwner\": \"$zero\", \"newOwner\": \"$beneficiary\"}" \
   "CREATE OwnershipTransferred LOG3"
@@ -148,11 +152,30 @@ fi
 pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'transferOwnership(address)' "$other")" "$other" \
   "non-owner transferOwnership"
-pf_evm_require_ownable_invalid_owner "$addr" "$beneficiary" \
-  "$("$cast" calldata 'transferOwnership(address)' "$zero")" "$zero" \
+pf_evm_require_zero_address "$addr" "$beneficiary" \
+  "$("$cast" calldata 'transferOwnership(address)' "$zero")" \
   "zero new owner"
-"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
-  "$addr" 'transferOwnership(address)' "$other" >/dev/null
+rotate_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'transferOwnership(address)' "$other")"
+pf_evm_typed_event_check "$abi" "$rotate_receipt" OwnershipTransferStarted "$topic_started" \
+  "{\"previousOwner\": \"$beneficiary\", \"newOwner\": \"$other\"}" \
+  "transferOwnership OwnershipTransferStarted LOG3"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'pendingOwner()(address)')" \
+  "$other" "pendingOwner after nominate"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'beneficiary()(address)')" \
+  "$beneficiary" "ERC-20 beneficiary unchanged until accept"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'acceptOwnership()' >/dev/null 2>&1; then
+  echo "FAIL: current-owner acceptOwnership unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_ownable_unauthorized_account "$addr" "$beneficiary" \
+  "$("$cast" calldata 'acceptOwnership()')" "$beneficiary" \
+  "current-owner acceptOwnership"
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'acceptOwnership()' >/dev/null
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'pendingOwner()(address)')" \
+  "$zero" "pendingOwner cleared after accept"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'beneficiary()(address)')" \
   "$other" "ERC-20 beneficiary rotated"
 
@@ -232,7 +255,7 @@ yul="$root/build/evm/Vest20Link.yul"
 ctor_mut_dir="$root/build/evm/vest20link-ctor-mut"
 rm -rf "$ctor_mut_dir"
 mkdir -p "$ctor_mut_dir"
-pf_evm_strip_ctor_invalid_owner_guard "$yul" Vest20Link "$ctor_mut_dir/Vest20Link.yul"
+pf_evm_strip_ctor_invalid_owner_guard "$yul" Vest20Link "$ctor_mut_dir/Vest20Link.yul" 0
 ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$ctor_mut_dir/Vest20Link.yul" | "$python" -I -S -c "
 import sys
