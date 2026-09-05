@@ -2,7 +2,7 @@
 """Fail when ERC-4626 docs still claim 1:1 conversion or lose floor/ceiling math.
 
 Erc4626.convertToShares is floor assets * (totalSupply + 1) / (totalAssets + 1) via mulDivOffset.
-Erc4626.previewMint is ceiling shares * totalAssets / totalSupply.
+Erc4626.previewMint is ceiling shares * totalAssets / totalSupply via mulDivCeil.
 Erc4626.previewWithdraw is ceiling assets * totalSupply / totalAssets.
 Empty supply is 1:1. Virtual +1 when supply is nonzero (OZ `_decimalsOffset() == 0`).
 Sdk.OzAudit.temporaryGapCount stays 0.
@@ -30,6 +30,7 @@ STALE_PHRASES = (
     "`mulDiv` stays out",
     "There is no virtual-offset inflation defense, fee accrual, flash-loan",
     "Virtual-offset inflation defense stays out",
+    "Ceiling conversions still use checked 256-bit mul. Virtual-offset is Phase 33",
 )
 
 REQUIRED = (
@@ -62,12 +63,24 @@ REQUIRED = (
         "mulDivOffset shares totalAssets totalSupply",
     ),
     (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "def mulDivCeil (left right denom : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "mulDivCeil shares totalAssets totalSupply",
+    ),
+    (
         ROOT / "ProofForge" / "Evm" / "Runtime.lean",
         "def evmMulDiv256 (a b denom : UInt256) : UInt256 :=",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Runtime.lean",
         "def evmMulDivOffset256 (a b denom : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Runtime.lean",
+        "def evmMulDivCeil256 (a b denom : UInt256) : UInt256 :=",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "WideWord.lean",
@@ -78,12 +91,20 @@ REQUIRED = (
         "| mulDivOffset256 (limb : Nat)",
     ),
     (
+        ROOT / "ProofForge" / "Evm" / "WideWord.lean",
+        "| mulDivCeil256 (limb : Nat)",
+    ),
+    (
         ROOT / "ProofForge" / "Extract" / "Decode.lean",
         "endsWith baseE \".evmMulDiv256\" then some (.mulDiv256 limb.toNat)",
     ),
     (
         ROOT / "ProofForge" / "Extract" / "Decode.lean",
         "endsWith baseE \".evmMulDivOffset256\" then some (.mulDivOffset256 limb.toNat)",
+    ),
+    (
+        ROOT / "ProofForge" / "Extract" / "Decode.lean",
+        "endsWith baseE \".evmMulDivCeil256\" then some (.mulDivCeil256 limb.toNat)",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
@@ -108,10 +129,6 @@ REQUIRED = (
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
         "def assetsForMint (shares totalSupply totalAssets : UInt256) : UInt256 :=",
-    ),
-    (
-        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
-        "if UInt256.eq (UInt256.mod prod totalSupply) UInt256.zero then q",
     ),
     (
         ROOT / "Examples" / "Evm" / "Vault4626Link.lean",
@@ -194,6 +211,10 @@ REQUIRED = (
         '"full-precision convertToShares(2^128) is 2^128"',
     ),
     (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"full-precision previewMint(2^128) is 2^128"',
+    ),
+    (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 ceiling `previewMint`",
     ),
@@ -208,6 +229,10 @@ REQUIRED = (
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 virtual-offset +1",
+    ),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "ERC-4626 ceiling `previewMint` via `mulDivCeil`",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",

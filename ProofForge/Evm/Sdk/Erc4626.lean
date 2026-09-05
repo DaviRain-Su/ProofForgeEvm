@@ -7,12 +7,13 @@ namespace ProofForge.Evm.Sdk.Erc4626
 
 Compile-time fixed underlying asset, floor `assets * (totalSupply + 1) / (totalAssets + 1)` and floor
 `shares * (totalAssets + 1) / (totalSupply + 1)` conversion via `mulDivOffset`, ceiling
-`previewMint`, ceiling `previewWithdraw`, and closed ERC-20 call policy helpers. Empty
+`previewMint` via `mulDivCeil`, ceiling `previewWithdraw`, and closed ERC-20 call policy helpers. Empty
 supply is 1:1 so the first depositor is not divided by zero. Floor conversions add a virtual
 +1 share and +1 asset when supply is nonzero (OZ `_decimalsOffset() == 0`), folded into one
 WideWord query. There is no fee accrual, flash-loan
-callback, or dynamic asset rotation. Ceiling conversions still use checked 256-bit
-mul and omit the virtual offset. Nonzero `_decimalsOffset` stays out. Consumers pair this module with `Fungible.Balances`
+callback, or dynamic asset rotation. Ceiling `previewMint` uses full-precision `mulDivCeil`.
+Ceiling `previewWithdraw` still uses checked 256-bit mul and omits the virtual offset.
+Nonzero `_decimalsOffset` stays out. Consumers pair this module with `Fungible.Balances`
 for share ledger storage, `Sdk.Reentrancy` around external asset movement, and closed
 `ERC20` / `SafeErc20` facades.
 
@@ -40,6 +41,11 @@ Checked `+ 1` reverts on overflow. -/
 @[pf_inline] def mulDivOffset (left right denom : UInt256) : UInt256 :=
   UInt256.mulDivOffset left right denom
 
+/-- Ceiling `(left * right) / denom` with a 512-bit intermediate (OZ `Math.mulDiv` + round up).
+Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. -/
+@[pf_inline] def mulDivCeil (left right denom : UInt256) : UInt256 :=
+  UInt256.mulDivCeil left right denom
+
 /-- Virtual +1 share and +1 asset (OZ `_decimalsOffset() == 0`). -/
 @[pf_inline] def virtualOne : UInt256 := ⟨1, 0, 0, 0⟩
 
@@ -60,14 +66,10 @@ supply answers `shares` (1:1). -/
 
 /-- Ceiling `shares * totalAssets / totalSupply` when the vault already has shares.
 Empty supply answers `shares` (1:1). A nonzero remainder adds one asset.
-Checked 256-bit mul still reverts if the product overflows. Ceiling conversions omit the virtual offset. -/
+`mulDivCeil` keeps a 512-bit intermediate. Ceiling conversions omit the virtual offset. -/
 @[pf_inline] def assetsForMint (shares totalSupply totalAssets : UInt256) : UInt256 :=
   if UInt256.eq totalSupply UInt256.zero then shares
-  else
-    let prod := UInt256.mul shares totalAssets
-    let q := UInt256.div prod totalSupply
-    if UInt256.eq (UInt256.mod prod totalSupply) UInt256.zero then q
-    else UInt256.add q ⟨1, 0, 0, 0⟩
+  else mulDivCeil shares totalAssets totalSupply
 
 /-- Ceiling `assets * totalSupply / totalAssets` when the vault already has shares.
 Empty supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0,

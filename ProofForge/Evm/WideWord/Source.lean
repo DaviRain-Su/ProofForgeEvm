@@ -125,6 +125,17 @@ projecting `UInt256.wN (add256 …)`, so Extract does not flatten the projection
 @[pf_inline] def mulDivOffset (a b d : UInt256) : UInt256 :=
   ⟨mulDivOffsetW0 a b d, mulDivOffsetW1 a b d, mulDivOffsetW2 a b d, mulDivOffsetW3 a b d⟩
 
+@[pf_inline] def mulDivCeil256 (a b d : UInt256) : UInt256 :=
+  evmMulDivCeil256 a b d
+
+@[pf_inline] def mulDivCeilW0 (a b d : UInt256) : UInt64 := (evmMulDivCeil256 a b d).w0
+@[pf_inline] def mulDivCeilW1 (a b d : UInt256) : UInt64 := (evmMulDivCeil256 a b d).w1
+@[pf_inline] def mulDivCeilW2 (a b d : UInt256) : UInt64 := (evmMulDivCeil256 a b d).w2
+@[pf_inline] def mulDivCeilW3 (a b d : UInt256) : UInt64 := (evmMulDivCeil256 a b d).w3
+
+@[pf_inline] def mulDivCeil (a b d : UInt256) : UInt256 :=
+  ⟨mulDivCeilW0 a b d, mulDivCeilW1 a b d, mulDivCeilW2 a b d, mulDivCeilW3 a b d⟩
+
 @[pf_inline] def ge256 (a b : UInt256) : Bool :=
   evmGe256 a b
 

@@ -344,6 +344,11 @@ returns `a`. -/
 @[irreducible] def evmMulDivOffset256 (a b denom : UInt256) : UInt256 :=
   let _ := b; let _ := denom; a
 
+/-- Ceiling `(a * b) / denom` with a 512-bit intermediate (OZ `Math.mulDiv` + round up).
+Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. Host returns `a`. -/
+@[irreducible] def evmMulDivCeil256 (a b denom : UInt256) : UInt256 :=
+  let _ := b; let _ := denom; a
+
 /-- `a ≥ b`。Yul 比打包后的 256-bit word。宿主返回 `true`。 -/
 @[irreducible] def evmGe256 (_a _b : UInt256) : Bool := true
 
