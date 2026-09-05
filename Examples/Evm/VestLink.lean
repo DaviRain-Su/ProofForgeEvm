@@ -3,7 +3,8 @@ import ProofForge.Evm.Sdk
 /-!
 Single-beneficiary native-ETH vesting consumer. Constructor immutables are the beneficiary,
 `start`, and `duration`; a `released` counter tracks payouts and an ordered storage lock protects
-the native-ETH call. There is no ERC-20 token map, beneficiary rotation, or schedule mutation.
+the native-ETH call. The ERC-20 `released[token]` map lives on `Vest20Link`. There is no
+beneficiary rotation or schedule mutation.
 Invalid configuration (zero beneficiary or overflowing `start + duration`) fails closed to zero
 views and a no-op `release`.
 
