@@ -3,7 +3,7 @@
 
 TwoStepCounter and Credits CREATE of address(0) revert OwnableInvalidOwner(address).
 CREATE of a nonzero owner logs OwnershipTransferred(address(0), owner). Nominate-zero
-on transferOwnership still reverts ZeroAddress(). Sdk.OzAudit.temporaryGapCount stays 0.
+on transferOwnership reverts OwnableInvalidOwner(address). Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
     python3 scripts/check_twostep_ctor_honesty.py
@@ -46,7 +46,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
-        "nominate-zero still `ZeroAddress()`",
+        "Nominate-zero reverts `OwnableInvalidOwner(address)`.",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Ownable.lean",
@@ -54,7 +54,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Ownable.lean",
-        "`transferOwnership` of a zero nominee still reverts `ZeroAddress()`",
+        "`transferOwnership` of a zero nominee reverts",
     ),
     (ROOT / "Tests" / "EvmOzPolicyEventSpec.lean", "ctorHasOwnableInvalidOwner"),
     (ROOT / "Tests" / "EvmOzPolicyEventSpec.lean", "ctorHasConstructorTransferred"),
@@ -66,8 +66,8 @@ REQUIRED = (
     (ROOT / "runtime-tests" / "evm" / "anvil_credits.sh", "CREATE OwnershipTransferred LOG3"),
     (ROOT / "runtime-tests" / "evm" / "anvil_twostep_counter.sh", "zero-owner constructor CREATE"),
     (ROOT / "runtime-tests" / "evm" / "anvil_credits.sh", "zero-owner constructor CREATE"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_twostep_counter.sh", 'TwoStepCounter.yul" 0'),
-    (ROOT / "runtime-tests" / "evm" / "anvil_credits.sh", 'Credits.yul" 0'),
+    (ROOT / "runtime-tests" / "evm" / "anvil_twostep_counter.sh", 'TwoStepCounter.yul"'),
+    (ROOT / "runtime-tests" / "evm" / "anvil_credits.sh", 'Credits.yul"'),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "TwoStepCounter/Credits CREATE OwnableInvalidOwner plus OwnershipTransferred",

@@ -96,10 +96,10 @@ private def expectVestLink : CommandElabM Unit := do
     throwError s!"VestLink ABI lost vesting surface:\n{abi}"
   unless !abi.contains "\"name\":\"royaltyInfo\"" do
     throwError "VestLink must not grow a royalty surface"
-  unless abi.contains "\"name\":\"ZeroAddress\"" do
-    throwError "VestLink ABI lost ZeroAddress"
   unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
     throwError "VestLink ABI lost OwnableInvalidOwner"
+  unless !abi.contains "\"name\":\"ZeroAddress\"" do
+    throwError "VestLink must not advertise ZeroAddress"
   unless abi.contains "\"name\":\"OwnableUnauthorizedAccount\"" do
     throwError "VestLink ABI lost OwnableUnauthorizedAccount"
   unless !abi.contains "\"name\":\"Unauthorized\"" do

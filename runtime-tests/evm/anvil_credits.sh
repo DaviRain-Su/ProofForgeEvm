@@ -200,6 +200,18 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'creditOf(address)(uint256)' "$third")" \
   0 "new-owner claim debits credit"
 
+# zero-address nomination reverts.
+if "$cast" send --rpc-url "$rpc" --private-key "$third_key" \
+    "$addr" 'transferOwnership(address)' \
+    0x0000000000000000000000000000000000000000 >/dev/null 2>&1; then
+  echo "FAIL: zero-address transferOwnership unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_ownable_invalid_owner "$addr" "$third" \
+  "$("$cast" calldata 'transferOwnership(address)' \
+    0x0000000000000000000000000000000000000000)" "$zero" \
+  "zero-address transferOwnership"
+
 # Renunciation clears both the owner and a live pending nomination.
 "$cast" send --rpc-url "$rpc" --private-key "$third_key" \
   "$addr" 'transferOwnership(address)' "$sender" >/dev/null
@@ -239,7 +251,7 @@ yul="$root/build/evm/Credits.yul"
 ctor_mut_dir="$root/build/evm/credits-ctor-mut"
 rm -rf "$ctor_mut_dir"
 mkdir -p "$ctor_mut_dir"
-pf_evm_strip_ctor_invalid_owner_guard "$yul" Credits "$ctor_mut_dir/Credits.yul" 0
+pf_evm_strip_ctor_invalid_owner_guard "$yul" Credits "$ctor_mut_dir/Credits.yul"
 ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$ctor_mut_dir/Credits.yul" | "$python" -I -S -c "
 import sys

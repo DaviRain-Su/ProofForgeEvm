@@ -2,7 +2,7 @@
 """Fail when product docs still list Vest CREATE OwnableInvalidOwner as missing.
 
 VestLink and Vest20Link revert OwnableInvalidOwner(address) on CREATE of
-address(0). transferOwnership(address(0)) now reverts ZeroAddress(), matching Ownable2Step.
+address(0). transferOwnership(address(0)) reverts OwnableInvalidOwner(address).
 Sdk.OzAudit.temporaryGapCount stays 0. A doc that still lists CREATE OwnableInvalidOwner as the
 VestingWallet gap is a lying inventory. Remaining named restriction is VestLink is the
 ETH-only smaller profile (Vest20Link is dual-asset).

@@ -14,7 +14,7 @@ address. All storage writes stay in this file. Successful `transferOwnership` em
 `OwnershipTransferred`; renunciation clears both owner and pending nominee. Successful `pause` /
 `unpause` emit `Paused` / `Unpaused`. CREATE of a zero owner reverts `OwnableInvalidOwner(address)`.
 The success path emits `OwnershipTransferred(address(0), owner)`. Nominate-zero on
-`transferOwnership` still reverts `ZeroAddress()`.
+`transferOwnership` reverts `OwnableInvalidOwner(address)`.
 -/
 
 def u64Max : UInt64 := ~~~(0 : UInt64)
@@ -41,13 +41,13 @@ def init (owner : Address) : State :=
   { owner, paused := Pausable.running, count := 0, ownership := Access.Ownership.none }
 
 /-- Step 1 of ownership transfer: current owner nominates `candidate`.
-    Non-owner → `Unauthorized(caller)`; zero candidate → `ZeroAddress()`.
+    Non-owner → `OwnableUnauthorizedAccount(caller)`; zero candidate → `OwnableInvalidOwner(address)`.
     Success emits `OwnershipTransferStarted(owner, candidate)`. -/
 @[pf_entry]
 def transferOwnership (s : State) (candidate : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
     if Address.isZero candidate then
-      .ok (s, Revert.zeroAddress)
+      .ok (s, Revert.ownableInvalidOwner candidate)
     else
       .ok ({ s with ownership := Access.Ownership.nominate s.ownership candidate },
         Ownable.Log.ownershipTransferStarted s.owner candidate)

@@ -40,8 +40,10 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   `authorizationState` as a Bool view of the auth-used slot.
   Remaining named restriction on that row is the remaining draft interfaces.
   Row 1 (`access/Ownable`, `Ownable2Step`) stays PARTIAL after TwoStepCounter/Credits CREATE
-  reverts `OwnableInvalidOwner(address)` and logs `OwnershipTransferred(address(0), owner)`.
-  Remaining named gap on that row is nominate-zero still `ZeroAddress()`.
+  reverts `OwnableInvalidOwner(address)` and logs `OwnershipTransferred(address(0), owner)`,
+  and after nominate-zero also reverts `OwnableInvalidOwner(address)`.
+  Nominate-zero reverts `OwnableInvalidOwner(address)`.
+  Remaining named restriction on that row is the bounded two-step profile.
   `temporaryGapCount` stays 0.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,

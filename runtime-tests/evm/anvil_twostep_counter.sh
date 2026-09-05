@@ -199,9 +199,9 @@ if "$cast" send --rpc-url "$rpc" --private-key "$third_key" \
   echo "FAIL: zero-address transferOwnership unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_zero_address "$addr" "$third" \
+pf_evm_require_ownable_invalid_owner "$addr" "$third" \
   "$("$cast" calldata 'transferOwnership(address)' \
-    0x0000000000000000000000000000000000000000)" \
+    0x0000000000000000000000000000000000000000)" "$zero" \
   "zero-address transferOwnership"
 
 # Renunciation clears both the owner and a live pending nomination.
@@ -243,7 +243,7 @@ yul="$root/build/evm/TwoStepCounter.yul"
 ctor_mut_dir="$root/build/evm/twostep-ctor-mut"
 rm -rf "$ctor_mut_dir"
 mkdir -p "$ctor_mut_dir"
-pf_evm_strip_ctor_invalid_owner_guard "$yul" TwoStepCounter "$ctor_mut_dir/TwoStepCounter.yul" 0
+pf_evm_strip_ctor_invalid_owner_guard "$yul" TwoStepCounter "$ctor_mut_dir/TwoStepCounter.yul"
 ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$ctor_mut_dir/TwoStepCounter.yul" | "$python" -I -S -c "
 import sys
