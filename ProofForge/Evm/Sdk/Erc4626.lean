@@ -5,14 +5,16 @@ namespace ProofForge.Evm.Sdk.Erc4626
 /-!
 # EVM SDK bounded ERC-4626 vault profile
 
-Compile-time fixed underlying asset, 1:1 share/asset conversion, and closed ERC-20 call policy
-helpers. There is no exchange-rate math, fee accrual, flash-loan callback, or dynamic asset
-rotation. Consumers pair this module with `Fungible.Balances` for share ledger storage,
-`Sdk.Reentrancy` around external asset movement, and closed `ERC20` / `SafeErc20` facades.
+Compile-time fixed underlying asset, floor `assets * totalSupply / totalAssets` conversion,
+and closed ERC-20 call policy helpers. Empty supply is 1:1 so the first depositor is not
+divided by zero. There is no virtual-offset inflation defense, fee accrual, flash-loan
+callback, or dynamic asset rotation. Consumers pair this module with `Fungible.Balances`
+for share ledger storage, `Sdk.Reentrancy` around external asset movement, and closed
+`ERC20` / `SafeErc20` facades.
 
 Fail-closed gates:
 - Zero asset address yields zero views and no deposit/withdraw paths.
-- Conversion helpers are identity only when `canVault asset`; otherwise zero.
+- Conversion helpers run only when `canVault asset`; otherwise zero.
 - Share credit/debit and asset movement remain application-owned with explicit ordering.
 -/
 
@@ -23,25 +25,48 @@ Fail-closed gates:
 @[pf_inline] def canVault (asset : Address) : Bool :=
   wellFormedAsset asset
 
-/-- 1:1 `convertToShares`: assets equal shares when the asset gate passes. -/
-@[pf_inline] def convertToShares (asset : Address) (assets : UInt256) : UInt256 :=
-  if canVault asset then assets else UInt256.zero
+/-- Floor `assets * totalSupply / totalAssets` when the vault already has shares. Empty
+supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0,
+because checked `UInt256.div` reverts on a zero divisor. Callers that already passed
+`canVault` use this so a stored mint amount does not mention `Immutable.address`. -/
+@[pf_inline] def sharesForDeposit (assets totalSupply totalAssets : UInt256) : UInt256 :=
+  if UInt256.eq totalSupply UInt256.zero then assets
+  else if UInt256.eq totalAssets UInt256.zero then UInt256.zero
+  else UInt256.div (UInt256.mul assets totalSupply) totalAssets
 
-/-- 1:1 `convertToAssets`: shares equal assets when the asset gate passes. -/
-@[pf_inline] def convertToAssets (asset : Address) (shares : UInt256) : UInt256 :=
-  if canVault asset then shares else UInt256.zero
+/-- Floor `shares * totalAssets / totalSupply` when the vault already has shares. Empty
+supply answers `shares` (1:1). -/
+@[pf_inline] def assetsForRedeem (shares totalSupply totalAssets : UInt256) : UInt256 :=
+  if UInt256.eq totalSupply UInt256.zero then shares
+  else UInt256.div (UInt256.mul shares totalAssets) totalSupply
 
-@[pf_inline] def previewDeposit (asset : Address) (assets : UInt256) : UInt256 :=
-  convertToShares asset assets
+/-- Floor `assets * totalSupply / totalAssets` when the vault already has shares. Empty
+supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0. -/
+@[pf_inline] def convertToShares (asset : Address)
+    (assets totalSupply totalAssets : UInt256) : UInt256 :=
+  if canVault asset then sharesForDeposit assets totalSupply totalAssets else UInt256.zero
 
-@[pf_inline] def previewMint (asset : Address) (shares : UInt256) : UInt256 :=
-  convertToAssets asset shares
+/-- Floor `shares * totalAssets / totalSupply` when the vault already has shares. Empty
+supply answers `shares` (1:1). -/
+@[pf_inline] def convertToAssets (asset : Address)
+    (shares totalSupply totalAssets : UInt256) : UInt256 :=
+  if canVault asset then assetsForRedeem shares totalSupply totalAssets else UInt256.zero
 
-@[pf_inline] def previewWithdraw (asset : Address) (assets : UInt256) : UInt256 :=
-  convertToShares asset assets
+@[pf_inline] def previewDeposit (asset : Address)
+    (assets totalSupply totalAssets : UInt256) : UInt256 :=
+  convertToShares asset assets totalSupply totalAssets
 
-@[pf_inline] def previewRedeem (asset : Address) (shares : UInt256) : UInt256 :=
-  convertToAssets asset shares
+@[pf_inline] def previewMint (asset : Address)
+    (shares totalSupply totalAssets : UInt256) : UInt256 :=
+  convertToAssets asset shares totalSupply totalAssets
+
+@[pf_inline] def previewWithdraw (asset : Address)
+    (assets totalSupply totalAssets : UInt256) : UInt256 :=
+  convertToShares asset assets totalSupply totalAssets
+
+@[pf_inline] def previewRedeem (asset : Address)
+    (shares totalSupply totalAssets : UInt256) : UInt256 :=
+  convertToAssets asset shares totalSupply totalAssets
 
 /-- Canonical ERC-4626 typed events. Indexed flags follow the standard ABI layout. -/
 inductive Notice where

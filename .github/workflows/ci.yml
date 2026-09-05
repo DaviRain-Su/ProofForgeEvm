@@ -232,6 +232,9 @@ jobs:
       - name: Check OpenCall packed-tail length-update honesty
         run: python3 scripts/check_opencall_length_honesty.py
 
+      - name: Check ERC-4626 floor exchange-rate honesty
+        run: python3 scripts/check_erc4626_rate_honesty.py
+
       - name: Check ERC-721 3-arg safeTransferFrom honesty
         run: python3 scripts/check_safe3_honesty.py
 

@@ -421,7 +421,24 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
             some (.ext (.evm (.component (.wideWord query))) #[a0, a1, a2, a3, amount])
           | _, _ => none
       | none, none, none =>
-        if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMapGetAddr256 ||
+        -- `wN (ite c a b)` is not a constructor projection. Rewrite a UInt256 ite to
+        -- `ite c (wN a) (wN b)` so operand position matches the return path. UInt128
+        -- (and other multi-limb) ites stay refused; BoundedVec UInt128 getD must fail closed.
+        if isConstNamed baseE ``ite || isConstNamed baseE ``dite then
+          let bargs := baseE.getAppArgs
+          if bargs.size ≥ 5 && isUInt256Type bargs[0]! then
+            let peel (value : Expr) : Expr :=
+              match strip value with
+              | .lam _ _ body _ => body.lowerLooseBVars 1 1
+              | value => value
+            asVal env fuel (mkAppN (mkConst ``ite [Level.one]) #[
+              mkConst ``UInt64,
+              bargs[bargs.size - 4]!,
+              bargs[bargs.size - 3]!,
+              mkApp (mkConst (limbConst leaf)) (peel bargs[bargs.size - 2]!),
+              mkApp (mkConst (limbConst leaf)) (peel bargs[bargs.size - 1]!)])
+          else none
+        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMapGetAddr256 ||
             endsWith baseE ".evmMapGetAddr256" then
           let gargs := baseE.getAppArgs
           if gargs.size < 2 then none
@@ -1199,7 +1216,7 @@ private partial def uint256Leaves (env : Environment) (e : Expr) :
   let proj (name : String) : Ops.Val :=
     (val env (mkApp (mkConst (projConst name)) e)).getD (flattenField (.arg 0) name)
   -- A wide `if c then a else b` selects each limb: `wN (ite c a b)` is `ite c (wN a) (wN b)`,
-  -- which `asVal` already lowers to one `.select`.
+  -- which `asValNamed` lowers to one `.select` in operand position as well as here.
   if isConstNamed e ``ite && e.getAppArgs.size ≥ 5 then
     let args := e.getAppArgs
     let n := args.size

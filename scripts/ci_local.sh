@@ -149,6 +149,7 @@ run_guards() {
   python3 scripts/check_yes_blocked_honesty.py
   python3 scripts/check_opencall_string_honesty.py
   python3 scripts/check_opencall_length_honesty.py
+  python3 scripts/check_erc4626_rate_honesty.py
   python3 scripts/check_safe3_honesty.py
   python3 scripts/check_erc721_enum_honesty.py
 }
