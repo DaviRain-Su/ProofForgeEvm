@@ -24,6 +24,7 @@ import Tests.EvmMetadataUriSpec
 import Tests.EvmEip712DomainSpec
 import Tests.EvmIerc5313Spec
 import Tests.EvmIerc1271Spec
+import Tests.EvmReceiverSpec
 import Tests.EvmIerc6372Spec
 import Tests.EvmEcdsaSpec
 import Tests.EvmVestingSpec

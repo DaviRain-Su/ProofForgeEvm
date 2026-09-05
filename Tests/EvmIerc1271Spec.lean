@@ -90,6 +90,12 @@ private def expectSignerLink : CommandElabM Unit := do
   -- the check has no code-size branch; any answer other than the left-aligned selector reverts.
   unless yul.contains s!"shl(224, 0x{magic}))) \{ revert(0, 0) }" && !yul.contains "extcodesize(" do
     throwError "SignerLink Yul lost the magic equality gate or grew a code-size guard"
+  -- The signature stays in calldata: 65 byte locals and 65 guarded `mstore8`s cost 3.5 KB of
+  -- runtime code, one `calldatacopy` of the padded length costs a few opcodes.
+  unless yul.contains "let abi_bytes2 := add(add(4, abi_data0), 32)\n" &&
+      !yul.contains "let arg3 := 0\n" && !yul.contains "arg3 := byte(0, calldataload" &&
+      yul.contains "calldatacopy(100, abi_bytes2, " && !yul.contains "mstore8(1" do
+    throwError "SignerLink Yul materializes the signature per byte instead of copying calldata"
   unless IR.digestHex evm == "7edf01a87d0a1652" do
     throwError s!"SignerLink digest drifted: {IR.digestHex evm}"
   logInfo m!"signerlink: digest={IR.digestHex evm} plan-ok abi-ok"

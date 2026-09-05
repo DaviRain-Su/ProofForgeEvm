@@ -20,6 +20,8 @@ structure Context (σ : Type) where
   valKey : Ops.Val → String
   resolveStaticU64Slot : String → Except String Nat := fun field =>
     .error s!"extract/unsupported: no static UInt64 resolver for {field}"
+  /-- The calldata payload offset when these limbs are one packed `bytes` entry parameter. -/
+  calldataBytes : Array Ops.Val → Option String := fun _ => none
   indent : String
 
 private def Context.hashedMap (context : Context σ) : HashedMap.Emit.Context σ :=
@@ -52,6 +54,7 @@ private def Context.openCall (context : Context σ) : OpenCall.Emit.Context σ :
     rememberWide := context.rememberWide
     lookupWide := context.lookupWide
     valKey := context.valKey
+    calldataBytes := context.calldataBytes
     indent := context.indent }
 
 private def Context.nativeFx (context : Context σ) : NativeFx.Emit.Context σ :=
