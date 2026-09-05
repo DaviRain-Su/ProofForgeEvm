@@ -14,6 +14,11 @@ contract ERC20Mock {
         balanceOf[to] += amt;
     }
 
+    function burn(address from, uint256 amt) external {
+        require(balanceOf[from] >= amt, "bal");
+        balanceOf[from] -= amt;
+    }
+
     function setReturnFalse(bool v) external {
         returnFalse = v;
     }

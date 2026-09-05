@@ -29,6 +29,10 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "else if UInt256.eq totalAssets UInt256.zero then UInt256.zero",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
         "UInt256.div (UInt256.mul assets totalSupply) totalAssets",
     ),
     (
@@ -66,6 +70,14 @@ REQUIRED = (
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
         '"second deposit mints 50"',
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"zero totalAssets convertToShares is 0"',
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "ERC20Mock.sol",
+        "function burn(address from, uint256 amt) external {",
     ),
     (
         ROOT / "Tests" / "EvmErc4626Spec.lean",

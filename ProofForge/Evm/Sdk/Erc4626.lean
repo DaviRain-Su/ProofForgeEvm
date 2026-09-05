@@ -26,10 +26,12 @@ Fail-closed gates:
   wellFormedAsset asset
 
 /-- Floor `assets * totalSupply / totalAssets` when the vault already has shares. Empty
-supply answers `assets` (1:1). `DIV` of a zero `totalAssets` answers 0. Callers that already
-passed `canVault` use this so a stored mint amount does not mention `Immutable.address`. -/
+supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0,
+because checked `UInt256.div` reverts on a zero divisor. Callers that already passed
+`canVault` use this so a stored mint amount does not mention `Immutable.address`. -/
 @[pf_inline] def sharesForDeposit (assets totalSupply totalAssets : UInt256) : UInt256 :=
   if UInt256.eq totalSupply UInt256.zero then assets
+  else if UInt256.eq totalAssets UInt256.zero then UInt256.zero
   else UInt256.div (UInt256.mul assets totalSupply) totalAssets
 
 /-- Floor `shares * totalAssets / totalSupply` when the vault already has shares. Empty
@@ -39,7 +41,7 @@ supply answers `shares` (1:1). -/
   else UInt256.div (UInt256.mul shares totalAssets) totalSupply
 
 /-- Floor `assets * totalSupply / totalAssets` when the vault already has shares. Empty
-supply answers `assets` (1:1). `DIV` of a zero `totalAssets` answers 0. -/
+supply answers `assets` (1:1). Zero `totalAssets` with outstanding shares answers 0. -/
 @[pf_inline] def convertToShares (asset : Address)
     (assets totalSupply totalAssets : UInt256) : UInt256 :=
   if canVault asset then sharesForDeposit assets totalSupply totalAssets else UInt256.zero
