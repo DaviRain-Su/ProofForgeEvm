@@ -78,7 +78,7 @@ private def expectAuth3009Link : CommandElabM Unit := do
   unless yul.contains s!"0x{cancelTypeHash}" &&
       yul.contains s!"0x{authCanceledTopic}" do
     throwError "Auth3009Link Yul missing CancelAuthorization typehash or AuthorizationCanceled"
-  unless IR.digestHex program == "3f8b259e6f5b6c23" do
+  unless IR.digestHex program == "b3ad9c6416b7a221" do
     throwError s!"Auth3009Link digest drifted: {IR.digestHex program}"
 
 elab "#pf_guard_evm_erc3009" : command => expectAuth3009Link

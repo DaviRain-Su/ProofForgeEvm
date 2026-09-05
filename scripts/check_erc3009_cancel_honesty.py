@@ -54,6 +54,8 @@ REQUIRED = (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
         "Remaining named restriction on that row is the remaining draft interfaces.",
     ),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "b3ad9c6416b7a221"'),
+    (ROOT / "Tests" / "EvmErc3009Spec.lean", '"b3ad9c6416b7a221"'),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "OzAudit.pathTagOf 16 == OzAudit.tagIfaceDraft"),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "!OzAudit.isTemporaryGap 16"),
     (
