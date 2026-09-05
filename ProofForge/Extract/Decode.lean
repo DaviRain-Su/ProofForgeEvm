@@ -421,11 +421,12 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
             some (.ext (.evm (.component (.wideWord query))) #[a0, a1, a2, a3, amount])
           | _, _ => none
       | none, none, none =>
-        -- `wN (ite c a b)` is not a constructor projection. Rewrite to
-        -- `ite c (wN a) (wN b)` so operand position matches the return path.
+        -- `wN (ite c a b)` is not a constructor projection. Rewrite a UInt256 ite to
+        -- `ite c (wN a) (wN b)` so operand position matches the return path. UInt128
+        -- (and other multi-limb) ites stay refused; BoundedVec UInt128 getD must fail closed.
         if isConstNamed baseE ``ite || isConstNamed baseE ``dite then
           let bargs := baseE.getAppArgs
-          if bargs.size ≥ 4 then
+          if bargs.size ≥ 5 && isUInt256Type bargs[0]! then
             let peel (value : Expr) : Expr :=
               match strip value with
               | .lam _ _ body _ => body.lowerLooseBVars 1 1

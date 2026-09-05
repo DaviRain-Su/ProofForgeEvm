@@ -32,6 +32,10 @@ REQUIRED = (
         "else if UInt256.eq totalAssets UInt256.zero then UInt256.zero",
     ),
     (
+        ROOT / "ProofForge" / "Extract" / "Decode.lean",
+        "bargs.size ≥ 5 && isUInt256Type bargs[0]!",
+    ),
+    (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
         "UInt256.div (UInt256.mul assets totalSupply) totalAssets",
     ),
