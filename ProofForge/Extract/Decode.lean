@@ -819,6 +819,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
   else if (isConstNamed e ``UInt8.toUInt64 || isConstNamed e ``UInt64.toUInt8 ||
       isConstNamed e ``UInt16.toUInt64 || isConstNamed e ``UInt64.toUInt16 ||
       isConstNamed e ``UInt32.toUInt64 || isConstNamed e ``UInt64.toUInt32 ||
+      isConstNamed e ``UInt32.ofNat || isConstNamed e ``UInt32.toNat ||
       isConstNamed e ``UInt64.toNat || isConstNamed e ``UInt64.ofNat) &&
       e.getAppArgs.size ≥ 1 then
     asVal env fuel e.getAppArgs[e.getAppArgs.size - 1]!
@@ -1386,9 +1387,35 @@ private partial def decodePackedByteArgParts (env : Environment)
     for b in bytes do
       parts := parts.push (.lit (UInt64.ofNat b))
     return parts
+  -- `{ v with length := n }` is a constructor whose values field is the source vector, not a
+  -- literal. GetElem must run on that values argument. Walking the whole constructor finds the
+  -- length binder first and asks the codec for `values_0` on it.
+  let mixedParts? : Option (Array Ops.Val) := do
+    let field := strip (unfoldUserHelpers env 32 field)
+    let some ctor := field.getAppFn.constName? | none
+    let some info := env.find? ctor | none
+    let .ctorInfo c := info | none
+    unless c.induct == inductName do none
+    let args := field.getAppArgs
+    unless args.size ≥ 2 do none
+    let lengthE := args[args.size - 2]!
+    let valuesE := args[args.size - 1]!
+    let length ← val env lengthE
+    match length with
+    | .lit n => unless n.toNat ≤ capacity do none
+    | _ => pure ()
+    let mut parts : Array Ops.Val := #[length]
+    for slot in [0:capacity] do
+      let byte ← val env
+        (mkAppN (mkConst ``GetElem.getElem) #[valuesE, mkNatLit slot, mkConst ``True.intro])
+      parts := parts.push byte
+    return parts
   match ctorParts? with
   | some parts => some parts
-  | none => do
+  | none =>
+    match mixedParts? with
+    | some parts => some parts
+    | none => do
     let length ← val env (mkAppN (mkConst lengthName)
       #[mkNatLit capacity, field])
     let values := mkAppN (mkConst valuesName)

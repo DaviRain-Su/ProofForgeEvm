@@ -2,7 +2,7 @@
 """Fail when OpenCall docs still refuse BoundedString or treat string as bytes.
 
 ArgType.string is ABI string. The packed limb frame is shared with bytes.
-A second packed field stays refused. { v with length } stays fail closed.
+A second packed field stays refused.
 A source-built malformed UTF-8 string reverts at emit before CALL.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
@@ -21,6 +21,7 @@ STALE_PHRASES = (
     "BoundedString and a second `bytes` field are refused",
     "`string` and a second `bytes` field are refused",
     "expectUnsupported env ``Unsupported.stringArg \"closed EVM scalar\"",
+    "`{ v with length }` stays fail closed",
 )
 
 REQUIRED = (

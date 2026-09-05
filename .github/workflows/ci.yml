@@ -229,6 +229,9 @@ jobs:
       - name: Check OpenCall BoundedString ABI string honesty
         run: python3 scripts/check_opencall_string_honesty.py
 
+      - name: Check OpenCall packed-tail length-update honesty
+        run: python3 scripts/check_opencall_length_honesty.py
+
       - name: Check ERC-721 3-arg safeTransferFrom honesty
         run: python3 scripts/check_safe3_honesty.py
 
