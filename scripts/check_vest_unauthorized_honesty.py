@@ -4,8 +4,8 @@
 Access.ownerViolation and VestLink/Vest20 transferOwnership revert
 OwnableUnauthorizedAccount(address). Sdk.OzAudit.temporaryGapCount stays 0.
 A doc that still lists Unauthorized versus OwnableUnauthorizedAccount as the
-VestingWallet remainder is a lying inventory. Remaining remainder is the split
-native-ETH / ERC-20 wallets.
+VestingWallet remainder is a lying inventory. Remaining remainder is no Ownable2Step
+and ABI releasedOf rather than OZ released.
 
 Usage:
     python3 scripts/check_vest_unauthorized_honesty.py
@@ -40,11 +40,11 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "NativeFx.lean", "revertOwnableUnauthorizedAccount"),
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "evmRevertOwnableUnauthorizedAccount"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
-    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "split native-ETH / ERC-20 wallets"),
+    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "no Ownable2Step and ABI `releasedOf`"),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "fac351201b2369ba"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "fac351201b2369ba"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "6f387586e59335d5"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "6f387586e59335d5"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "ac851caa6b77b626"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "ac851caa6b77b626"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", "VestLink ABI lost OwnableUnauthorizedAccount"),
     (ROOT / "Tests" / "EvmVest20Spec.lean", "Vest20Link ABI lost OwnableUnauthorizedAccount"),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_require_ownable_unauthorized_account"),

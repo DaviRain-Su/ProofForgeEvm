@@ -5,7 +5,7 @@ VestLink and Vest20Link emit OwnershipTransferred(address(0), owner) at CREATE.
 That log is the else-arm of the OwnableInvalidOwner dropped-let plus Emit
 ctorOpIsAllowedPrelude. Sdk.OzAudit.temporaryGapCount stays 0. A doc that still
 lists the constructor log as the VestingWallet gap is a lying inventory.
-The remaining named gap is the split native-ETH / ERC-20 wallets.
+The remaining named gap is no Ownable2Step and ABI releasedOf rather than OZ released.
 Only-owner reverts are OwnableUnauthorizedAccount(address).
 
 Usage:
@@ -45,8 +45,8 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "OwnableInvalidOwner(address)"),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "fac351201b2369ba"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "fac351201b2369ba"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "6f387586e59335d5"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "6f387586e59335d5"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "ac851caa6b77b626"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "ac851caa6b77b626"'),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_strip_ctor_ownership_log"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "CREATE OwnershipTransferred LOG3"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "CREATE OwnershipTransferred LOG3"),

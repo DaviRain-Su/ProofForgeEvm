@@ -39,7 +39,7 @@ def entries : Array Entry := #[
   { name := "ReceiverLink", digest := "9457ca840a166ba3" },
   { name := "DroppedLetLink", digest := "59b5fa7e28c2695" },
   { name := "VestLink", digest := "fac351201b2369ba" },
-  { name := "Vest20Link", digest := "6f387586e59335d5" },
+  { name := "Vest20Link", digest := "ac851caa6b77b626" },
   { name := "ProofLink", digest := "c41e5e834c987462" },
   { name := "HeaderLink", digest := "8c4a049ef323d412" },
   { name := "AdminDelayLink", digest := "200dd10d949030a7" },
