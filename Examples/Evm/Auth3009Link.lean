@@ -78,4 +78,12 @@ def receiveWithAuthorization (s : State) (owner to : Address) (value validAfter 
   else
     .error .overflow
 
+@[pf_entry]
+def cancelAuthorization (s : State) (authorizer : Address) (nonce : Bytes32)
+    (v : UInt8) (r signature : Bytes32) : Except Error (State × UInt64) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok (hold s, Erc3009.cancel authorizer nonce v r signature)
+  else
+    .error .overflow
+
 end Examples.Evm.Auth3009Link

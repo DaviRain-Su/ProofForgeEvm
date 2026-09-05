@@ -51,6 +51,10 @@ private def eip712ReceiveWithAuthorizationTypeHash : String :=
   Keccak.keccak256HexOfString
     "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
 
+private def eip712CancelAuthorizationTypeHash : String :=
+  Keccak.keccak256HexOfString
+    "CancelAuthorization(address authorizer,bytes32 nonce)"
+
 private def eip712NameHash : String := Keccak.keccak256HexOfString "Token"
 
 private def eip712VersionHash : String := Keccak.keccak256HexOfString "1"
@@ -751,6 +755,83 @@ private def emitAuthorizationWithTypeHash (context : Context σ)
     authUsedTxt ++ transferTxt
   return (acc, x0, st48)
 
+private def emitCancelAuthorization (context : Context σ)
+    (a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Ops.Val)
+    (st : σ) : Except String (String × String × σ) := do
+  let indent := context.indent
+  let (p0, aw0, s0) ← context.materialize a0 st
+  let (p1, aw1, s1) ← context.materialize a1 s0
+  let (p2, aw2, s2) ← context.materialize a2 s1
+  let (m0p, m0, s3) ← context.materialize n0 s2
+  let (m1p, m1, s4) ← context.materialize n1 s3
+  let (m2p, m2, s5) ← context.materialize n2 s4
+  let (m3p, m3, s6) ← context.materialize n3 s5
+  let (pv, vbyte, s7) ← context.materialize vv s6
+  let (rA0, hr0, s8) ← context.materialize r0 s7
+  let (rA1, hr1, s9) ← context.materialize r1 s8
+  let (rA2, hr2, s10) ← context.materialize r2 s9
+  let (rA3, hr3, s11) ← context.materialize r3 s10
+  let (sA0, hs0, s12) ← context.materialize z0 s11
+  let (sA1, hs1, s13) ← context.materialize z1 s12
+  let (sA2, hs2, s14) ← context.materialize z2 s13
+  let (sA3, hs3, s15) ← context.materialize z3 s14
+  let (authorizer, st16) := context.fresh s15
+  let (nonceWord, st17) := context.fresh st16
+  let (rword, st18) := context.fresh st17
+  let (sword, st19) := context.fresh st18
+  let (structH, st20) := context.fresh st19
+  let (domPre, domainH, st21) := emitDomainSeparator context st20
+  let (digest, st22) := context.fresh st21
+  let (precompileTxt, signer, st23) ← Precompile.Emit.emit context.precompile .ecrecover st22
+  let (authSlot, st24) := context.fresh st23
+  let (ret, st25) := context.fresh st24
+  let unauthorizedTxt ← LogError.Emit.emitRevert { indent := indent ++ "  " }
+    { selector := Keccak.selector "Unauthorized" #["address"], args := #[signer] }
+  let canceledTxt ← LogError.Emit.emitLog context.logError
+    { data := #[]
+      topics := #["0x" ++ Keccak.keccak256HexOfString "AuthorizationCanceled(address,bytes32)",
+        authorizer, nonceWord] }
+  let acc :=
+    p0 ++ p1 ++ p2 ++ m0p ++ m1p ++ m2p ++ m3p ++ pv ++
+    rA0 ++ rA1 ++ rA2 ++ rA3 ++ sA0 ++ sA1 ++ sA2 ++ sA3 ++
+    indent ++ "if shr(32, " ++ aw2 ++ ") { " ++ revert0 ++ " }" ++ nl ++
+    indent ++ "mstore(0, 0)" ++ nl ++
+    packAddrMstore8 indent aw0 aw1 aw2 ++
+    indent ++ "let " ++ authorizer ++ " := mload(0)" ++ nl ++
+    packBytes32At indent 0 m0 m1 m2 m3 ++
+    indent ++ "let " ++ nonceWord ++ " := mload(0)" ++ nl ++
+    packBytes32At indent 0 hr0 hr1 hr2 hr3 ++
+    indent ++ "let " ++ rword ++ " := mload(0)" ++ nl ++
+    packBytes32At indent 0 hs0 hs1 hs2 hs3 ++
+    indent ++ "let " ++ sword ++ " := mload(0)" ++ nl ++
+    indent ++ "mstore(0, " ++ aw0 ++ ")" ++ nl ++
+    indent ++ "mstore(32, " ++ aw1 ++ ")" ++ nl ++
+    indent ++ "mstore(64, " ++ aw2 ++ ")" ++ nl ++
+    indent ++ "mstore(96, " ++ nonceWord ++ ")" ++ nl ++
+    indent ++ "mstore(128, 3)" ++ nl ++
+    indent ++ "let " ++ authSlot ++ " := keccak256(0, 160)" ++ nl ++
+    indent ++ "if sload(" ++ authSlot ++ ") { " ++ revert0 ++ " }" ++ nl ++
+    indent ++ "mstore(0, 0x" ++ eip712CancelAuthorizationTypeHash ++ ")" ++ nl ++
+    indent ++ "mstore(32, " ++ authorizer ++ ")" ++ nl ++
+    indent ++ "mstore(64, " ++ nonceWord ++ ")" ++ nl ++
+    indent ++ "let " ++ structH ++ " := keccak256(0, 96)" ++ nl ++
+    domPre ++
+    indent ++ "mstore(0, 0x1901000000000000000000000000000000000000000000000000000000000000)" ++ nl ++
+    indent ++ "mstore(2, " ++ domainH ++ ")" ++ nl ++
+    indent ++ "mstore(34, " ++ structH ++ ")" ++ nl ++
+    indent ++ "let " ++ digest ++ " := keccak256(0, 66)" ++ nl ++
+    indent ++ "mstore(0, " ++ digest ++ ")" ++ nl ++
+    indent ++ "mstore(32, " ++ vbyte ++ ")" ++ nl ++
+    indent ++ "mstore(64, " ++ rword ++ ")" ++ nl ++
+    indent ++ "mstore(96, " ++ sword ++ ")" ++ nl ++
+    precompileTxt ++
+    indent ++ "if iszero(eq(" ++ signer ++ ", " ++ authorizer ++ ")) {" ++ nl ++
+    unauthorizedTxt ++ indent ++ "}" ++ nl ++
+    indent ++ "sstore(" ++ authSlot ++ ", 1)" ++ nl ++
+    canceledTxt ++
+    indent ++ "let " ++ ret ++ " := 0" ++ nl
+  return (acc, ret, st25)
+
 private def emitTokenPermit (context : Context σ)
     (tw0 tw1 tw2 ow0 ow1 ow2 sw0 sw1 sw2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Ops.Val)
     (st : σ) : Except String (String × String × σ) := do
@@ -837,6 +918,8 @@ def emitCall (context : Context σ) (call : ClosedCall.Call Ops.Val) (st : σ) :
   | .receiveWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       emitAuthorizationWithTypeHash context eip712ReceiveWithAuthorizationTypeHash true
         f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
+  | .cancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      emitCancelAuthorization context a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
   | .tokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       emitTokenPermit context t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 st
 

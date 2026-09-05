@@ -429,6 +429,13 @@ failure. Host returns `value.w0`. -/
     (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
   value.w0
 
+/-- Closed ERC-3009 `cancelAuthorization`. Distinct EIP-712 typehash
+`CancelAuthorization(address authorizer,bytes32 nonce)`. Anyone with a valid signature may
+submit. name=`Token`, version=`1`, authUsed base=3. Revert on failure. Host returns 0. -/
+@[irreducible] def evmCancelAuthorization
+    (_authorizer : Addr20) (_nonce : Bytes32) (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
+  0
+
 /-- 封闭 EIP-712 domain separator。name=`Token`，version=`1`。宿主返回 0。 -/
 @[irreducible] def evmDomainSeparator : Bytes32 := ⟨0, 0, 0, 0⟩
 

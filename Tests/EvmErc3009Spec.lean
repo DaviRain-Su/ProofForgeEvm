@@ -4,9 +4,9 @@ import ProofForge.Evm.Emit
 import Examples.Evm.Auth3009Link
 
 /-!
-W5 slice e plus this expansion: bounded ERC-3009 transfer-with-authorization and
-receive-with-authorization. Receive uses a distinct EIP-712 typehash and `caller == to`.
-Cancellation stays out.
+W5 slice e plus this expansion: bounded ERC-3009 transfer-with-authorization,
+receive-with-authorization, and cancelAuthorization. Receive uses a distinct EIP-712
+typehash and `caller == to`. Cancel uses `CancelAuthorization(address authorizer,bytes32 nonce)`.
 -/
 
 namespace Tests.EvmErc3009Spec
@@ -28,7 +28,16 @@ private def transferTypeHash : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString
     "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
 
+private def cancelTypeHash : String :=
+  ProofForge.Crypto.Keccak.keccak256HexOfString
+    "CancelAuthorization(address authorizer,bytes32 nonce)"
+
 #guard receiveTypeHash != transferTypeHash
+#guard cancelTypeHash != transferTypeHash
+#guard cancelTypeHash != receiveTypeHash
+
+private def authCanceledTopic : String :=
+  ProofForge.Crypto.Keccak.keccak256HexOfString "AuthorizationCanceled(address,bytes32)"
 
 private def expectAuth3009Link : CommandElabM Unit := do
   let env ← getEnv
@@ -38,7 +47,7 @@ private def expectAuth3009Link : CommandElabM Unit := do
     | .error reason => throwError reason
   for ixName in #[
       "DOMAIN_SEPARATOR", "balanceOf", "mint", "totalSupply",
-      "transferWithAuthorization", "receiveWithAuthorization"
+      "transferWithAuthorization", "receiveWithAuthorization", "cancelAuthorization"
     ] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"Auth3009Link is missing {ixName}"
@@ -52,6 +61,7 @@ private def expectAuth3009Link : CommandElabM Unit := do
     | .error reason => throwError reason
   unless abi.contains "\"name\":\"transferWithAuthorization\"" &&
       abi.contains "\"name\":\"receiveWithAuthorization\"" &&
+      abi.contains "\"name\":\"cancelAuthorization\"" &&
       abi.contains "\"name\":\"DOMAIN_SEPARATOR\"" do
     throwError s!"Auth3009Link ABI lost ERC-3009 surface:\n{abi}"
   let yul ←
@@ -65,7 +75,10 @@ private def expectAuth3009Link : CommandElabM Unit := do
   unless yul.contains s!"0x{receiveTypeHash}" &&
       yul.contains ":= caller()" do
     throwError "Auth3009Link Yul missing ReceiveWithAuthorization typehash or caller-is-payee gate"
-  unless IR.digestHex program == "3f8b259e6f5b6c23" do
+  unless yul.contains s!"0x{cancelTypeHash}" &&
+      yul.contains s!"0x{authCanceledTopic}" do
+    throwError "Auth3009Link Yul missing CancelAuthorization typehash or AuthorizationCanceled"
+  unless IR.digestHex program == "b3ad9c6416b7a221" do
     throwError s!"Auth3009Link digest drifted: {IR.digestHex program}"
 
 elab "#pf_guard_evm_erc3009" : command => expectAuth3009Link

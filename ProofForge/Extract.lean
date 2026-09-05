@@ -797,6 +797,12 @@ def extractMethod (env : Environment) (kind : Core.IR.MethodKind) (n : Name) :
             (flipVal fuel' vv)
             (flipVal fuel' r0) (flipVal fuel' r1) (flipVal fuel' r2) (flipVal fuel' r3)
             (flipVal fuel' z0) (flipVal fuel' z1) (flipVal fuel' z2) (flipVal fuel' z3)
+      | .evmCancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+          .evmCancelAuthorization (flipVal fuel' a0) (flipVal fuel' a1) (flipVal fuel' a2)
+            (flipVal fuel' n0) (flipVal fuel' n1) (flipVal fuel' n2) (flipVal fuel' n3)
+            (flipVal fuel' vv)
+            (flipVal fuel' r0) (flipVal fuel' r1) (flipVal fuel' r2) (flipVal fuel' r3)
+            (flipVal fuel' z0) (flipVal fuel' z1) (flipVal fuel' z2) (flipVal fuel' z3)
       | .evmTokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
           .evmTokenPermit (flipVal fuel' t0) (flipVal fuel' t1) (flipVal fuel' t2)
             (flipVal fuel' o0) (flipVal fuel' o1) (flipVal fuel' o2)
@@ -1245,6 +1251,12 @@ private def opFields : Ops.Op → Array FieldUse
         valFields vv ++
         valFields r0 ++ valFields r1 ++ valFields r2 ++ valFields r3 ++
         valFields z0 ++ valFields z1 ++ valFields z2 ++ valFields z3
+  | .evmCancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      valFields a0 ++ valFields a1 ++ valFields a2 ++
+        valFields n0 ++ valFields n1 ++ valFields n2 ++ valFields n3 ++
+        valFields vv ++
+        valFields r0 ++ valFields r1 ++ valFields r2 ++ valFields r3 ++
+        valFields z0 ++ valFields z1 ++ valFields z2 ++ valFields z3
   | .evmTokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       valFields t0 ++ valFields t1 ++ valFields t2 ++
         valFields o0 ++ valFields o1 ++ valFields o2 ++
@@ -1471,6 +1483,12 @@ private def resolveVectorLeaves (p : IR.Program) : Except String IR.Program := d
             (← normalizeVal vv)
             (← normalizeVal r0) (← normalizeVal r1) (← normalizeVal r2) (← normalizeVal r3)
             (← normalizeVal z0) (← normalizeVal z1) (← normalizeVal z2) (← normalizeVal z3)
+      | .evmCancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+          return .evmCancelAuthorization (← normalizeVal a0) (← normalizeVal a1) (← normalizeVal a2)
+            (← normalizeVal n0) (← normalizeVal n1) (← normalizeVal n2) (← normalizeVal n3)
+            (← normalizeVal vv)
+            (← normalizeVal r0) (← normalizeVal r1) (← normalizeVal r2) (← normalizeVal r3)
+            (← normalizeVal z0) (← normalizeVal z1) (← normalizeVal z2) (← normalizeVal z3)
       | .evmTokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
           return .evmTokenPermit (← normalizeVal t0) (← normalizeVal t1) (← normalizeVal t2)
             (← normalizeVal o0) (← normalizeVal o1) (← normalizeVal o2)
@@ -1603,6 +1621,9 @@ private partial def opEscapedArg (limit : Nat) : Ops.Op → Option Nat
         (valEscapedArg limit)
   | .evmReceiveWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       #[f0, f1, f2, t0, t1, t2, v0, v1, v2, v3, a0, a1, a2, a3, b0, b1, b2, b3, n0, n1, n2, n3, vv, r0, r1, r2, r3, z0, z1, z2, z3].findSome?
+        (valEscapedArg limit)
+  | .evmCancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      #[a0, a1, a2, n0, n1, n2, n3, vv, r0, r1, r2, r3, z0, z1, z2, z3].findSome?
         (valEscapedArg limit)
   | .evmTokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       #[t0, t1, t2, o0, o1, o2, s0, s1, s2, v0, v1, v2, v3, d0, d1, d2, d3, vv, r0, r1, r2, r3, z0, z1, z2, z3].findSome?

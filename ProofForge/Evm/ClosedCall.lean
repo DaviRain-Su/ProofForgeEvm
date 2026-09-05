@@ -53,6 +53,7 @@ inductive Call (V : Type) where
       (f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 : V)
   | receiveWithAuthorization
       (f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 : V)
+  | cancelAuthorization (a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 : V)
   | tokenPermit (t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 : V)
   deriving BEq, Repr, Inhabited
 
@@ -118,6 +119,12 @@ def Call.mapValues (mapValue : α → β) : Call α → Call β
         (mapValue v0) (mapValue v1) (mapValue v2) (mapValue v3)
         (mapValue a0) (mapValue a1) (mapValue a2) (mapValue a3)
         (mapValue b0) (mapValue b1) (mapValue b2) (mapValue b3)
+        (mapValue n0) (mapValue n1) (mapValue n2) (mapValue n3)
+        (mapValue vv)
+        (mapValue r0) (mapValue r1) (mapValue r2) (mapValue r3)
+        (mapValue z0) (mapValue z1) (mapValue z2) (mapValue z3)
+  | .cancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      .cancelAuthorization (mapValue a0) (mapValue a1) (mapValue a2)
         (mapValue n0) (mapValue n1) (mapValue n2) (mapValue n3)
         (mapValue vv)
         (mapValue r0) (mapValue r1) (mapValue r2) (mapValue r3)
@@ -198,6 +205,12 @@ def Call.mapValuesM [Monad m] (mapValue : α → m β) : Call α → m (Call β)
         (← mapValue vv)
         (← mapValue r0) (← mapValue r1) (← mapValue r2) (← mapValue r3)
         (← mapValue z0) (← mapValue z1) (← mapValue z2) (← mapValue z3)
+  | .cancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      return .cancelAuthorization (← mapValue a0) (← mapValue a1) (← mapValue a2)
+        (← mapValue n0) (← mapValue n1) (← mapValue n2) (← mapValue n3)
+        (← mapValue vv)
+        (← mapValue r0) (← mapValue r1) (← mapValue r2) (← mapValue r3)
+        (← mapValue z0) (← mapValue z1) (← mapValue z2) (← mapValue z3)
   | .tokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       return .tokenPermit (← mapValue t0) (← mapValue t1) (← mapValue t2)
         (← mapValue o0) (← mapValue o1) (← mapValue o2)
@@ -230,6 +243,8 @@ def Call.values : Call V → Array V
       #[f0, f1, f2, t0, t1, t2, v0, v1, v2, v3, a0, a1, a2, a3, b0, b1, b2, b3, n0, n1, n2, n3, vv, r0, r1, r2, r3, z0, z1, z2, z3]
   | .receiveWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       #[f0, f1, f2, t0, t1, t2, v0, v1, v2, v3, a0, a1, a2, a3, b0, b1, b2, b3, n0, n1, n2, n3, vv, r0, r1, r2, r3, z0, z1, z2, z3]
+  | .cancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      #[a0, a1, a2, n0, n1, n2, n3, vv, r0, r1, r2, r3, z0, z1, z2, z3]
   | .tokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       #[t0, t1, t2, o0, o1, o2, s0, s1, s2, v0, v1, v2, v3, d0, d1, d2, d3, vv, r0, r1, r2, r3, z0, z1, z2, z3]
 
@@ -240,7 +255,8 @@ def Call.allValues (predicate : V → Bool) (call : Call V) : Bool :=
   call.values.all predicate
 
 def Call.effects : Call V → EffectSummary
-  | .permit .. | .transferWithAuthorization .. | .receiveWithAuthorization .. =>
+  | .permit .. | .transferWithAuthorization .. | .receiveWithAuthorization ..
+    | .cancelAuthorization .. =>
       { readsStorage := true, writesStorage := true, logs := true, externalCall := true }
   | _ => { externalCall := true }
 
@@ -252,7 +268,8 @@ def Call.emitsExpired : Call V → Bool
   | _ => false
 
 def Call.emitsUnauthorized : Call V → Bool
-  | .permit .. | .transferWithAuthorization .. | .receiveWithAuthorization .. => true
+  | .permit .. | .transferWithAuthorization .. | .receiveWithAuthorization ..
+    | .cancelAuthorization .. => true
   | _ => false
 
 /-- Preserve the closed-union digest spelling (`ttxfer` / `wethdep` / `permit`). -/
@@ -281,6 +298,8 @@ def Call.canonical (renderValue : V → String) : Call V → String
       s!"twauth({renderValue f0},{renderValue f1},{renderValue f2},{renderValue t0},{renderValue t1},{renderValue t2},{renderValue v0},{renderValue v1},{renderValue v2},{renderValue v3},{renderValue a0},{renderValue a1},{renderValue a2},{renderValue a3},{renderValue b0},{renderValue b1},{renderValue b2},{renderValue b3},{renderValue n0},{renderValue n1},{renderValue n2},{renderValue n3},{renderValue vv},{renderValue r0},{renderValue r1},{renderValue r2},{renderValue r3},{renderValue z0},{renderValue z1},{renderValue z2},{renderValue z3})"
   | .receiveWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       s!"rwauth({renderValue f0},{renderValue f1},{renderValue f2},{renderValue t0},{renderValue t1},{renderValue t2},{renderValue v0},{renderValue v1},{renderValue v2},{renderValue v3},{renderValue a0},{renderValue a1},{renderValue a2},{renderValue a3},{renderValue b0},{renderValue b1},{renderValue b2},{renderValue b3},{renderValue n0},{renderValue n1},{renderValue n2},{renderValue n3},{renderValue vv},{renderValue r0},{renderValue r1},{renderValue r2},{renderValue r3},{renderValue z0},{renderValue z1},{renderValue z2},{renderValue z3})"
+  | .cancelAuthorization a0 a1 a2 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
+      s!"cauth({renderValue a0},{renderValue a1},{renderValue a2},{renderValue n0},{renderValue n1},{renderValue n2},{renderValue n3},{renderValue vv},{renderValue r0},{renderValue r1},{renderValue r2},{renderValue r3},{renderValue z0},{renderValue z1},{renderValue z2},{renderValue z3})"
   | .tokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 =>
       s!"tpermit({renderValue t0},{renderValue t1},{renderValue t2},{renderValue o0},{renderValue o1},{renderValue o2},{renderValue s0},{renderValue s1},{renderValue s2},{renderValue v0},{renderValue v1},{renderValue v2},{renderValue v3},{renderValue d0},{renderValue d1},{renderValue d2},{renderValue d3},{renderValue vv},{renderValue r0},{renderValue r1},{renderValue r2},{renderValue r3},{renderValue z0},{renderValue z1},{renderValue z2},{renderValue z3})"
 
