@@ -355,6 +355,11 @@ Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. Host ret
 @[irreducible] def evmMulDivCeil256 (a b denom : UInt256) : UInt256 :=
   let _ := b; let _ := denom; a
 
+/-- Ceiling `(a * (b + 10)) / (denom + 1)` (OZ `_decimalsOffset() == 1`).
+Checked `+ 10` / `+ 1`. Host returns `a`. -/
+@[irreducible] def evmMulDivCeilOffset256 (a b denom : UInt256) : UInt256 :=
+  let _ := b; let _ := denom; a
+
 /-- Ceiling `(a * (b + 1)) / (denom + 10)` (OZ `_decimalsOffset() == 1` reverse).
 Checked `+ 1` / `+ 10`. Host returns `a`. -/
 @[irreducible] def evmMulDivCeilOffsetRev256 (a b denom : UInt256) : UInt256 :=

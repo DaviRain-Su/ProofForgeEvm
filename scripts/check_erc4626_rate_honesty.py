@@ -3,7 +3,7 @@
 
 Erc4626.convertToShares is floor assets * (totalSupply + 10) / (totalAssets + 1) via mulDivOffset.
 Erc4626.previewMint is ceiling shares * (totalAssets + 1) / (totalSupply + 10) via mulDivCeilOffsetRev.
-Erc4626.previewWithdraw is ceiling assets * totalSupply / totalAssets via mulDivCeil.
+Erc4626.previewWithdraw is ceiling assets * (totalSupply + 10) / (totalAssets + 1) via mulDivCeilOffset.
 Empty supply is 1:1. Compile-time `_decimalsOffset() == 1` (virtual shares 10).
 Sdk.OzAudit.temporaryGapCount stays 0.
 
@@ -78,11 +78,15 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "def mulDivCeilOffset (left right denom : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
         "mulDivCeilOffsetRev shares totalAssets totalSupply",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
-        "mulDivCeil assets totalSupply totalAssets",
+        "mulDivCeilOffset assets totalSupply totalAssets",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Runtime.lean",
@@ -105,6 +109,10 @@ REQUIRED = (
         "def evmMulDivCeilOffsetRev256 (a b denom : UInt256) : UInt256 :=",
     ),
     (
+        ROOT / "ProofForge" / "Evm" / "Runtime.lean",
+        "def evmMulDivCeilOffset256 (a b denom : UInt256) : UInt256 :=",
+    ),
+    (
         ROOT / "ProofForge" / "Evm" / "WideWord.lean",
         "| mulDiv256 (limb : Nat)",
     ),
@@ -125,6 +133,10 @@ REQUIRED = (
         "| mulDivCeilOffsetRev256 (limb : Nat)",
     ),
     (
+        ROOT / "ProofForge" / "Evm" / "WideWord.lean",
+        "| mulDivCeilOffset256 (limb : Nat)",
+    ),
+    (
         ROOT / "ProofForge" / "Extract" / "Decode.lean",
         "endsWith baseE \".evmMulDiv256\" then some (.mulDiv256 limb.toNat)",
     ),
@@ -143,6 +155,10 @@ REQUIRED = (
     (
         ROOT / "ProofForge" / "Extract" / "Decode.lean",
         "endsWith baseE \".evmMulDivCeilOffsetRev256\" then some (.mulDivCeilOffsetRev256 limb.toNat)",
+    ),
+    (
+        ROOT / "ProofForge" / "Extract" / "Decode.lean",
+        "endsWith baseE \".evmMulDivCeilOffset256\" then some (.mulDivCeilOffset256 limb.toNat)",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
@@ -250,7 +266,7 @@ REQUIRED = (
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
-        '"full-precision previewWithdraw(2^128) is 2^128"',
+        '"full-precision previewWithdraw(2^128) is 2^128+9"',
     ),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
@@ -283,6 +299,10 @@ REQUIRED = (
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 ceiling `previewMint` via `mulDivCeilOffsetRev`",
+    ),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "ERC-4626 ceiling `previewWithdraw` via `mulDivCeilOffset`",
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",

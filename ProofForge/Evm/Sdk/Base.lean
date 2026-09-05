@@ -105,6 +105,14 @@ Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. -/
   ⟨WideWord.Source.mulDivCeilW0 left right denom, WideWord.Source.mulDivCeilW1 left right denom,
     WideWord.Source.mulDivCeilW2 left right denom, WideWord.Source.mulDivCeilW3 left right denom⟩
 
+/-- Ceiling `(left * (right + 10)) / (denom + 1)` (OZ `_decimalsOffset() == 1`).
+Checked `+ 10` / `+ 1` revert on overflow. -/
+@[pf_inline] def mulDivCeilOffset (left right denom : UInt256) : UInt256 :=
+  ⟨WideWord.Source.mulDivCeilOffsetW0 left right denom,
+    WideWord.Source.mulDivCeilOffsetW1 left right denom,
+    WideWord.Source.mulDivCeilOffsetW2 left right denom,
+    WideWord.Source.mulDivCeilOffsetW3 left right denom⟩
+
 /-- Ceiling `(left * (right + 1)) / (denom + 10)` (OZ `_decimalsOffset() == 1` reverse).
 Checked `+ 1` / `+ 10` revert on overflow. -/
 @[pf_inline] def mulDivCeilOffsetRev (left right denom : UInt256) : UInt256 :=

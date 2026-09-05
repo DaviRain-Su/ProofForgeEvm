@@ -586,6 +586,8 @@ def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array 
       emitMulDiv256 context limb false false true a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
   | .mulDivCeil256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, d0, d1, d2, d3] =>
       emitMulDiv256 context limb false true false a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
+  | .mulDivCeilOffset256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, d0, d1, d2, d3] =>
+      emitMulDiv256 context limb true true false a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
   | .mulDivCeilOffsetRev256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, d0, d1, d2, d3] =>
       emitMulDiv256 context limb false true true a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
   | .keccak256Pair32 limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
