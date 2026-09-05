@@ -777,7 +777,10 @@ if need_runtime and '0x1e4fbdf7' not in tail:
     sys.stderr.write('FAIL: runtime lost OwnableInvalidOwner selector after constructor strip\\n')
     sys.exit(1)
 Path('$dest').write_text(out + tail)
-print('stripped one constructor OwnableInvalidOwner revert; runtime selector kept')
+if need_runtime:
+    print('stripped one constructor OwnableInvalidOwner revert; runtime selector kept')
+else:
+    print('stripped one constructor OwnableInvalidOwner revert')
 "
 }
 
