@@ -54,8 +54,8 @@ REQUIRED = (
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Access.Ownership.nominate s.ownership newOwner"),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "af949b4ad7572721"'),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "38e5e3c91cadf3e6"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "fef481a06aef2a5d"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "a12b192153112fb4"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "4d4f50a585db704d"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "daab53b9a3e785ac"'),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",

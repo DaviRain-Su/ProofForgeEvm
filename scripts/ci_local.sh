@@ -140,6 +140,7 @@ run_guards() {
   python3 scripts/check_ownable2step_cancel_honesty.py
   python3 scripts/check_vest_released_honesty.py
   python3 scripts/check_vest_ownable2step_honesty.py
+  python3 scripts/check_vest_renounce_honesty.py
   python3 scripts/check_vest_eth_only_honesty.py
   python3 scripts/check_erc20_permit_honesty.py
   python3 scripts/check_erc3009_receive_honesty.py

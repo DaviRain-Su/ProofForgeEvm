@@ -9,7 +9,9 @@ Constructor-stored beneficiary plus immutables for `start` and `duration`, a con
 cliff duration, a linear vesting curve over `Context.timestamp`, and typed `EtherReleased` /
 `ERC20Released` logs. Native-ETH accounting is one `released` counter on `VestLink` and `nativeReleased` on
 `Vest20Link`. ERC-20 accounting is a hashed `token → paid` map on `Vest20Link`. Consumers rotate the beneficiary with Ownable2Step `transferOwnership`
-(`OwnershipTransferStarted`) plus `acceptOwnership` (`OwnershipTransferred`). There is no
+(`OwnershipTransferStarted`) plus `acceptOwnership` (`OwnershipTransferred`).
+`renounceOwnership` clears owner and pending (`OwnershipTransferred` to zero). After
+renounce, `canSchedule` fails closed. There is no
 arbitrary schedule mutation. Consumers must validate `canSchedule` before advertising schedule
 views or `release`.
 

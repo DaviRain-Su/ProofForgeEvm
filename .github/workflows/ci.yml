@@ -205,6 +205,9 @@ jobs:
       - name: Check vesting Ownable2Step honesty
         run: python3 scripts/check_vest_ownable2step_honesty.py
 
+      - name: Check VestLink/Vest20Link renounceOwnership honesty
+        run: python3 scripts/check_vest_renounce_honesty.py
+
       - name: Check VestLink ETH-only named profile honesty
         run: python3 scripts/check_vest_eth_only_honesty.py
 

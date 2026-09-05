@@ -4,7 +4,8 @@ import ProofForge.Evm.Sdk
 Native-ETH vesting consumer. Constructor stores the beneficiary and cliff duration, and bakes
 `start` / `duration` as immutables. `released` tracks payouts and an ordered storage lock
 protects the native-ETH call. `transferOwnership` nominates a pending owner (Ownable2Step
-`OwnershipTransferStarted`). `acceptOwnership` rotates the stored beneficiary. `release()` pays
+`OwnershipTransferStarted`). `acceptOwnership` rotates the stored beneficiary.
+`renounceOwnership` clears owner and pending. `release()` pays
 the currently releasable amount (OZ ABI). `release(uint256)` still permits a partial payout. The
 ERC-20 `released[token]` map lives on `Vest20Link`. There is no arbitrary schedule mutation.
 
@@ -153,6 +154,17 @@ def acceptOwnership (s : State) : Except Error (State × UInt64) :=
     .ok ({ owner := s.ownership, cliffDuration := s.cliffDuration, released := s.released, guard :=
       s.guard, ownership := Access.Ownership.consume s.ownership },
       Ownable.Log.ownershipTransferred s.owner s.ownership)
+  else
+    .ok (s, Access.ownerViolation)
+
+/-- Permanently remove the current owner and clear any pending nominee. Non-owner reverts
+`OwnableUnauthorizedAccount(caller)`. Success emits `OwnershipTransferred(previous, address(0))`.
+After this, `canSchedule` fails closed. -/
+@[pf_entry]
+def renounceOwnership (s : State) : Except Error (State × UInt64) :=
+  if Access.requireOwner s.owner then
+    .ok ({ s with owner := Address.zero, ownership := Access.Ownership.cancel s.ownership },
+      Ownable.Log.ownershipTransferred s.owner Address.zero)
   else
     .ok (s, Access.ownerViolation)
 
