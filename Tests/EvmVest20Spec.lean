@@ -4,10 +4,12 @@ import ProofForge.Evm.Emit
 import Examples.Evm.Vest20Link
 
 /-!
-Bounded ERC-20 vesting map: `Vest20Link.release(address)` pays `releasable(token)` through
-`SafeErc20.transfer`, `releasedOf` is a hashed `token → paid` map, `transferOwnership` rotates
-the stored beneficiary, `cliff()` is the OZ `VestingWalletCliff` timestamp, and `ERC20Released`
-is the typed log. Native-ETH `release()` stays on `VestLink`. `temporaryGapCount` stays 0.
+Dual-asset vesting: `Vest20Link.release(address)` pays `releasable(token)` through
+`SafeErc20.transfer`, `releasedOf(address)` is a hashed `token → paid` map, `release()` pays
+`releasable()` native ETH, `releasedOf()` is the native counter, `transferOwnership` rotates
+the stored beneficiary, `cliff()` is the OZ `VestingWalletCliff` timestamp, and both
+`ERC20Released` and `EtherReleased` are typed logs. VestLink stays the ETH-only smaller
+profile. `temporaryGapCount` stays 0.
 -/
 
 namespace Tests.EvmVest20Spec
@@ -42,11 +44,17 @@ private def expectVest20Link : CommandElabM Unit := do
     | .error reason => throwError reason
   for ixName in
       #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "releasedOf",
-        "releasable", "vestedAmount", "transferOwnership", "release"] do
+        "releasable", "vestedAmount", "transferOwnership", "release", "receive"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"Vest20Link is missing {ixName}"
-  unless !(source.methods.any (·.ixName == "receive")) do
-    throwError "Vest20Link must not grow a native receive path"
+  unless (source.methods.filter (·.ixName == "release")).size >= 2 do
+    throwError "Vest20Link lost the release() / release(address) overload pair"
+  unless (source.methods.filter (·.ixName == "releasable")).size >= 2 do
+    throwError "Vest20Link lost the releasable() / releasable(address) overload pair"
+  unless (source.methods.filter (·.ixName == "releasedOf")).size >= 2 do
+    throwError "Vest20Link lost the releasedOf() / releasedOf(address) overload pair"
+  unless (source.methods.filter (·.ixName == "vestedAmount")).size >= 2 do
+    throwError "Vest20Link lost the vestedAmount(uint64) / vestedAmount(address,uint64) overload pair"
   let program ←
     match IR.fromExtracted source with
     | .ok program => pure program
@@ -55,10 +63,22 @@ private def expectVest20Link : CommandElabM Unit := do
     | throwError "Vest20Link EVM IR lost releasable"
   unless releasableEntry.retTypes == #[.uint 256] do
     throwError s!"releasable return types drifted: {repr releasableEntry.retTypes}"
-  let some releaseEntry := program.entries.find? (·.ixName == "release")
-    | throwError "Vest20Link EVM IR lost release"
-  unless releaseEntry.selector == ProofForge.Crypto.Keccak.selector "release" #["address"] do
-    throwError s!"release selector drifted: {releaseEntry.selector}"
+  unless program.entries.any (fun e =>
+      e.ixName == "release" && e.selector == ProofForge.Crypto.Keccak.selector "release" #["address"]) do
+    throwError "Vest20Link lost release(address)"
+  unless program.entries.any (fun e =>
+      e.ixName == "release" && e.selector == ProofForge.Crypto.Keccak.selector "release" #[]) do
+    throwError "Vest20Link lost release()"
+  unless program.entries.any (fun e =>
+      e.ixName == "releasable" && e.selector == ProofForge.Crypto.Keccak.selector "releasable" #[]) do
+    throwError "Vest20Link lost releasable()"
+  unless program.entries.any (fun e =>
+      e.ixName == "releasedOf" && e.selector == ProofForge.Crypto.Keccak.selector "releasedOf" #[]) do
+    throwError "Vest20Link lost releasedOf()"
+  unless program.entries.any (fun e =>
+      e.ixName == "vestedAmount" &&
+        e.selector == ProofForge.Crypto.Keccak.selector "vestedAmount" #["uint64"]) do
+    throwError "Vest20Link lost vestedAmount(uint64)"
   let some transferEntry := program.entries.find? (·.ixName == "transferOwnership")
     | throwError "Vest20Link EVM IR lost transferOwnership"
   unless transferEntry.selector ==
@@ -77,12 +97,10 @@ private def expectVest20Link : CommandElabM Unit := do
       abi.contains "\"name\":\"owner\"" &&
       abi.contains "\"name\":\"transferOwnership\"" &&
       abi.contains "\"name\":\"OwnershipTransferred\"" &&
-      abi.contains "\"name\":\"ERC20Released\"" do
-    throwError s!"Vest20Link ABI lost ERC-20 vesting surface:\n{abi}"
-  unless !abi.contains "\"name\":\"EtherReleased\"" do
-    throwError "Vest20Link must not grow an EtherReleased surface"
-  unless !abi.contains "\"type\":\"receive\"" do
-    throwError "Vest20Link must not grow a receive entry"
+      abi.contains "\"name\":\"ERC20Released\"" &&
+      abi.contains "\"name\":\"EtherReleased\"" &&
+      abi.contains "\"type\":\"receive\"" do
+    throwError s!"Vest20Link ABI lost dual-asset vesting surface:\n{abi}"
   unless abi.contains "\"name\":\"ZeroAddress\"" do
     throwError "Vest20Link ABI lost ZeroAddress"
   unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
@@ -114,7 +132,7 @@ private def expectVest20Link : CommandElabM Unit := do
       | throwError s!"Vest20Link canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" do
       throwError s!"{ixName} lost the linear formula"
-  unless IR.digestHex program == "6f387586e59335d5" do
+  unless IR.digestHex program == "ac851caa6b77b626" do
     throwError s!"Vest20Link digest drifted: {IR.digestHex program}"
   logInfo m!"vest20link: digest={IR.digestHex program} abi-ok"
 
