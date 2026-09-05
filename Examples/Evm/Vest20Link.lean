@@ -1,12 +1,13 @@
 import ProofForge.Evm.Sdk
 
 /-!
-ERC-20 vesting consumer. Constructor stores the beneficiary and bakes `start` / `duration` as
-immutables. Each token's paid-out amount lives in a hashed address map.
+ERC-20 vesting consumer. Constructor stores the beneficiary and cliff duration, and bakes
+`start` / `duration` as immutables. Each token's paid-out amount lives in a hashed address map.
 `release(address)` pays the currently releasable amount through `SafeErc20.transfer`, matching
 OpenZeppelin `release(address token)`. `transferOwnership` is one-step Ownable rotation of the
 stored beneficiary. Native-ETH `release()` / `release(uint256)` stay on `VestLink`. There is no
-cliff or schedule mutation.
+arbitrary schedule mutation. Before the cliff, `vestedAmount` is 0. After the cliff the linear
+formula still uses `timestamp - start`.
 
 Schedule math is spelled inline at this boundary so extract can emit linear vesting. SDK helpers
 supply gates and the typed event only.
@@ -17,6 +18,7 @@ open ProofForge.Evm.Sdk
 
 structure State where
   owner : Address
+  cliffDuration : UInt64
   dummy : UInt64
   guard : UInt64
   deriving Repr, DecidableEq, Inhabited
@@ -26,7 +28,8 @@ structure Handles where
 
 @[pf_inline] def declared : Storage.Static.Allocated Handles :=
   let owner := Storage.Static.Layout.root.address "owner"
-  let dummy := owner.next.uint64 "dummy"
+  let cliffDuration := owner.next.uint64 "cliffDuration"
+  let dummy := cliffDuration.next.uint64 "dummy"
   let guard := dummy.next.uint64 "guard"
   { handle := { guard := guard.handle }, next := guard.next }
 
@@ -39,12 +42,12 @@ inductive Error where
   deriving Repr, DecidableEq, Inhabited, BEq
 
 @[pf_entry]
-def init (beneficiary : Address) (_start _duration : UInt64) : State :=
-  { owner := beneficiary, dummy := 0, guard := Reentrancy.notEntered }
+def init (beneficiary : Address) (_start _duration cliffDuration : UInt64) : State :=
+  { owner := beneficiary, cliffDuration := cliffDuration, dummy := 0, guard := Reentrancy.notEntered }
 
 @[pf_entry]
 def beneficiary (s : State) : Address :=
-  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     s.owner
   else
     Address.zero
@@ -55,28 +58,35 @@ def owner (s : State) : Address :=
 
 @[pf_entry]
 def start (s : State) : UInt256 :=
-  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     ⟨Immutable.u64, 0, 0, 0⟩
   else
     UInt256.zero
 
 @[pf_entry]
 def duration (s : State) : UInt256 :=
-  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     ⟨Immutable.u64b, 0, 0, 0⟩
   else
     UInt256.zero
 
 @[pf_entry]
+def cliff (s : State) : UInt256 :=
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
+    ⟨Vesting.cliffAt Immutable.u64 Immutable.u64b s.cliffDuration, 0, 0, 0⟩
+  else
+    UInt256.zero
+
+@[pf_entry]
 def endTime (s : State) : UInt256 :=
-  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     ⟨Vesting.endAt Immutable.u64 Immutable.u64b, 0, 0, 0⟩
   else
     UInt256.zero
 
 @[pf_entry]
 def releasedOf (s : State) (token : Address) : UInt256 :=
-  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     if Vesting.wellFormedToken token then
       released.get token
     else
@@ -86,9 +96,9 @@ def releasedOf (s : State) (token : Address) : UInt256 :=
 
 @[pf_entry]
 def releasable (s : State) (token : Address) : UInt256 :=
-  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     if Vesting.wellFormedToken token then
-      if Context.timestamp < Immutable.u64 then
+      if Context.timestamp < Vesting.cliffAt Immutable.u64 Immutable.u64b s.cliffDuration then
         UInt256.zero
       else if Context.timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
         let paid := released.get token
@@ -113,9 +123,9 @@ def releasable (s : State) (token : Address) : UInt256 :=
 
 @[pf_entry]
 def vestedAmount (s : State) (token : Address) (timestamp : UInt64) : UInt256 :=
-  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     if Vesting.wellFormedToken token then
-      if timestamp < Immutable.u64 then
+      if timestamp < Vesting.cliffAt Immutable.u64 Immutable.u64b s.cliffDuration then
         UInt256.zero
       else if timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
         UInt256.add (ERC20.balanceOfSelf token) (released.get token)
@@ -147,16 +157,15 @@ reverts `ZeroAddress`. An over-capacity `released + payout` is a hard overflow. 
 guard is visible before the external call and restored afterwards. -/
 @[pf_entry]
 def release (s : State) (token : Address) : Except Error (State × UInt64) :=
-  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b then
+  if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     if Vesting.wellFormedToken token then
       if Reentrancy.canEnter s.guard then
-        if Context.timestamp < Immutable.u64 then
+        if Context.timestamp < Vesting.cliffAt Immutable.u64 Immutable.u64b s.cliffDuration then
           let paid := released.get token
           let _ := Reentrancy.enter declared.handle.guard
           let _ := SafeErc20.transfer token s.owner UInt256.zero
           let _ := Reentrancy.leave declared.handle.guard
-          .ok ({ owner := s.owner, dummy := released.put token paid,
-                 guard := Reentrancy.notEntered },
+          .ok ({ s with dummy := released.put token paid, guard := Reentrancy.notEntered },
             Vesting.TokenLog.erc20Released token UInt256.zero)
         else if Context.timestamp ≥ Vesting.endAt Immutable.u64 Immutable.u64b then
           let paid := released.get token
@@ -167,8 +176,7 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
               let _ := Reentrancy.enter declared.handle.guard
               let _ := SafeErc20.transfer token s.owner payout
               let _ := Reentrancy.leave declared.handle.guard
-              .ok ({ owner := s.owner,
-                     dummy := released.put token (UInt256.add paid payout),
+              .ok ({ s with dummy := released.put token (UInt256.add paid payout),
                      guard := Reentrancy.notEntered },
                 Vesting.TokenLog.erc20Released token payout)
             else
@@ -189,8 +197,7 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
               let _ := Reentrancy.enter declared.handle.guard
               let _ := SafeErc20.transfer token s.owner payout
               let _ := Reentrancy.leave declared.handle.guard
-              .ok ({ owner := s.owner,
-                     dummy := released.put token (UInt256.add paid payout),
+              .ok ({ s with dummy := released.put token (UInt256.add paid payout),
                      guard := Reentrancy.notEntered },
                 Vesting.TokenLog.erc20Released token payout)
             else
@@ -199,8 +206,7 @@ def release (s : State) (token : Address) : Except Error (State × UInt64) :=
             let _ := Reentrancy.enter declared.handle.guard
             let _ := SafeErc20.transfer token s.owner UInt256.zero
             let _ := Reentrancy.leave declared.handle.guard
-            .ok ({ owner := s.owner, dummy := released.put token paid,
-                   guard := Reentrancy.notEntered },
+            .ok ({ s with dummy := released.put token paid, guard := Reentrancy.notEntered },
               Vesting.TokenLog.erc20Released token UInt256.zero)
       else
         .error .reentrantCall

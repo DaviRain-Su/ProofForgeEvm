@@ -22,9 +22,9 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   `totalSupply` / `tokenByIndex` / `tokenOfOwnerByIndex` over UInt64 ids with capacity 4, and
   after `Collectible.safeTransferFrom__id` shipped the three-argument overload. Row 5
   (`finance/VestingWallet`) stays PARTIAL after `VestLink` shipped stored-beneficiary
-  `transferOwnership` and parameterless `release()`, and after `Vest20Link` shipped the ERC-20
-  `released[token]` map. Remaining named gaps on that row are the cliff schedule and the
-  constructor zero-owner revert. `temporaryGapCount` stays 0.)
+  `transferOwnership`, parameterless `release()`, and a constructor-stored OZ cliff
+  (`cliffDuration`, `cliff()`). Remaining named gap on that row is the constructor
+  zero-owner revert. `temporaryGapCount` stays 0.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal

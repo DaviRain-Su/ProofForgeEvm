@@ -6,8 +6,8 @@ import Examples.Evm.Vest20Link
 /-!
 Bounded ERC-20 vesting map: `Vest20Link.release(address)` pays `releasable(token)` through
 `SafeErc20.transfer`, `releasedOf` is a hashed `token → paid` map, `transferOwnership` rotates
-the stored beneficiary, and `ERC20Released` is the typed log. Native-ETH `release()` stays on
-`VestLink`. `temporaryGapCount` stays 0.
+the stored beneficiary, `cliff()` is the OZ `VestingWalletCliff` timestamp, and `ERC20Released`
+is the typed log. Native-ETH `release()` stays on `VestLink`. `temporaryGapCount` stays 0.
 -/
 
 namespace Tests.EvmVest20Spec
@@ -18,8 +18,9 @@ open Lean Elab Command
 
 #guard !Vesting.wellFormedToken Address.zero
 #guard !Vesting.wellFormedBeneficiary Address.zero
-#guard !Vesting.canSchedule Address.zero (100 : UInt64) (900 : UInt64)
+#guard !Vesting.canSchedule Address.zero (100 : UInt64) (900 : UInt64) (0 : UInt64)
 #guard Vesting.endAt (100 : UInt64) (900 : UInt64) == (1000 : UInt64)
+#guard Vesting.cliffAt (100 : UInt64) (900 : UInt64) (400 : UInt64) == (500 : UInt64)
 
 private def expectVest20Link : CommandElabM Unit := do
   let env ← getEnv
@@ -28,8 +29,8 @@ private def expectVest20Link : CommandElabM Unit := do
     | .ok source => pure source
     | .error reason => throwError reason
   for ixName in
-      #["beneficiary", "owner", "start", "duration", "endTime", "releasedOf", "releasable",
-        "vestedAmount", "transferOwnership", "release"] do
+      #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "releasedOf",
+        "releasable", "vestedAmount", "transferOwnership", "release"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"Vest20Link is missing {ixName}"
   unless !(source.methods.any (·.ixName == "receive")) do
@@ -56,6 +57,7 @@ private def expectVest20Link : CommandElabM Unit := do
     | .ok abi => pure abi
     | .error reason => throwError reason
   unless abi.contains "\"name\":\"beneficiary\"" &&
+      abi.contains "\"name\":\"cliff\"" &&
       abi.contains "\"name\":\"releasedOf\"" &&
       abi.contains "\"name\":\"releasable\"" &&
       abi.contains "\"name\":\"vestedAmount\"" &&
