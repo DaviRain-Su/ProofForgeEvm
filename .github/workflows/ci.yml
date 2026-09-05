@@ -211,6 +211,9 @@ jobs:
       - name: Check ERC-3009 cancelAuthorization honesty
         run: python3 scripts/check_erc3009_cancel_honesty.py
 
+      - name: Check ERC-3009 authorizationState honesty
+        run: python3 scripts/check_erc3009_auth_state_honesty.py
+
       - name: Check ERC-721 3-arg safeTransferFrom honesty
         run: python3 scripts/check_safe3_honesty.py
 

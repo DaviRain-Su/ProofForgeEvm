@@ -180,12 +180,46 @@ private def emitAllowance256 (context : Context σ) (limb : Nat)
         indent ++ "let " ++ nm ++ " := " ++ packU256Word ret limb ++ nl
       return (txt, nm, st12)
 
+/-- Auth-used slot: keccak256(authorizer.w0 ‖ w1 ‖ w2 ‖ packedNonce ‖ 3). Write and view
+share this spelling so `authorizationState` cannot hash a different key than transfer,
+receive, and cancel. -/
+private def emitAuthUsedSlot (indent aw0 aw1 aw2 nonceWord slot : String) : String :=
+  indent ++ "mstore(0, " ++ aw0 ++ ")" ++ nl ++
+  indent ++ "mstore(32, " ++ aw1 ++ ")" ++ nl ++
+  indent ++ "mstore(64, " ++ aw2 ++ ")" ++ nl ++
+  indent ++ "mstore(96, " ++ nonceWord ++ ")" ++ nl ++
+  indent ++ "mstore(128, 3)" ++ nl ++
+  indent ++ "let " ++ slot ++ " := keccak256(0, 160)" ++ nl
+
+private def emitAuthorizationState (context : Context σ)
+    (a0 a1 a2 n0 n1 n2 n3 : Ops.Val) (st : σ) :
+    Except String (String × String × σ) := do
+  let indent := context.indent
+  let (p0, aw0, s0) ← context.materialize a0 st
+  let (p1, aw1, s1) ← context.materialize a1 s0
+  let (p2, aw2, s2) ← context.materialize a2 s1
+  let (m0p, m0, s3) ← context.materialize n0 s2
+  let (m1p, m1, s4) ← context.materialize n1 s3
+  let (m2p, m2, s5) ← context.materialize n2 s4
+  let (m3p, m3, s6) ← context.materialize n3 s5
+  let (nonceWord, st7) := context.fresh s6
+  let (authSlot, st8) := context.fresh st7
+  let (used, st9) := context.fresh st8
+  let txt := p0 ++ p1 ++ p2 ++ m0p ++ m1p ++ m2p ++ m3p ++
+    packBytes32At indent 0 m0 m1 m2 m3 ++
+    indent ++ "let " ++ nonceWord ++ " := mload(0)" ++ nl ++
+    emitAuthUsedSlot indent aw0 aw1 aw2 nonceWord authSlot ++
+    indent ++ "let " ++ used ++ " := iszero(iszero(sload(" ++ authSlot ++ ")))" ++ nl
+  return (txt, used, st9)
+
 def emitQuery (context : Context σ) (query : ClosedCall.Query) (operands : Array Ops.Val)
     (st : σ) : Except String (String × String × σ) :=
   match query, operands.toList with
   | .balance256 limb, [tw0, tw1, tw2] => emitBalance256 context limb tw0 tw1 tw2 st
   | .allowance256 limb, [tw0, tw1, tw2, o0, o1, o2, s0, s1, s2] =>
       emitAllowance256 context limb tw0 tw1 tw2 o0 o1 o2 s0 s1 s2 st
+  | .authorizationState, [a0, a1, a2, n0, n1, n2, n3] =>
+      emitAuthorizationState context a0 a1 a2 n0 n1 n2 n3 st
   | _, _ => .error s!"extract/unsupported: evm closed-call query arity {operands.size}"
 
 private def emitTransfer (context : Context σ)
@@ -706,12 +740,7 @@ private def emitAuthorizationWithTypeHash (context : Context σ)
     indent ++ "let " ++ sword ++ " := mload(0)" ++ nl ++
     indent ++ "if iszero(gt(timestamp(), " ++ validAfter ++ ")) {" ++ nl ++ expiredTxt ++ indent ++ "}" ++ nl ++
     indent ++ "if iszero(lt(timestamp(), " ++ validBefore ++ ")) {" ++ nl ++ expiredTxt ++ indent ++ "}" ++ nl ++
-    indent ++ "mstore(0, " ++ fw0 ++ ")" ++ nl ++
-    indent ++ "mstore(32, " ++ fw1 ++ ")" ++ nl ++
-    indent ++ "mstore(64, " ++ fw2 ++ ")" ++ nl ++
-    indent ++ "mstore(96, " ++ nonceWord ++ ")" ++ nl ++
-    indent ++ "mstore(128, 3)" ++ nl ++
-    indent ++ "let " ++ authSlot ++ " := keccak256(0, 160)" ++ nl ++
+    emitAuthUsedSlot indent fw0 fw1 fw2 nonceWord authSlot ++
     indent ++ "if sload(" ++ authSlot ++ ") { " ++ revert0 ++ " }" ++ nl ++
     indent ++ "mstore(0, 0x" ++ typeHash ++ ")" ++ nl ++
     indent ++ "mstore(32, " ++ fromA ++ ")" ++ nl ++
@@ -804,12 +833,7 @@ private def emitCancelAuthorization (context : Context σ)
     indent ++ "let " ++ rword ++ " := mload(0)" ++ nl ++
     packBytes32At indent 0 hs0 hs1 hs2 hs3 ++
     indent ++ "let " ++ sword ++ " := mload(0)" ++ nl ++
-    indent ++ "mstore(0, " ++ aw0 ++ ")" ++ nl ++
-    indent ++ "mstore(32, " ++ aw1 ++ ")" ++ nl ++
-    indent ++ "mstore(64, " ++ aw2 ++ ")" ++ nl ++
-    indent ++ "mstore(96, " ++ nonceWord ++ ")" ++ nl ++
-    indent ++ "mstore(128, 3)" ++ nl ++
-    indent ++ "let " ++ authSlot ++ " := keccak256(0, 160)" ++ nl ++
+    emitAuthUsedSlot indent aw0 aw1 aw2 nonceWord authSlot ++
     indent ++ "if sload(" ++ authSlot ++ ") { " ++ revert0 ++ " }" ++ nl ++
     indent ++ "mstore(0, 0x" ++ eip712CancelAuthorizationTypeHash ++ ")" ++ nl ++
     indent ++ "mstore(32, " ++ authorizer ++ ")" ++ nl ++

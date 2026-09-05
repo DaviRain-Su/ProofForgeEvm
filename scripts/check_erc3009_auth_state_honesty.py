@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Fail when product docs still list ERC-3009 receive as unshipped.
+"""Fail when product docs still list ERC-3009 authorizationState as unshipped.
 
-Auth3009Link.receiveWithAuthorization uses a distinct ReceiveWithAuthorization typehash
-and requires caller == to. Row 16 stays PARTIAL. Sdk.OzAudit.temporaryGapCount stays 0.
-A doc that still says no receive-with-authorization as the current gap is a lying inventory.
+Auth3009Link.authorizationState is a Bool view of the auth-used slot that
+transfer, receive, and cancel write (base 3). Row 16 stays PARTIAL.
+Sdk.OzAudit.temporaryGapCount stays 0.
+A doc that still names authorization-state views as the current gap is a lying inventory.
 
 Usage:
-    python3 scripts/check_erc3009_receive_honesty.py
+    python3 scripts/check_erc3009_auth_state_honesty.py
 """
 
 from __future__ import annotations
@@ -23,45 +24,49 @@ SCAN_ROOTS = (
 )
 
 STALE_PHRASES = (
-    "no receive-with-authorization, cancellation",
-    "Bounded `transferWithAuthorization` only; no receive-with-authorization",
-    "There is no receive-with-\nauthorization",
-    "There is no receive-with-authorization",
-    "cancellation and the remaining draft interfaces",
-    "Cancellation is out",
-    "no cancellation or cross-chain/account protocols",
+    "no authorization-state views",
+    "authorization-state views, remaining draft interfaces",
+    "There is no authorization-state enumeration API.",
 )
 
 ABSENT = ()
 
 REQUIRED = (
-    (ROOT / "Examples" / "Evm" / "Auth3009Link.lean", "def receiveWithAuthorization"),
-    (ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc3009.lean", "def receive"),
-    (ROOT / "ProofForge" / "Evm" / "Runtime.lean", "def evmReceiveWithAuthorization"),
+    (ROOT / "Examples" / "Evm" / "Auth3009Link.lean", "def authorizationState"),
+    (ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc3009.lean", "def authorizationState"),
+    (ROOT / "ProofForge" / "Evm" / "Runtime.lean", "def evmAuthorizationState"),
     (
         ROOT / "ProofForge" / "Evm" / "ClosedCall.lean",
-        "receiveWithAuthorization",
+        "authorizationState",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "ClosedCall/Emit.lean",
-        "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)",
+        "emitAuthUsedSlot",
     ),
+    (
+        ROOT / "ProofForge" / "Evm" / "ClosedCall/Emit.lean",
+        "iszero(iszero(sload(",
+    ),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "aa7369d7796f83fc"'),
+    (ROOT / "Tests" / "EvmErc3009Spec.lean", '"aa7369d7796f83fc"'),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
         "Remaining named restriction on that row is the remaining draft interfaces.",
     ),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "aa7369d7796f83fc"'),
-    (ROOT / "Tests" / "EvmErc3009Spec.lean", '"aa7369d7796f83fc"'),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "OzAudit.pathTagOf 16 == OzAudit.tagIfaceDraft"),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "!OzAudit.isTemporaryGap 16"),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_auth3009link.sh",
-        "receiveWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)",
+        "authorizationState(address,bytes32)(bool)",
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_auth3009link.sh",
-        "ReceiveWithAuthorization",
+        "unused nonce is false before transfer",
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_auth3009link.sh",
+        "cancel marks the authorizer nonce used",
     ),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
@@ -69,11 +74,11 @@ REQUIRED = (
     ),
     (
         ROOT / "docs" / "product" / "support-matrix.md",
-        "Bounded ERC-3009 `transferWithAuthorization`, `receiveWithAuthorization`, and `cancelAuthorization`",
+        "`authorizationState(address,bytes32)` is a Bool view of that slot",
     ),
     (
         ROOT / "docs" / "product" / "writing-contracts.md",
-        "bounded ERC-3009 `transferWithAuthorization`, `receiveWithAuthorization`, and `cancelAuthorization`",
+        "`authorizationState(address,bytes32)` is a Bool view of the auth-used slot",
     ),
 )
 
@@ -114,10 +119,10 @@ def main() -> int:
             failures.append(f"{path.relative_to(ROOT)}: missing {needle!r}")
     if failures:
         for item in failures:
-            print(f"check_erc3009_receive_honesty: {item}", file=sys.stderr)
-        print(f"check_erc3009_receive_honesty: FAIL ({len(failures)} issue(s))", file=sys.stderr)
+            print(f"check_erc3009_auth_state_honesty: {item}", file=sys.stderr)
+        print(f"check_erc3009_auth_state_honesty: FAIL ({len(failures)} issue(s))", file=sys.stderr)
         return 1
-    print("check_erc3009_receive_honesty: ok")
+    print("check_erc3009_auth_state_honesty: ok")
     return 0
 
 

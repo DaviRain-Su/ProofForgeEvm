@@ -138,6 +138,10 @@ private def isEvmOpenStaticTryMagicApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmOpenStaticTryMagic ||
     endsWith e ".evmOpenStaticTryMagic"
 
+private def isEvmAuthorizationStateApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmAuthorizationState ||
+    endsWith e ".evmAuthorizationState"
+
 /-- Any CALL-kind open-call stub: the effect carriers, as opposed to the STATICCALL reads. -/
 private def isOpenCallPlanApp (e : Expr) : Bool :=
   isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
@@ -318,6 +322,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
     asVal env fuel e.getAppArgs[e.getAppArgs.size - 2]!
   else if openStaticShapeOf e == some .bool || isEvmOpenStaticTryMagicApp e then
     openStaticRead? env e 1 0
+  else if isEvmAuthorizationStateApp e then
+    authorizationStateRead? env e
   else if let some (_, unfolded) := unfoldUserHelper env e then
     match env.find? n with
     | some (.defnInfo info) =>
@@ -1568,6 +1574,18 @@ private partial def openStaticRead? (env : Environment) (e : Expr) (carrier limb
         some (.ext (.evm (.component (.openCall { query with limb }))) operands)
       else none
   | _ => none
+
+private partial def authorizationStateRead? (env : Environment) (e : Expr) : Option Ops.Val :=
+  let args := e.getAppArgs
+  match nthFromEnd args 1, nthFromEnd args 0 with
+  | some authorizer, some nonce =>
+    let (a0, a1, a2) := addr20Leaves env authorizer
+    let (n0, n1, n2, n3) := bytes32Leaves env nonce
+    some (.ext (.evm (.component (.closedCall .authorizationState)))
+      #[a0, a1, a2, n0, n1, n2, n3])
+  | _, _ =>
+    some (.ext (.evm (.component (.closedCall .authorizationState)))
+      #[.arg 0, .arg 1, .arg 2, .arg 3, .arg 4, .arg 5, .arg 6])
 end
 
 /-- Decode a scalar binding through pure explicitly-inline facade layers before substituting it.
@@ -2044,6 +2062,8 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
     else if openStaticShapeOf e == some .bool || isEvmOpenStaticTryMagicApp e then
       openStaticRead? env e 1 0
+    else if isEvmAuthorizationStateApp e then
+      authorizationStateRead? env e
     else if isConstNamed e ``Eq && args.size ≥ 2 then
       let lhs := strip args[args.size - 2]!
       let rhs := strip args[args.size - 1]!
@@ -4551,6 +4571,10 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
     | .query query operands =>
       some #[.returnU64 (.ext (.evm (.component (.openCall { query with limb := 0 }))) operands)]
     | _ => none
+  else if isEvmAuthorizationStateApp app then
+    match authorizationStateRead? env app with
+    | some value => some #[.returnU64 value]
+    | none => none
   else if let some shape := openStaticShapeOf app then
     match decodeOpenCallCtor env app with
     | .query query operands =>

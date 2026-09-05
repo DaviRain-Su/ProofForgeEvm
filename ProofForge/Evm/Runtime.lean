@@ -436,6 +436,11 @@ submit. name=`Token`, version=`1`, authUsed base=3. Revert on failure. Host retu
     (_authorizer : Addr20) (_nonce : Bytes32) (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
   0
 
+/-- Closed ERC-3009 `authorizationState`. Reads the auth-used slot (base=3) that transfer,
+receive, and cancel write. Host returns `false`. -/
+@[irreducible] def evmAuthorizationState (_authorizer : Addr20) (_nonce : Bytes32) : Bool :=
+  false
+
 /-- 封闭 EIP-712 domain separator。name=`Token`，version=`1`。宿主返回 0。 -/
 @[irreducible] def evmDomainSeparator : Bytes32 := ⟨0, 0, 0, 0⟩
 

@@ -54,8 +54,8 @@ REQUIRED = (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
         "Remaining named restriction on that row is the remaining draft interfaces.",
     ),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "b3ad9c6416b7a221"'),
-    (ROOT / "Tests" / "EvmErc3009Spec.lean", '"b3ad9c6416b7a221"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "aa7369d7796f83fc"'),
+    (ROOT / "Tests" / "EvmErc3009Spec.lean", '"aa7369d7796f83fc"'),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "OzAudit.pathTagOf 16 == OzAudit.tagIfaceDraft"),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "!OzAudit.isTemporaryGap 16"),
     (
@@ -72,7 +72,7 @@ REQUIRED = (
     ),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
-        "this expansion shipped `cancelAuthorization`",
+        "this expansion shipped `authorizationState`",
     ),
     (
         ROOT / "docs" / "product" / "support-matrix.md",

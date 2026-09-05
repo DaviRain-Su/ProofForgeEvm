@@ -86,4 +86,8 @@ def cancelAuthorization (s : State) (authorizer : Address) (nonce : Bytes32)
   else
     .error .overflow
 
+@[pf_entry]
+def authorizationState (_s : State) (authorizer : Address) (nonce : Bytes32) : Bool :=
+  Erc3009.authorizationState authorizer nonce
+
 end Examples.Evm.Auth3009Link

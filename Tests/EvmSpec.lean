@@ -57,6 +57,8 @@ open ProofForge.Evm
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.arith256 3 0)
 #guard ProofForge.Evm.ClosedCall.Query.wellFormed (.balance256 0)
 #guard !ProofForge.Evm.ClosedCall.Query.wellFormed (.allowance256 4)
+#guard ProofForge.Evm.ClosedCall.Query.wellFormed .authorizationState
+#guard ProofForge.Evm.ClosedCall.Query.arity .authorizationState == 7
 #guard
   (ProofForge.Evm.ClosedCall.Call.canonical (fun _ => "x")
     (.balanceOfSelf (.lit 0) (.lit 1) (.lit 2) : ProofForge.Evm.ClosedCall.Call ProofForge.Evm.Ops.Val))

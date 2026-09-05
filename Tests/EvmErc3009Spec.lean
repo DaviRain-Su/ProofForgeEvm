@@ -5,8 +5,10 @@ import Examples.Evm.Auth3009Link
 
 /-!
 W5 slice e plus this expansion: bounded ERC-3009 transfer-with-authorization,
-receive-with-authorization, and cancelAuthorization. Receive uses a distinct EIP-712
-typehash and `caller == to`. Cancel uses `CancelAuthorization(address authorizer,bytes32 nonce)`.
+receive-with-authorization, cancelAuthorization, and authorizationState. Receive uses a
+distinct EIP-712 typehash and `caller == to`. Cancel uses
+`CancelAuthorization(address authorizer,bytes32 nonce)`. authorizationState is a Bool view of
+the same auth-used slot.
 -/
 
 namespace Tests.EvmErc3009Spec
@@ -47,7 +49,8 @@ private def expectAuth3009Link : CommandElabM Unit := do
     | .error reason => throwError reason
   for ixName in #[
       "DOMAIN_SEPARATOR", "balanceOf", "mint", "totalSupply",
-      "transferWithAuthorization", "receiveWithAuthorization", "cancelAuthorization"
+      "transferWithAuthorization", "receiveWithAuthorization", "cancelAuthorization",
+      "authorizationState"
     ] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"Auth3009Link is missing {ixName}"
@@ -62,6 +65,7 @@ private def expectAuth3009Link : CommandElabM Unit := do
   unless abi.contains "\"name\":\"transferWithAuthorization\"" &&
       abi.contains "\"name\":\"receiveWithAuthorization\"" &&
       abi.contains "\"name\":\"cancelAuthorization\"" &&
+      abi.contains "\"name\":\"authorizationState\"" &&
       abi.contains "\"name\":\"DOMAIN_SEPARATOR\"" do
     throwError s!"Auth3009Link ABI lost ERC-3009 surface:\n{abi}"
   let yul ←
@@ -78,7 +82,9 @@ private def expectAuth3009Link : CommandElabM Unit := do
   unless yul.contains s!"0x{cancelTypeHash}" &&
       yul.contains s!"0x{authCanceledTopic}" do
     throwError "Auth3009Link Yul missing CancelAuthorization typehash or AuthorizationCanceled"
-  unless IR.digestHex program == "b3ad9c6416b7a221" do
+  unless yul.contains "iszero(iszero(sload(" do
+    throwError "Auth3009Link Yul missing authorizationState Bool sload"
+  unless IR.digestHex program == "aa7369d7796f83fc" do
     throwError s!"Auth3009Link digest drifted: {IR.digestHex program}"
 
 elab "#pf_guard_evm_erc3009" : command => expectAuth3009Link

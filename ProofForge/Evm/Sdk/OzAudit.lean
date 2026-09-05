@@ -34,7 +34,8 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   `permit` / `DOMAIN_SEPARATOR` / `nonces` over the closed Token/1 EIP-2612 path.
   Remaining named restriction on those rows is extensions/permit-votes.
   Row 16 (`draft-IERC3009` and sibling drafts) stays PARTIAL after `Auth3009Link` shipped
-  `cancelAuthorization` over a distinct `CancelAuthorization` typehash.
+  `cancelAuthorization` over a distinct `CancelAuthorization` typehash and
+  `authorizationState` as a Bool view of the auth-used slot.
   Remaining named restriction on that row is the remaining draft interfaces.
   Row 1 (`access/Ownable`, `Ownable2Step`) stays PARTIAL after TwoStepCounter/Credits CREATE
   reverts `OwnableInvalidOwner(address)` and logs `OwnershipTransferred(address(0), owner)`.
