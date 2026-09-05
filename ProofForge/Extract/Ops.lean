@@ -124,6 +124,9 @@ private def evmLeaf (kind : Evm.Ops.ValKind) : Val :=
 @[match_pattern] def Op.evmTransferWithAuthorization
     (f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Val) : Op :=
   .ext (.evm (.component (.closedCall (.transferWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3))))
+@[match_pattern] def Op.evmReceiveWithAuthorization
+    (f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Val) : Op :=
+  .ext (.evm (.component (.closedCall (.receiveWithAuthorization f0 f1 f2 t0 t1 t2 v0 v1 v2 v3 a0 a1 a2 a3 b0 b1 b2 b3 n0 n1 n2 n3 vv r0 r1 r2 r3 z0 z1 z2 z3))))
 @[match_pattern] def Op.evmTokenPermit
     (t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3 : Val) : Op :=
   .ext (.evm (.component (.closedCall (.tokenPermit t0 t1 t2 o0 o1 o2 s0 s1 s2 v0 v1 v2 v3 d0 d1 d2 d3 vv r0 r1 r2 r3 z0 z1 z2 z3))))

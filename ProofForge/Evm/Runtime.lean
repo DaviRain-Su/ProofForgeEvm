@@ -421,6 +421,14 @@ Invalid signatures revert on EVM; the host stub returns zero address. -/
     (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
   value.w0
 
+/-- Closed ERC-3009 `receiveWithAuthorization`. Distinct EIP-712 typehash from transfer.
+The caller must be `to`. name=`Token`, version=`1`, balance base=0, authUsed base=3. Revert on
+failure. Host returns `value.w0`. -/
+@[irreducible] def evmReceiveWithAuthorization
+    (_from _to : Addr20) (value _validAfter _validBefore : UInt256) (_nonce : Bytes32)
+    (_v : UInt8) (_r _s : Bytes32) : UInt64 :=
+  value.w0
+
 /-- 封闭 EIP-712 domain separator。name=`Token`，version=`1`。宿主返回 0。 -/
 @[irreducible] def evmDomainSeparator : Bytes32 := ⟨0, 0, 0, 0⟩
 

@@ -15,6 +15,7 @@ next reopened row has a home. IERC1155 `DuplicateId()` is a named PARTIAL bound,
 temporary gap. Row 5 VestLink ETH-only is the same kind of named restriction:
 `temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PARTIAL / 9 ABSENT /
 9 blocked / 0 gap. Rows 8 and 19 stay PARTIAL after issuer `permit` on `Erc20Meta`.
+Row 16 stays PARTIAL after `receiveWithAuthorization`.
 -/
 
 namespace Tests.EvmOzAuditSpec
@@ -74,6 +75,7 @@ open Lean Elab Command
 #guard OzAudit.statusOf 16 == OzAudit.statusPartial
 #guard !OzAudit.isBlocked 16
 #guard !OzAudit.isAbsent 16
+#guard !OzAudit.isTemporaryGap 16
 #guard OzAudit.blockedRowTagged 16
 #guard OzAudit.pathTagOf 5 == OzAudit.tagFinanceVesting
 #guard OzAudit.statusOf 5 == OzAudit.statusPartial
