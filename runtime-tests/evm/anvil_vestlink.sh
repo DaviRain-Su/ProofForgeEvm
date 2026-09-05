@@ -121,8 +121,8 @@ fi
 pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'transferOwnership(address)' "$other")" "$other" \
   "non-owner transferOwnership"
-pf_evm_require_zero_address "$addr" "$beneficiary" \
-  "$("$cast" calldata 'transferOwnership(address)' "$zero")" \
+pf_evm_require_ownable_invalid_owner "$addr" "$beneficiary" \
+  "$("$cast" calldata 'transferOwnership(address)' "$zero")" "$zero" \
   "zero new owner"
 rotate_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'transferOwnership(address)' "$other")"
@@ -239,7 +239,7 @@ yul="$root/build/evm/VestLink.yul"
 ctor_mut_dir="$root/build/evm/vestlink-ctor-mut"
 rm -rf "$ctor_mut_dir"
 mkdir -p "$ctor_mut_dir"
-pf_evm_strip_ctor_invalid_owner_guard "$yul" VestLink "$ctor_mut_dir/VestLink.yul" 0
+pf_evm_strip_ctor_invalid_owner_guard "$yul" VestLink "$ctor_mut_dir/VestLink.yul"
 ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$ctor_mut_dir/VestLink.yul" | "$python" -I -S -c "
 import sys

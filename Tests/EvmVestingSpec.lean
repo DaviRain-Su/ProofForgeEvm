@@ -96,10 +96,10 @@ private def expectVestLink : CommandElabM Unit := do
     throwError s!"VestLink ABI lost vesting surface:\n{abi}"
   unless !abi.contains "\"name\":\"royaltyInfo\"" do
     throwError "VestLink must not grow a royalty surface"
-  unless abi.contains "\"name\":\"ZeroAddress\"" do
-    throwError "VestLink ABI lost ZeroAddress"
   unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
     throwError "VestLink ABI lost OwnableInvalidOwner"
+  unless !abi.contains "\"name\":\"ZeroAddress\"" do
+    throwError "VestLink must not advertise ZeroAddress"
   unless abi.contains "\"name\":\"OwnableUnauthorizedAccount\"" do
     throwError "VestLink ABI lost OwnableUnauthorizedAccount"
   unless !abi.contains "\"name\":\"Unauthorized\"" do
@@ -145,7 +145,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "897a7934eb6291be" do
+  unless IR.digestHex program == "86c8363611ee3cc7" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

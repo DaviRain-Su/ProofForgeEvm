@@ -196,6 +196,9 @@ jobs:
       - name: Check TwoStep/Credits CREATE honesty
         run: python3 scripts/check_twostep_ctor_honesty.py
 
+      - name: Check Ownable2Step nominate-zero OwnableInvalidOwner honesty
+        run: python3 scripts/check_nominate_invalid_owner_honesty.py
+
       - name: Check vesting released() honesty
         run: python3 scripts/check_vest_released_honesty.py
 

@@ -193,13 +193,14 @@ def vestedAmount__eth (s : State) (timestamp : UInt64) : UInt256 :=
   else
     UInt256.zero
 
-/-- Step 1 of Ownable2Step rotation. Zero `newOwner` reverts `ZeroAddress()`. Non-owner reverts
-`OwnableUnauthorizedAccount(caller)`. Success emits `OwnershipTransferStarted(owner, newOwner)`. -/
+/-- Step 1 of Ownable2Step rotation. Zero `newOwner` reverts `OwnableInvalidOwner(address)`.
+Non-owner reverts `OwnableUnauthorizedAccount(caller)`. Success emits
+`OwnershipTransferStarted(owner, newOwner)`. -/
 @[pf_entry]
 def transferOwnership (s : State) (newOwner : Address) : Except Error (State × UInt64) :=
   if Access.requireOwner s.owner then
     if Address.isZero newOwner then
-      .ok (s, Revert.zeroAddress)
+      .ok (s, Revert.ownableInvalidOwner newOwner)
     else
       .ok ({ s with ownership := Access.Ownership.nominate s.ownership newOwner },
         Ownable.Log.ownershipTransferStarted s.owner newOwner)

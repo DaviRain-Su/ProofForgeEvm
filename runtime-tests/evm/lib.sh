@@ -734,8 +734,8 @@ raise SystemExit('FAIL: $message: CREATE still reverted ('+repr(err)+')')
 
 # Write DEST_YUL from SRC_YUL with the constructor-only OwnableInvalidOwner revert
 # removed once. NAME is the Yul object (VestLink / Vest20Link / TwoStepCounter / Credits).
-# Fourth argument 0 skips the runtime-selector check for consumers whose transferOwnership
-# still uses ZeroAddress.
+# Fourth argument 0 skips the runtime-selector check. Default 1 requires the runtime
+# object to keep OwnableInvalidOwner because nominate-zero uses that selector.
 pf_evm_strip_ctor_invalid_owner_guard() {
   local src="$1" name="$2" dest="$3"
   local need_runtime="${4:-1}"

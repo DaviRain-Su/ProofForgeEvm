@@ -2,7 +2,7 @@
 """Fail when product docs still list Vest Ownable2Step as the VestingWallet gap.
 
 VestLink and Vest20Link transferOwnership nominates and logs OwnershipTransferStarted.
-acceptOwnership rotates the stored beneficiary. Nominate-zero reverts ZeroAddress().
+acceptOwnership rotates the stored beneficiary. Nominate-zero reverts OwnableInvalidOwner(address).
 Sdk.OzAudit.temporaryGapCount stays 0. A doc that still lists no Ownable2Step as the
 current remainder is a lying inventory. Remaining named restriction is VestLink is the
 ETH-only smaller profile (Vest20Link is dual-asset).
@@ -34,16 +34,17 @@ STALE_PHRASES = (
 REQUIRED = (
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "def acceptOwnership"),
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "def pendingOwner"),
-    (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.zeroAddress"),
+    (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner newOwner"),
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "Ownable.Log.ownershipTransferStarted"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def acceptOwnership"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def pendingOwner"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.zeroAddress"),
+    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner newOwner"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Ownable.Log.ownershipTransferStarted"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "897a7934eb6291be"'),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "897a7934eb6291be"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "226bbefeac922a65"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "226bbefeac922a65"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "86c8363611ee3cc7"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "86c8363611ee3cc7"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "9a9cce6e0d2a58a2"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "9a9cce6e0d2a58a2"'),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
@@ -59,10 +60,10 @@ REQUIRED = (
     (ROOT / "Tests" / "EvmVest20Spec.lean", "OwnershipTransferStarted"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "acceptOwnership()"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "OwnershipTransferStarted"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", 'VestLink.yul" 0'),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", 'VestLink.yul"'),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "acceptOwnership()"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "OwnershipTransferStarted"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", 'Vest20Link.yul" 0'),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", 'Vest20Link.yul"'),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "Vest Ownable2Step nominate plus accept",
