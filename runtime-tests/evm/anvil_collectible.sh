@@ -284,4 +284,86 @@ pf_evm_require_uint "$(owner_of 5)" "$sender_packed" "refused data left the owne
 pf_evm_require_equal "$(seen 'seenDataHash()(bytes32)')" "$("$cast" keccak "$data32")" \
   "hook saw all 32 data bytes"
 
-echo "evm-anvil-collectible: ok (mint/approve/transferFrom + ERC-721 Transfer/Approval LOG4 + safeTransferFrom receiver hook: magic, operator, EOA skip, five refusals, data bound)"
+# Three-argument overload: empty data, same hook, selector 0x42842e0e.
+safe3_sig='safeTransferFrom(address,address,uint256)'
+"$python" -I -S -c "
+import json, sys
+abi=json.load(open('$abi'))
+ins=[tuple(i['type'] for i in e.get('inputs',[]))
+     for e in abi if e.get('type')=='function' and e.get('name')=='safeTransferFrom']
+if ('address','address','uint256') not in ins:
+    sys.stderr.write('FAIL: Collectible ABI lost safeTransferFrom(address,address,uint256)\\n')
+    sys.exit(1)
+if ('address','address','uint256','bytes') not in ins:
+    sys.stderr.write('FAIL: Collectible ABI lost safeTransferFrom(address,address,uint256,bytes)\\n')
+    sys.exit(1)
+"
+set_hook "$hook_word" 32 false
+mint_to_sender 7
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" --from "$sender" "$addr" \
+  "$safe3_sig(bool)" "$sender" "$receiver" 7)" true \
+  "safeTransferFrom(address,address,uint256) answers true"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe3_sig" "$sender" "$receiver" 7 >/dev/null
+pf_evm_require_uint "$(owner_of 7)" "$receiver_packed" \
+  "owner after three-argument safeTransferFrom to a contract"
+pf_evm_require_equal "$(seen 'seenDataHash()(bytes32)')" "$("$cast" keccak 0x)" \
+  "three-argument overload forwarded empty data"
+mint_to_sender 8
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" "$safe3_sig" "$sender" "$other" 8 >/dev/null
+pf_evm_require_uint "$(owner_of 8)" "$other_packed" \
+  "three-argument safeTransferFrom to an EOA skips the hook"
+
+yul="$root/build/evm/Collectible.yul"
+if [[ ! -f "$yul" ]]; then
+  echo "building Collectible.yul" >&2
+  lake exe pf -- build --target evm --out "$root/build/evm" Collectible \
+    || { echo "FAIL: pf build Collectible failed" >&2; exit 1; }
+fi
+[[ -f "$yul" ]] || { echo "FAIL: missing $yul" >&2; exit 1; }
+mut_dir="$root/build/evm/collectible-safe3-mut"
+rm -rf "$mut_dir"
+mkdir -p "$mut_dir"
+"$python" -I -S -c "
+from pathlib import Path
+import sys
+src = Path('$yul').read_text()
+n = src.count('case 0x42842e0e')
+if n != 1:
+    sys.stderr.write(f'FAIL: expected one case 0x42842e0e, got {n}\\n')
+    sys.exit(1)
+out = src.replace('case 0x42842e0e', 'case 0xdeadbeef', 1)
+if out == src:
+    sys.stderr.write('FAIL: 3-arg selector rewrite missed\\n')
+    sys.exit(1)
+Path('$mut_dir/Collectible.yul').write_text(out)
+"
+mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$mut_dir/Collectible.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc --strict-assembly wrote no 3-arg-mut bytecode')
+print(hexes[-1])
+")"
+[[ -n "$mut_code" ]] || { echo "FAIL: empty mutated Collectible bytecode" >&2; exit 1; }
+mut_addr="$(pf_evm_deploy_ctor_address "$mut_code" "$sender")"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$mut_addr" 'mint(address,uint256)' "$sender" 9 >/dev/null
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$mut_addr" "$safe3_sig" "$sender" "$receiver" 9 >/dev/null 2>&1; then
+  echo "FAIL: mutated 3-arg selector still transferred" >&2
+  exit 1
+fi
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$mut_addr" \
+  'ownerOf(uint256)(uint256)' 9)" "$sender_packed" \
+  "rewrote 3-arg selector left the owner in place"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$mut_addr" "$safe_sig" "$sender" "$receiver" 9 0x >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$mut_addr" \
+  'ownerOf(uint256)(uint256)' 9)" "$receiver_packed" \
+  "4-arg safeTransferFrom still moves after the 3-arg selector rewrite"
+
+echo "evm-anvil-collectible: ok (mint/approve/transferFrom + ERC-721 Transfer/Approval LOG4 + safeTransferFrom receiver hook: magic, operator, EOA skip, five refusals, data bound, three-argument overload, 3-arg selector mutation)"
