@@ -13,6 +13,7 @@ namespaces. A fixed compile-time token id selects one `AddressMap256` balance na
 
 Only the configured `fixedId` is live. Every view and mutation predicate gates on `matchesId`
 before touching storage; other ids read zero and fail authorization without aliasing the fixed id.
+Dynamic multi-id registration stays out.
 -/
 
 /-- True when `tokenId` equals the configured fixed id. -/

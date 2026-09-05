@@ -18,6 +18,10 @@ Row 12 remaining named restriction is that the receiving side stays a permanent 
 plus wider payloads. `temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PARTIAL / 9 ABSENT /
 9 blocked / 0 gap. Rows 8 and 19 stay PARTIAL after issuer `permit` on `Erc20Meta`.
 Row 16 stays PARTIAL after `cancelAuthorization`.
+Row 16 remaining named restriction is the remaining draft interfaces.
+Row 2 remaining named restriction is enumeration/manager.
+Row 13 remaining named restriction is dynamic exchange-rate vault math plus flash/777/1363.
+Row 22 remaining named restriction is dynamic multi-id registration.
 Row 1 nominate-zero nominates the zero address (OZ cancel).
 VestLink and Vest20Link ship `renounceOwnership`.
 -/
@@ -75,6 +79,15 @@ open Lean Elab Command
 #guard OzAudit.statusOf 2 == OzAudit.statusPartial
 #guard !OzAudit.isBlocked 2
 #guard !OzAudit.isAbsent 2
+#guard !OzAudit.isTemporaryGap 2
+#guard OzAudit.pathTagOf 13 == OzAudit.tagIfaceFinance
+#guard OzAudit.statusOf 13 == OzAudit.statusPartial
+#guard !OzAudit.isBlocked 13
+#guard !OzAudit.isTemporaryGap 13
+#guard OzAudit.pathTagOf 22 == OzAudit.tagToken6909
+#guard OzAudit.statusOf 22 == OzAudit.statusPartial
+#guard !OzAudit.isBlocked 22
+#guard !OzAudit.isTemporaryGap 22
 #guard OzAudit.pathTagOf 16 == OzAudit.tagIfaceDraft
 #guard OzAudit.statusOf 16 == OzAudit.statusPartial
 #guard !OzAudit.isBlocked 16
