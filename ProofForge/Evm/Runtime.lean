@@ -207,10 +207,13 @@ types, and `Indexed` flags as one `EventFrame`; the host returns 0. -/
 /-- 参数化 `Insufficient(uint256,uint256)`。宿主返回 `have.w0`。 -/
 @[irreducible] def evmRevertInsufficient (_have _want : UInt256) : UInt64 := 0
 
-/-- 参数化 `Unauthorized(address)`。宿主返回 0。 -/
+/-- Parameterized `Unauthorized(address)`. Host returns 0. -/
 @[irreducible] def evmRevertUnauthorized (_who : Addr20) : UInt64 := 0
 
-/-- 无参 `ZeroAddress()`。宿主返回 0。 -/
+/-- Parameterized OZ `OwnableInvalidOwner(address)`. Host returns 0. -/
+@[irreducible] def evmRevertOwnableInvalidOwner (_owner : Addr20) : UInt64 := 0
+
+/-- Selector-only `ZeroAddress()`. Host returns 0. -/
 @[irreducible] def evmRevertZeroAddress : UInt64 := 0
 
 /-- 无参 `Paused()`。宿主返回 0。 -/

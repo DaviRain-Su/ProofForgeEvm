@@ -123,6 +123,9 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: non-owner transferOwnership unexpectedly succeeded" >&2
   exit 1
 fi
+pf_evm_require_ownable_invalid_owner "$addr" "$beneficiary" \
+  "$("$cast" calldata 'transferOwnership(address)' "$zero")" "$zero" \
+  "zero new owner"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'transferOwnership(address)' "$other" >/dev/null
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'beneficiary()(address)')" \
@@ -154,7 +157,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: zero-owner constructor CREATE unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_create_zero_address "$bytecode" "$zero_encoded" "$beneficiary" \
+pf_evm_require_create_ownable_invalid_owner "$bytecode" "$zero_encoded" "$beneficiary" \
   "zero beneficiary CREATE"
 
 now_cliff="$(pf_evm_to_dec "$("$cast" block --rpc-url "$rpc" latest --json | "$python" -I -S -c 'import json,sys; print(json.load(sys.stdin)["timestamp"])')")"
@@ -186,7 +189,7 @@ yul="$root/build/evm/Vest20Link.yul"
 ctor_mut_dir="$root/build/evm/vest20link-ctor-mut"
 rm -rf "$ctor_mut_dir"
 mkdir -p "$ctor_mut_dir"
-pf_evm_strip_ctor_zero_guard "$yul" Vest20Link "$ctor_mut_dir/Vest20Link.yul"
+pf_evm_strip_ctor_invalid_owner_guard "$yul" Vest20Link "$ctor_mut_dir/Vest20Link.yul"
 ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$ctor_mut_dir/Vest20Link.yul" | "$python" -I -S -c "
 import sys

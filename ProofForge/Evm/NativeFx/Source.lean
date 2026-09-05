@@ -50,6 +50,9 @@ main-emitter case is introduced.
 @[pf_inline] def revertUnauthorized (who : Addr20) : UInt64 :=
   evmRevertUnauthorized who
 
+@[pf_inline] def revertOwnableInvalidOwner (owner : Addr20) : UInt64 :=
+  evmRevertOwnableInvalidOwner owner
+
 @[pf_inline] def revertZeroAddress : UInt64 :=
   evmRevertZeroAddress
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Fail when product docs still list constructor zero-owner CREATE as missing.
+"""Fail when product docs still list Vest CREATE OwnableInvalidOwner as missing.
 
-VestLink and Vest20Link revert OwnableInvalidOwner(address) when CREATE gets
-address(0). That guard is a dropped-let in init plus an Emit revert-only
-constructor prefix. Sdk.OzAudit.temporaryGapCount stays 0. A doc that still
-lists the CREATE guard as missing is a lying inventory.
+VestLink and Vest20Link revert OwnableInvalidOwner(address) on CREATE of
+address(0) and on transferOwnership(address(0)). Sdk.OzAudit.temporaryGapCount
+stays 0. A doc that still lists that selector as the VestingWallet gap is a
+lying inventory. Remaining remainder is Unauthorized vs OwnableUnauthorizedAccount.
 
 Usage:
-    python3 scripts/check_vest_zero_owner_honesty.py
+    python3 scripts/check_vest_invalid_owner_honesty.py
 """
 
 from __future__ import annotations
@@ -26,28 +26,32 @@ SCAN_ROOTS = (
 )
 
 STALE_PHRASES = (
-    "Constructor zero-owner revert not lowered",
-    "Constructor zero-owner revert is still not lowered",
-    "Drop-in OpenZeppelin constructor zero-owner revert",
-    "Remaining named gap on that row is the constructor zero-owner revert",
+    "CREATE reverts `ZeroAddress()` rather than OZ `OwnableInvalidOwner(address)`",
+    "The selector is `ZeroAddress()`, not OZ `OwnableInvalidOwner(address)`.",
+    "Drop-in OpenZeppelin VestingWallet `OwnableInvalidOwner`",
+    "OZ OwnableInvalidOwner remains the named remainder",
+    "OwnableInvalidOwner remains the named remainder",
 )
 
 REQUIRED = (
-    (ROOT / "Examples" / "Evm" / "VestLink.lean", "if Address.isZero beneficiary then"),
-    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "if Address.isZero beneficiary then"),
-    (ROOT / "ProofForge" / "Evm" / "Emit.lean", "ctorOpIsRevertGuard"),
+    (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner beneficiary"),
+    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner beneficiary"),
+    (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner newOwner"),
+    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner newOwner"),
+    (ROOT / "ProofForge" / "Evm" / "NativeFx.lean", "revertOwnableInvalidOwner"),
+    (ROOT / "ProofForge" / "Evm" / "Sdk" / "Base.lean", "def ownableInvalidOwner"),
+    (ROOT / "ProofForge" / "Extract" / "Decode.lean", "evmRevertOwnableInvalidOwner"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
-    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "OwnershipTransferred(address(0), owner)"),
+    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "OwnableUnauthorizedAccount(address)"),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "b9471739ac722d35"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "b9471739ac722d35"'),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "194894e2bbdb47e0"'),
     (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "194894e2bbdb47e0"'),
+    (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_require_create_ownable_invalid_owner"),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_strip_ctor_invalid_owner_guard"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "zero beneficiary CREATE"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "zero beneficiary CREATE"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "mutation unexpectedly still reverted"),
-    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "mutation unexpectedly still reverted"),
-    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "Constructor CREATE ZeroAddress revert"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "zero new owner"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "zero new owner"),
+    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "CREATE and `transferOwnership` `OwnableInvalidOwner(address)`"),
     (ROOT / "docs" / "product" / "support-matrix.md", "OwnableInvalidOwner(address)"),
     (ROOT / "docs" / "product" / "writing-contracts.md", "Revert.ownableInvalidOwner"),
 )
@@ -84,10 +88,10 @@ def main() -> int:
             failures.append(f"{rel}: missing {needle!r}")
     if failures:
         for item in failures:
-            print(f"check_vest_zero_owner_honesty: {item}", file=sys.stderr)
-        print(f"check_vest_zero_owner_honesty: FAIL ({len(failures)} issue(s))", file=sys.stderr)
+            print(f"check_vest_invalid_owner_honesty: {item}", file=sys.stderr)
+        print(f"check_vest_invalid_owner_honesty: FAIL ({len(failures)} issue(s))", file=sys.stderr)
         return 1
-    print("check_vest_zero_owner_honesty: ok")
+    print("check_vest_invalid_owner_honesty: ok")
     return 0
 
 

@@ -1390,23 +1390,25 @@ private def emitCFGEntry (p : IR.Program) (method : IR.Method) : Except String S
 private def q (s : String) : String :=
   "\"" ++ s ++ "\""
 
-/-- True when `op` is only a constructor ZeroAddress revert-guard, including a dummy
+/-- True when `op` is only a constructor zero-owner revert-guard, including a dummy
 `returnU64 0` else-arm. -/
 private partial def ctorOpIsRevertGuard (op : IR.Op) : Bool :=
   match op with
   | .ite _ _ _ thn els => thn.all ctorOpIsRevertGuard && els.all ctorOpIsRevertGuard
-  | .component call => call.emitsZeroAddress
+  | .component call => call.emitsZeroAddress || call.emitsOwnableInvalidOwner
   | .returnU64 (.lit 0) => true
   | _ => false
 
 /-- True when `op` may run in the constructor prefix before initialize stores.
-Revert-only ZeroAddress guards and LOG3 `OwnershipTransferred(address(0), owner)`
-are allowed. CALL, map writes, value transfers, and other logs stay refused. -/
+Revert-only ZeroAddress / OwnableInvalidOwner guards and LOG3
+`OwnershipTransferred(address(0), owner)` are allowed. CALL, map writes, value
+transfers, and other logs stay refused. -/
 private partial def ctorOpIsAllowedPrelude (op : IR.Op) : Bool :=
   match op with
   | .ite _ _ _ thn els => thn.all ctorOpIsAllowedPrelude && els.all ctorOpIsAllowedPrelude
   | .component call =>
       call.emitsZeroAddress ||
+        call.emitsOwnableInvalidOwner ||
         call.isConstructorTransferred (fun
           | .lit 0 => true
           | _ => false)
@@ -1824,6 +1826,10 @@ private def errorAbiUnauthorized : String :=
   "{\"type\":\"error\",\"name\":\"Unauthorized\",\"inputs\":[" ++
     "{\"name\":\"who\",\"type\":\"address\"}]}"
 
+private def errorAbiOwnableInvalidOwner : String :=
+  "{\"type\":\"error\",\"name\":\"OwnableInvalidOwner\",\"inputs\":[" ++
+    "{\"name\":\"owner\",\"type\":\"address\"}]}"
+
 private def errorAbiZeroAddress : String :=
   "{\"type\":\"error\",\"name\":\"ZeroAddress\",\"inputs\":[]}"
 
@@ -1967,6 +1973,14 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
     hasErrorLeaf (fun
       | .component call => call.emitsUnauthorized
       | _ => false) m.ops)
+  let needInvalidOwner :=
+    hasErrorLeaf (fun
+      | .component call => call.emitsOwnableInvalidOwner
+      | _ => false) p.constructor.ops ||
+    p.entries.any (fun m =>
+      hasErrorLeaf (fun
+        | .component call => call.emitsOwnableInvalidOwner
+        | _ => false) m.ops)
   let needZero :=
     hasErrorLeaf (fun
       | .component call => call.emitsZeroAddress
@@ -1997,6 +2011,7 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
       (← typedEvents.mapM eventAbiTyped) ++
       (if needIns then #[errorAbiInsufficient] else #[]) ++
       (if needUnauth then #[errorAbiUnauthorized] else #[]) ++
+      (if needInvalidOwner then #[errorAbiOwnableInvalidOwner] else #[]) ++
       (if needZero then #[errorAbiZeroAddress] else #[]) ++
       (if needPaused then #[errorAbiPaused] else #[]) ++
       (if needCap then #[errorAbiCapExceeded] else #[]) ++

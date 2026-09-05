@@ -2,10 +2,11 @@
 """Fail when product docs still list constructor OwnershipTransferred as missing.
 
 VestLink and Vest20Link emit OwnershipTransferred(address(0), owner) at CREATE.
-That log is the else-arm of the ZeroAddress dropped-let plus Emit
+That log is the else-arm of the OwnableInvalidOwner dropped-let plus Emit
 ctorOpIsAllowedPrelude. Sdk.OzAudit.temporaryGapCount stays 0. A doc that still
 lists the constructor log as the VestingWallet gap is a lying inventory.
-OwnableInvalidOwner remains the named remainder.
+The remaining named gap is Unauthorized(address) rather than OZ
+OwnableUnauthorizedAccount(address).
 
 Usage:
     python3 scripts/check_vest_ctor_log_honesty.py
@@ -42,10 +43,10 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "NativeFx.lean", "isConstructorTransferred"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "OwnableInvalidOwner(address)"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "2d53b56c1d9429f9"'),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "2d53b56c1d9429f9"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "3034d29ecd2cc852"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "3034d29ecd2cc852"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "b9471739ac722d35"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "b9471739ac722d35"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "194894e2bbdb47e0"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "194894e2bbdb47e0"'),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_strip_ctor_ownership_log"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "CREATE OwnershipTransferred LOG3"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vest20link.sh", "CREATE OwnershipTransferred LOG3"),

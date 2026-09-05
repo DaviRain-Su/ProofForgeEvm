@@ -22,10 +22,10 @@ open Lean Elab Command
 #guard Vesting.endAt (100 : UInt64) (900 : UInt64) == (1000 : UInt64)
 #guard Vesting.cliffAt (100 : UInt64) (900 : UInt64) (400 : UInt64) == (500 : UInt64)
 
-private partial def ctorHasZeroAddress (ops : Array IR.Op) : Bool :=
+private partial def ctorHasOwnableInvalidOwner (ops : Array IR.Op) : Bool :=
   ops.any fun
-    | .component call => call.emitsZeroAddress
-    | .ite _ _ _ t f => ctorHasZeroAddress t || ctorHasZeroAddress f
+    | .component call => call.emitsOwnableInvalidOwner
+    | .ite _ _ _ t f => ctorHasOwnableInvalidOwner t || ctorHasOwnableInvalidOwner f
     | _ => false
 
 private partial def ctorHasConstructorTransferred (ops : Array IR.Op) : Bool :=
@@ -85,8 +85,10 @@ private def expectVest20Link : CommandElabM Unit := do
     throwError "Vest20Link must not grow a receive entry"
   unless abi.contains "\"name\":\"ZeroAddress\"" do
     throwError "Vest20Link ABI lost ZeroAddress"
-  unless ctorHasZeroAddress program.constructor.ops do
-    throwError "Vest20Link constructor lost ZeroAddress revert"
+  unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
+    throwError "Vest20Link ABI lost OwnableInvalidOwner"
+  unless ctorHasOwnableInvalidOwner program.constructor.ops do
+    throwError "Vest20Link constructor lost OwnableInvalidOwner revert"
   unless ctorHasConstructorTransferred program.constructor.ops do
     throwError "Vest20Link constructor lost OwnershipTransferred log"
   let yul ←
@@ -94,8 +96,10 @@ private def expectVest20Link : CommandElabM Unit := do
     | .ok yul => pure yul
     | .error reason => throwError reason
   let ctorYul := (yul.splitOn "_runtime")[0]!
-  unless ctorYul.contains "0xd92e233d" do
-    throwError s!"Vest20Link constructor Yul lost ZeroAddress:\n{ctorYul}"
+  let invalidOwnerSel :=
+    "0x" ++ ProofForge.Evm.Keccak.selector "OwnableInvalidOwner" #["address"]
+  unless ctorYul.contains invalidOwnerSel do
+    throwError s!"Vest20Link constructor Yul lost OwnableInvalidOwner:\n{ctorYul}"
   let ownershipTopic :=
     "0x" ++ ProofForge.Crypto.Keccak.keccak256HexOfString "OwnershipTransferred(address,address)"
   unless ctorYul.contains ownershipTopic do
@@ -106,7 +110,7 @@ private def expectVest20Link : CommandElabM Unit := do
       | throwError s!"Vest20Link canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" do
       throwError s!"{ixName} lost the linear formula"
-  unless IR.digestHex program == "3034d29ecd2cc852" do
+  unless IR.digestHex program == "194894e2bbdb47e0" do
     throwError s!"Vest20Link digest drifted: {IR.digestHex program}"
   logInfo m!"vest20link: digest={IR.digestHex program} abi-ok"
 

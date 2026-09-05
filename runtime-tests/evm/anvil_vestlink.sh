@@ -117,8 +117,8 @@ fi
 pf_evm_require_unauthorized "$addr" "$other" \
   "$("$cast" calldata 'transferOwnership(address)' "$other")" "$other" \
   "non-owner transferOwnership"
-pf_evm_require_zero_address "$addr" "$beneficiary" \
-  "$("$cast" calldata 'transferOwnership(address)' "$zero")" \
+pf_evm_require_ownable_invalid_owner "$addr" "$beneficiary" \
+  "$("$cast" calldata 'transferOwnership(address)' "$zero")" "$zero" \
   "zero new owner"
 rotate_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'transferOwnership(address)' "$other")"
@@ -158,7 +158,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   echo "FAIL: zero-owner constructor CREATE unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_create_zero_address "$bytecode" "$zero_encoded" "$beneficiary" \
+pf_evm_require_create_ownable_invalid_owner "$bytecode" "$zero_encoded" "$beneficiary" \
   "zero beneficiary CREATE"
 
 max_u64=18446744073709551615
@@ -214,7 +214,7 @@ yul="$root/build/evm/VestLink.yul"
 ctor_mut_dir="$root/build/evm/vestlink-ctor-mut"
 rm -rf "$ctor_mut_dir"
 mkdir -p "$ctor_mut_dir"
-pf_evm_strip_ctor_zero_guard "$yul" VestLink "$ctor_mut_dir/VestLink.yul"
+pf_evm_strip_ctor_invalid_owner_guard "$yul" VestLink "$ctor_mut_dir/VestLink.yul"
 ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$ctor_mut_dir/VestLink.yul" | "$python" -I -S -c "
 import sys
