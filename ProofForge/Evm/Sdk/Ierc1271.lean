@@ -21,10 +21,14 @@ address other than `signer` reverts `Unauthorized(signer)`. Invalid ECDSA still 
 inside the precompile.
 
 Departures from OZ:
-- OZ answers `false` and lets the caller decide; both helpers are CALL/effect carriers for the
+- `checkSignature` and `checkNow` are CALL/effect carriers for the
   entry's result word under `Effect.thenTrue`, so a rejected signature is a revert. Reentrancy
   is application-visible, as for every open CALL.
-- `checkSignature` has no code-size branch. `checkNow` is the code-size branch.
+- `validSignature` and `validNow` are the OZ `false` path: a STATICCALL (`OpenCall.staticTryMagic`)
+  whose call-result policy binds ABI `true` on exact magic and `false` on any other outcome,
+  including a failed call. They are values. A rejected signature does not revert. Invalid ECDSA
+  on the EOA arm of `validNow` still empty-reverts inside the precompile.
+- `checkSignature` has no code-size branch. `checkNow` and `validNow` are the code-size branch.
 - The signature is bounded to 65 bytes (`Check` spells the literal because the open-call decoder
   wants one), so multi-signature wallets whose `signature` is wider are out.
 
@@ -83,6 +87,14 @@ the module doc. -/
     (signature : BoundedBytes 65) : UInt64 :=
   OpenCall.callMagic signer (Check.isValidSignature hash signature)
 
+/-- OZ `isValidERC1271SignatureNow` as a Bool. STATICCALL `isValidSignature` on `signer` and
+answer `true` only when the callee returns its own selector as one clean word. A failed call,
+an empty frame, a wrong selector, or a dirty low byte is `false`. A signer without code answers
+the empty frame and therefore `false`. -/
+@[pf_inline] def validSignature (signer : Address) (hash : Bytes32)
+    (signature : BoundedBytes 65) : Bool :=
+  OpenCall.staticTryMagic signer (Check.isValidSignature hash signature)
+
 /-- OZ `SignatureChecker.isValidSignatureNow` as a fail-closed carrier. A signer with code takes
 `checkSignature`. A signer without code requires a 65-byte frame, recovers through
 `Ecdsa.recover`, and reverts `Unauthorized(signer)` when the recovered address differs.
@@ -99,6 +111,20 @@ Invalid ECDSA empty-reverts inside the precompile. Length is an `if`, not `&&`, 
     else
       Revert.unauthorized signer
   else
-    Revert.unauthorized signer
+      Revert.unauthorized signer
+
+/-- OZ `SignatureChecker.isValidSignatureNow` as a Bool. A signer with code takes
+`validSignature`. A signer without code requires a 65-byte frame, recovers through
+`Ecdsa.recover`, and answers `false` when the recovered address differs or the frame is short.
+Invalid ECDSA still empty-reverts inside the precompile. -/
+@[pf_inline] def validNow (signer : Address) (hash : Bytes32)
+    (signature : BoundedBytes 65) : Bool :=
+  if Address.hasCode signer then
+    validSignature signer hash signature
+  else if signature.length.toUInt64 == 65 then
+    Address.eq (Ecdsa.recover hash (vByte signature) (rWord signature) (sWord signature))
+        signer
+  else
+    false
 
 end ProofForge.Evm.Sdk.Ierc1271

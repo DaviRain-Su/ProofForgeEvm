@@ -134,6 +134,10 @@ private def isEvmOpenCallMagicApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallMagic ||
     endsWith e ".evmOpenCallMagic"
 
+private def isEvmOpenStaticTryMagicApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenStaticTryMagic ||
+    endsWith e ".evmOpenStaticTryMagic"
+
 /-- Any CALL-kind open-call stub: the effect carriers, as opposed to the STATICCALL reads. -/
 private def isOpenCallPlanApp (e : Expr) : Bool :=
   isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
@@ -154,7 +158,7 @@ private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
     isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
 
 private def isAnyOpenCallApp (e : Expr) : Bool :=
-  isOpenCallPlanApp e || (openStaticShapeOf e).isSome
+  isOpenCallPlanApp e || (openStaticShapeOf e).isSome || isEvmOpenStaticTryMagicApp e
 
 set_option maxRecDepth 2048 in
 mutual
@@ -312,7 +316,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
     (asVal env fuel e.getAppArgs[e.getAppArgs.size - 1]!).map (flattenField · leaf)
   else if isConstNamed e ``Decidable.decide && e.getAppArgs.size ≥ 2 then
     asVal env fuel e.getAppArgs[e.getAppArgs.size - 2]!
-  else if openStaticShapeOf e == some .bool then
+  else if openStaticShapeOf e == some .bool || isEvmOpenStaticTryMagicApp e then
     openStaticRead? env e 1 0
   else if let some (_, unfolded) := unfoldUserHelper env e then
     match env.find? n with
@@ -1502,6 +1506,29 @@ private partial def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedO
             let (v0, v1, v2, v3) := uint256Leaves env valueE
             #[v0, v1, v2, v3]
           | none => #[]
+        if isEvmOpenStaticTryMagicApp e then
+          let dummy : Evm.OpenCall.Plan Ops.Val := {
+            name
+            args := callArgs
+            target
+            kind := .staticcall
+            policy := .tryMagicBytes4 "00000000"
+            valueParts := #[]
+          }
+          match dummy.selectorHex (·.wellFormed IR.ValKind.arity) with
+          | .error reason => .unsupported reason
+          | .ok selector =>
+            let query : Evm.OpenCall.Query := {
+              name
+              argTypes := callArgs.map (·.type)
+              kind := .staticcall
+              policy := .tryMagicBytes4 selector
+            }
+            let operands := target ++ callArgs.flatMap (·.parts)
+            if query.wellFormed && operands.size == query.arity then
+              .query query operands
+            else .unsupported "malformed open-call query"
+        else
         match openStaticShapeOf e with
         | some shape =>
           let query := shape.query name (callArgs.map (·.type))
@@ -2015,7 +2042,7 @@ private def asBoolVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.V
       boundedCanPublishVal env args[args.size - 2]! args[args.size - 1]!
     else if endsWith e ".canSchedule" && args.size ≥ 3 then
       boundedCanScheduleVal env args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
-    else if openStaticShapeOf e == some .bool then
+    else if openStaticShapeOf e == some .bool || isEvmOpenStaticTryMagicApp e then
       openStaticRead? env e 1 0
     else if isConstNamed e ``Eq && args.size ≥ 2 then
       let lhs := strip args[args.size - 2]!
@@ -4519,6 +4546,11 @@ private def queryOfRuntimeApp (env : Environment) (app : Expr) : Option (Array O
       .returnU64 (.ext (.evm (.component (.closedCall (.allowance256 3))))
         #[t0, t1, t2, o0, o1, o2, s0, s1, s2])
     ]
+  else if isEvmOpenStaticTryMagicApp app then
+    match decodeOpenCallCtor env app with
+    | .query query operands =>
+      some #[.returnU64 (.ext (.evm (.component (.openCall { query with limb := 0 }))) operands)]
+    | _ => none
   else if let some shape := openStaticShapeOf app then
     match decodeOpenCallCtor env app with
     | .query query operands =>

@@ -75,6 +75,7 @@ OpenCall.callSuccess target (Remote.sink tag data)
 | `OpenCall.staticWords3` | STATICCALL | `exactWords 3` | first word as `UInt256` |
 | `OpenCall.staticWords4` | STATICCALL | `exactWords 4` | first word as `UInt256` |
 | `OpenCall.staticBool` | STATICCALL | `strictBool` | `Bool` |
+| `OpenCall.staticTryMagic` | STATICCALL | `tryMagicBytes4` (this call's own selector) | `Bool` (`true` on exact magic, `false` on any other outcome; never reverts for a call-result reason) |
 | `OpenCall.staticAddress` | STATICCALL | `words #[.address20]` | `Address` |
 
 `OpenCall.callMagic` is the receiver-hook shape. The callee must answer with exactly one word
@@ -82,6 +83,10 @@ equal to the selector it was called by, left-aligned, as `onERC721Received`,
 `onERC1155Received`, `onERC1155BatchReceived`, and ERC-1271 `isValidSignature` do. The magic is
 computed from the payload constructor; you never write a selector. A wrong selector, a dirty low
 byte, an empty frame, a longer frame, or an EOA target reverts the transaction.
+
+`OpenCall.staticTryMagic` is the same selector convention as a Bool. Success with exactly
+that word is `true`. A failed call, a wrong size, or a wrong word is `false`. ERC-1271
+`Ierc1271.validSignature` uses it. `checkSignature` stays the fail-closed CALL.
 
 ```lean
 OpenCall.callMagic receiver (Remote.onERC721Received operator origin tokenId data)
@@ -94,7 +99,9 @@ code. `Ierc1271.checkSignature signer hash signature` is the ERC-1271-only check
 signer without code answers an empty frame and the magic gate refuses it.
 `Ierc1271.checkNow` is OZ `isValidSignatureNow`. A signer with code takes `checkSignature`.
 A signer without code recovers the same 65 bytes through `Ecdsa.recover` and reverts
-`Unauthorized(signer)` when the address differs. A CALL result is an
+`Unauthorized(signer)` when the address differs. `Ierc1271.validNow` is the same gate as a
+Bool: a contract signer is `OpenCall.staticTryMagic`, an EOA mismatch is `false`, and a short
+frame is `false`. A CALL result is an
 effect carrier, so it stands only as the entry's result word; a `safeTransferFrom` puts the
 ledger move and the log in the state word and the check under `Effect.thenTrue` as the result,
 and the stores land before the CALL:
@@ -105,15 +112,24 @@ and the stores land before the CALL:
   Effect.thenTrue (Erc721.checkOnReceived to Context.caller source tokenId data))
 ```
 
-A signer check has the same shape. `SignerLink.requireNow` is the combined path.
+A signer check has the same shape. `SignerLink.requireNow` is the combined fail-closed path.
 `requireSigner` stays the 1271-only path. Both count in the state word and carry the check in
-the result word, so a refused signature reverts with the counter where it was
-(`runtime-tests/evm/anvil_signerlink.sh` drives both against a Solidity ERC-1271 wallet and
-an EOA):
+the result word, so a refused signature reverts with the counter where it was.
 
 ```lean
 .ok ({ accepted := s.accepted + 1 },
   Effect.thenTrue (Ierc1271.checkNow signer hash signature))
+```
+
+`SignerLink.tryNow` uses `Ierc1271.validNow` and answers `false` instead of reverting.
+`runtime-tests/evm/anvil_signerlink.sh` drives requireSigner, requireNow, and tryNow against a
+Solidity ERC-1271 wallet and an EOA:
+
+```lean
+if Ierc1271.validNow signer hash signature then
+  .ok ({ accepted := s.accepted + 1 }, true)
+else
+  .ok (s, false)
 ```
 
 The target may be a parameter or a stored `Address`. Arguments are at most eight one-word

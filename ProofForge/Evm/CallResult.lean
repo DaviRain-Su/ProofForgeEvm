@@ -17,6 +17,10 @@ bounded multiword / typed-decode policies:
 - `Policy.exactWords n` — exact `n` ABI words (`1 ≤ n ≤ maxResultWords`); each word is bound;
 - `Policy.strictBool` — exact one word that is a canonical ABI bool (`0` or `1`);
 - `Policy.magicBytes4` — exact one word equal to a left-aligned 4-byte magic selector;
+- `Policy.tryMagicBytes4` — STATICCALL that answers canonical ABI `true` when the call
+  succeeds with exactly one word equal to that same left-aligned magic, and canonical
+  ABI `false` on any other outcome (failed call, wrong size, dirty low bytes, wrong
+  word). It never reverts for a call-result reason. `FailMode` is ignored.
 - `Policy.words kinds` — exact `|kinds|` words, each validated against its declared
   `uint256` / `bool` / `address` / `bytes4` constraint.
 
@@ -96,6 +100,10 @@ inductive Policy where
   /-- Exact one ABI `bytes4` word equal to the left-aligned 4-byte magic `selector`
   (8 lowercase hex characters). -/
   | magicBytes4 (selector : String)
+  /-- Soft magic read: bind ABI bool `1` when the call succeeds with exactly one word equal
+  to the left-aligned 4-byte magic `selector` (8 lowercase hex characters), else bind `0`.
+  Does not revert on a failed call or a malformed frame. `FailMode` is ignored. -/
+  | tryMagicBytes4 (selector : String)
   /-- Exact `|kinds|` ABI words, each validated against its declared scalar/address/bool/`bytes4`
   constraint. `kinds.size` is a compile-time constant in `1 ..= maxResultWords`. -/
   | words (kinds : Array WordKind)
@@ -109,14 +117,15 @@ exactly 4 bytes of lowercase hex. Established policies are always well-formed. -
 def Policy.wellFormed : Policy → Bool
   | .canonicalTrueOrCodeBackedEmpty | .exactWord | .contractSuccess | .strictBool => true
   | .exactWords n => 1 ≤ n && n ≤ maxResultWords
-  | .magicBytes4 selector =>
+  | .magicBytes4 selector | .tryMagicBytes4 selector =>
       selector.length == 2 * selectorBytes && selector.all isLowerHexDigit
   | .words kinds =>
       1 ≤ kinds.size && kinds.size ≤ maxResultWords
 
 /-- Number of ABI words this policy copies and (for exact/typed policies) binds. -/
 def Policy.copiedWordCount : Policy → Nat
-  | .canonicalTrueOrCodeBackedEmpty | .exactWord | .strictBool | .magicBytes4 _ => 1
+  | .canonicalTrueOrCodeBackedEmpty | .exactWord | .strictBool | .magicBytes4 _
+    | .tryMagicBytes4 _ => 1
   | .contractSuccess => 0
   | .exactWords n => n
   | .words kinds => kinds.size
@@ -128,7 +137,7 @@ def Policy.wordKinds : Policy → Array WordKind
   | .canonicalTrueOrCodeBackedEmpty | .contractSuccess => #[]
   | .exactWord => #[.uint256]
   | .exactWords n => Array.replicate n .uint256
-  | .strictBool => #[.boolean]
+  | .strictBool | .tryMagicBytes4 _ => #[.boolean]
   | .magicBytes4 _ => #[.bytes4]
   | .words kinds => kinds
 
@@ -184,6 +193,10 @@ def Request.staticBool (inSize : Nat) : Request :=
 /-- Exact left-aligned `bytes4` magic STATICCALL read. -/
 def Request.staticMagic (inSize : Nat) (selector : String) : Request :=
   { kind := .staticcall, inSize, policy := .magicBytes4 selector }
+
+/-- Soft left-aligned `bytes4` magic STATICCALL read. Answers `1` on exact magic, else `0`. -/
+def Request.staticTryMagic (inSize : Nat) (selector : String) : Request :=
+  { kind := .staticcall, inSize, policy := .tryMagicBytes4 selector }
 
 /-- Exact typed-word STATICCALL read. -/
 def Request.staticTyped (inSize : Nat) (kinds : Array WordKind) : Request :=

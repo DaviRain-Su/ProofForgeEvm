@@ -318,6 +318,13 @@ transaction. Reentrancy is application-visible. -/
 @[pf_inline] def callMagic {α : Type} (target : Address) (payload : α) : UInt64 :=
   Runtime.evmOpenCallMagic target payload
 
+/-- Typed STATICCALL whose callee may answer this call's own selector, left-aligned, or
+anything else. Success with exactly that word is `true`. A failed call, a wrong size, or a
+wrong word is `false`. The helper never reverts for a call-result reason. Reentrancy is
+not visible: this is a STATICCALL. -/
+@[pf_inline] def staticTryMagic {α : Type} (target : Address) (payload : α) : Bool :=
+  Runtime.evmOpenStaticTryMagic target payload
+
 /-- Typed STATICCALL with the exact-one-word policy. The source carrier is `UInt256`. -/
 @[pf_inline] def staticWord {α : Type} (target : Address) (payload : α) : UInt256 :=
   Runtime.evmOpenStaticWord target payload

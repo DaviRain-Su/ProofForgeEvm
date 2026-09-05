@@ -50,7 +50,7 @@ queues/enumerable sets/maps/checkpoints, bounded static role sets with canonical
 RoleRevoked logs, bounded per-address nonce and fixed-window rate-limit helpers, bounded static
 ERC-721/1155 metadata URI helpers, EIP-5267-style static EIP-712 domain field helpers, IERC5313
 owner and IERC6372 clock mode helpers, public typed ECDSA recover (`Sdk.Ecdsa`), ERC-1271
-`checkSignature` and combined `checkNow` (`Sdk.Ierc1271`), bounded
+`checkSignature` / `checkNow` / `validSignature` / `validNow` (`Sdk.Ierc1271`), bounded
 single-beneficiary native-ETH and ERC-20 vesting schedule helpers (stored beneficiary, one-step
 rotation, parameterless ETH `release()`), bounded Merkle proof verification helpers,
 bounded block header / blockhash observation helpers,
