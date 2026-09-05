@@ -3,8 +3,9 @@
 
 A shipped bounded profile leaves blocked remainders, not a Yes cell.
 Coverage table rows 3, 16, and 22 (OzAudit 2, 16, 22) were the liars that
-closed blocked work. Row 13 names dynamic exchange-rate vault math as a
-remainder rather than starting with Yes. DONE rows may still say Yes.
+closed blocked work. Row 13 names virtual-offset inflation defense and
+flash/777/1363 as remainders rather than starting with Yes. DONE rows may
+still say Yes.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -24,6 +25,8 @@ STALE_PHRASES = (
     "Yes — W5 slice 7 shipped bounded 1:1 ERC-4626 vault profile",
     "Yes — this expansion shipped `authorizationState`",
     "Yes — W5 slice 8 shipped bounded fixed-id ERC-6909 using existing map primitives",
+    "There is no exchange-rate math, fee accrual, flash-loan callback",
+    "1:1 `Vault4626Link` stays the shipped profile",
 )
 
 REQUIRED = (
@@ -34,7 +37,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
-        "Remaining named restriction on that row is dynamic exchange-rate vault math plus flash/777/1363.",
+        "Remaining named restriction on that row is flash/777/1363.",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
@@ -50,7 +53,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
-        "There is no exchange-rate math, fee accrual, flash-loan callback",
+        "There is no virtual-offset inflation defense, fee accrual, flash-loan",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc6909.lean",
@@ -71,7 +74,7 @@ REQUIRED = (
     ),
     (
         ROOT / "Tests" / "EvmOzAuditSpec.lean",
-        "Row 13 remaining named restriction is dynamic exchange-rate vault math plus flash/777/1363.",
+        "Row 13 remaining named restriction is flash/777/1363.",
     ),
     (
         ROOT / "Tests" / "EvmOzAuditSpec.lean",
@@ -87,7 +90,7 @@ REQUIRED = (
     ),
     (
         BACKLOG,
-        "Named remainder: dynamic exchange-rate vault math",
+        "Named remainder: virtual-offset inflation defense and flash/777/1363",
     ),
     (
         BACKLOG,

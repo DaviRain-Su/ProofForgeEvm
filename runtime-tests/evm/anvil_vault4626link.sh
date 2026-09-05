@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Vault4626Link: bounded 1:1 ERC-4626 vault — fixed asset, closed ERC-20, reentrancy guard.
+# Vault4626Link: bounded ERC-4626 vault — floor assets * totalSupply / totalAssets, closed ERC-20, reentrancy guard.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,7 +42,8 @@ topic_wdr="$("$cast" keccak 'Withdraw(address,address,address,uint256,uint256)')
 
 got_asset="$("$cast" call --rpc-url "$rpc" "$addr" 'asset()(address)')"
 pf_evm_require_equal "${got_asset,,}" "${token,,}" "asset"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 100)" 100 "1:1 shares"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 100)" 100 \
+  "empty vault is 1:1 shares"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'mint(address,uint256)' "$sender" 500 >/dev/null
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'approve(address,uint256)' "$addr" 500 >/dev/null
@@ -52,10 +53,19 @@ pf_evm_typed_event_check "$abi" "$dep_receipt" Deposit "$topic_dep" \
   "{\"sender\": \"$sender\", \"owner\": \"$sender\", \"assets\": 100, \"shares\": 100}" "deposit"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 100 "totalAssets"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'balanceOf(address)(uint256)' "$sender")" 100 "shares"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 100)" 100 \
+  "funded 1:1 still 100 shares"
 
-wdr_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" "$addr" 'redeem(uint256,address,address)' 30 "$dest" "$sender")"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'mint(address,uint256)' "$addr" 100 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 200 "donated totalAssets"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 100)" 50 \
+  "donated convertToShares is 50"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' 100)" 200 \
+  "donated convertToAssets is 200"
+
+wdr_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" "$addr" 'redeem(uint256,address,address)' 50 "$dest" "$sender")"
 pf_evm_typed_event_check "$abi" "$wdr_receipt" Withdraw "$topic_wdr" \
-  "{\"sender\": \"$sender\", \"receiver\": \"$dest\", \"owner\": \"$sender\", \"assets\": 30, \"shares\": 30}" "redeem"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$dest")" 30 "dest token"
+  "{\"sender\": \"$sender\", \"receiver\": \"$dest\", \"owner\": \"$sender\", \"assets\": 100, \"shares\": 50}" "redeem"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$dest")" 100 "dest token"
 
 echo "evm-anvil-vault4626link: ok"

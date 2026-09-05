@@ -10,6 +10,14 @@ open ProofForge.Evm.Sdk
 open Lean Elab Command
 
 #guard Erc4626.canVault Address.zero == false
+#guard Erc4626.convertToShares ⟨1, 0, 0⟩ ⟨100, 0, 0, 0⟩ UInt256.zero UInt256.zero ==
+  ⟨100, 0, 0, 0⟩
+#guard Erc4626.convertToShares ⟨1, 0, 0⟩ ⟨100, 0, 0, 0⟩ ⟨100, 0, 0, 0⟩ ⟨200, 0, 0, 0⟩ ==
+  ⟨50, 0, 0, 0⟩
+#guard Erc4626.convertToAssets ⟨1, 0, 0⟩ ⟨100, 0, 0, 0⟩ ⟨100, 0, 0, 0⟩ ⟨200, 0, 0, 0⟩ ==
+  ⟨200, 0, 0, 0⟩
+#guard Erc4626.convertToShares Address.zero ⟨100, 0, 0, 0⟩ ⟨100, 0, 0, 0⟩ ⟨200, 0, 0, 0⟩ ==
+  UInt256.zero
 
 private def expectVault4626Link : CommandElabM Unit := do
   let env ← getEnv
