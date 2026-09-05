@@ -41,7 +41,7 @@ REQUIRED = (
     ),
     (
         ROOT / "Tests" / "EvmErc4626Spec.lean",
-        "Erc4626.convertToShares ⟨1, 0, 0⟩ ⟨100, 0, 0, 0⟩ ⟨100, 0, 0, 0⟩ ⟨200, 0, 0, 0⟩ ==",
+        '"totalSupply", "convertToShares", "convertToAssets"] do',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
