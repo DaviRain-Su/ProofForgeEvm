@@ -10,7 +10,7 @@ reusing the existing EIP-712 domain and `ecrecover` precompile path. Receive use
 `ReceiveWithAuthorization` typehash and requires `caller == to`. Cancel uses
 `CancelAuthorization(address authorizer,bytes32 nonce)` and marks the auth-used slot without
 moving balance. `authorizationState` is a Bool view of that same slot. There is no nonce
-enumeration API.
+enumeration API. Sibling draft interfaces stay out.
 -/
 
 @[pf_inline] def authorize (sender to : Address) (value validAfter validBefore : UInt256)
