@@ -322,6 +322,24 @@ actual flattened storage schema. Empty, dynamic, unknown, or non-UInt64 fields f
 @[irreducible] def evmMul256 (a b : UInt256) : UInt256 :=
   let _ := b; a
 
+/-- wrapping `a * b` (EVM `mul`, no overflow revert). Host returns `a`. -/
+@[irreducible] def evmMulWrap256 (a b : UInt256) : UInt256 :=
+  let _ := b; a
+
+/-- wrapping `a - b` (EVM `sub`, no underflow revert). Host returns `a`. -/
+@[irreducible] def evmSubWrap256 (a b : UInt256) : UInt256 :=
+  let _ := b; a
+
+/-- `mulmod(a, b, m)`. Zero modulus reverts on chain. Host returns `a`. -/
+@[irreducible] def evmMulmod256 (a b m : UInt256) : UInt256 :=
+  let _ := b; let _ := m; a
+
+/-- Floor `(a * b) / denom` with a 512-bit intermediate (OZ `Math.mulDiv`). Zero
+`denom` reverts on chain. A quotient that does not fit in 256 bits reverts. Host
+returns `a`. -/
+@[irreducible] def evmMulDiv256 (a b denom : UInt256) : UInt256 :=
+  let _ := b; let _ := denom; a
+
 /-- `a ≥ b`。Yul 比打包后的 256-bit word。宿主返回 `true`。 -/
 @[irreducible] def evmGe256 (_a _b : UInt256) : Bool := true
 

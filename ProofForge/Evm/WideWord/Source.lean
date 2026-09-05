@@ -61,6 +61,30 @@ projecting `UInt256.wN (add256 …)`, so Extract does not flatten the projection
 @[pf_inline] def mulW2 (a b : UInt256) : UInt64 := (evmMul256 a b).w2
 @[pf_inline] def mulW3 (a b : UInt256) : UInt64 := (evmMul256 a b).w3
 
+@[pf_inline] def mulWrap256 (a b : UInt256) : UInt256 :=
+  evmMulWrap256 a b
+
+@[pf_inline] def mulWrapW0 (a b : UInt256) : UInt64 := (evmMulWrap256 a b).w0
+@[pf_inline] def mulWrapW1 (a b : UInt256) : UInt64 := (evmMulWrap256 a b).w1
+@[pf_inline] def mulWrapW2 (a b : UInt256) : UInt64 := (evmMulWrap256 a b).w2
+@[pf_inline] def mulWrapW3 (a b : UInt256) : UInt64 := (evmMulWrap256 a b).w3
+
+@[pf_inline] def subWrap256 (a b : UInt256) : UInt256 :=
+  evmSubWrap256 a b
+
+@[pf_inline] def subWrapW0 (a b : UInt256) : UInt64 := (evmSubWrap256 a b).w0
+@[pf_inline] def subWrapW1 (a b : UInt256) : UInt64 := (evmSubWrap256 a b).w1
+@[pf_inline] def subWrapW2 (a b : UInt256) : UInt64 := (evmSubWrap256 a b).w2
+@[pf_inline] def subWrapW3 (a b : UInt256) : UInt64 := (evmSubWrap256 a b).w3
+
+@[pf_inline] def mulmod256 (a b m : UInt256) : UInt256 :=
+  evmMulmod256 a b m
+
+@[pf_inline] def mulmodW0 (a b m : UInt256) : UInt64 := (evmMulmod256 a b m).w0
+@[pf_inline] def mulmodW1 (a b m : UInt256) : UInt64 := (evmMulmod256 a b m).w1
+@[pf_inline] def mulmodW2 (a b m : UInt256) : UInt64 := (evmMulmod256 a b m).w2
+@[pf_inline] def mulmodW3 (a b m : UInt256) : UInt64 := (evmMulmod256 a b m).w3
+
 @[pf_inline] def add (a b : UInt256) : UInt256 :=
   ⟨addW0 a b, addW1 a b, addW2 a b, addW3 a b⟩
 
@@ -69,6 +93,26 @@ projecting `UInt256.wN (add256 …)`, so Extract does not flatten the projection
 
 @[pf_inline] def mul (a b : UInt256) : UInt256 :=
   ⟨mulW0 a b, mulW1 a b, mulW2 a b, mulW3 a b⟩
+
+@[pf_inline] def mulWrap (a b : UInt256) : UInt256 :=
+  ⟨mulWrapW0 a b, mulWrapW1 a b, mulWrapW2 a b, mulWrapW3 a b⟩
+
+@[pf_inline] def subWrap (a b : UInt256) : UInt256 :=
+  ⟨subWrapW0 a b, subWrapW1 a b, subWrapW2 a b, subWrapW3 a b⟩
+
+@[pf_inline] def mulmod (a b m : UInt256) : UInt256 :=
+  ⟨mulmodW0 a b m, mulmodW1 a b m, mulmodW2 a b m, mulmodW3 a b m⟩
+
+@[pf_inline] def mulDiv256 (a b d : UInt256) : UInt256 :=
+  evmMulDiv256 a b d
+
+@[pf_inline] def mulDivW0 (a b d : UInt256) : UInt64 := (evmMulDiv256 a b d).w0
+@[pf_inline] def mulDivW1 (a b d : UInt256) : UInt64 := (evmMulDiv256 a b d).w1
+@[pf_inline] def mulDivW2 (a b d : UInt256) : UInt64 := (evmMulDiv256 a b d).w2
+@[pf_inline] def mulDivW3 (a b d : UInt256) : UInt64 := (evmMulDiv256 a b d).w3
+
+@[pf_inline] def mulDiv (a b d : UInt256) : UInt256 :=
+  ⟨mulDivW0 a b d, mulDivW1 a b d, mulDivW2 a b d, mulDivW3 a b d⟩
 
 @[pf_inline] def ge256 (a b : UInt256) : Bool :=
   evmGe256 a b

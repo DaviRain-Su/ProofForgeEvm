@@ -66,6 +66,27 @@ namespace «UInt256»
   ⟨WideWord.Source.mulW0 left right, WideWord.Source.mulW1 left right,
     WideWord.Source.mulW2 left right, WideWord.Source.mulW3 left right⟩
 
+/-- Wrapping `left * right` (EVM `mul`). Does not revert on overflow. -/
+@[pf_inline] def mulWrap (left right : UInt256) : UInt256 :=
+  ⟨WideWord.Source.mulWrapW0 left right, WideWord.Source.mulWrapW1 left right,
+    WideWord.Source.mulWrapW2 left right, WideWord.Source.mulWrapW3 left right⟩
+
+/-- Wrapping `left - right` (EVM `sub`). Does not revert on underflow. -/
+@[pf_inline] def subWrap (left right : UInt256) : UInt256 :=
+  ⟨WideWord.Source.subWrapW0 left right, WideWord.Source.subWrapW1 left right,
+    WideWord.Source.subWrapW2 left right, WideWord.Source.subWrapW3 left right⟩
+
+/-- `mulmod(left, right, modulus)`. Zero modulus reverts. -/
+@[pf_inline] def mulmod (left right modulus : UInt256) : UInt256 :=
+  ⟨WideWord.Source.mulmodW0 left right modulus, WideWord.Source.mulmodW1 left right modulus,
+    WideWord.Source.mulmodW2 left right modulus, WideWord.Source.mulmodW3 left right modulus⟩
+
+/-- Floor `(left * right) / denom` with a 512-bit intermediate (OZ `Math.mulDiv`).
+Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. -/
+@[pf_inline] def mulDiv (left right denom : UInt256) : UInt256 :=
+  ⟨WideWord.Source.mulDivW0 left right denom, WideWord.Source.mulDivW1 left right denom,
+    WideWord.Source.mulDivW2 left right denom, WideWord.Source.mulDivW3 left right denom⟩
+
 @[pf_inline] def bitAnd (left right : UInt256) : UInt256 :=
   WideWord.Source.bitAnd256 left right
 

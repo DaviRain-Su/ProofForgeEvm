@@ -143,6 +143,125 @@ private def emitCheckedDivMod256 (context : Context σ) (operation : WideWord.Di
   emitPackedBinary256 context ("checkedDivMod256|" ++ toString (repr operation)) expr true limb
     a0 a1 a2 a3 b0 b1 b2 b3 st
 
+private def emitMulmod256 (context : Context σ) (limb : Nat)
+    (a0 a1 a2 a3 b0 b1 b2 b3 m0 m1 m2 m3 : Ops.Val) (st : σ) :
+    Except String (String × String × σ) := do
+  let indent := context.indent
+  let (p0, x0, s0) ← context.materialize a0 st
+  let (p1, x1, s1) ← context.materialize a1 s0
+  let (p2, x2, s2) ← context.materialize a2 s1
+  let (p3, x3, s3) ← context.materialize a3 s2
+  let (q0, y0, t0) ← context.materialize b0 s3
+  let (q1, y1, t1) ← context.materialize b1 t0
+  let (q2, y2, t2) ← context.materialize b2 t1
+  let (q3, y3, t3) ← context.materialize b3 t2
+  let (r0, z0, u0) ← context.materialize m0 t3
+  let (r1, z1, u1) ← context.materialize m1 u0
+  let (r2, z2, u2) ← context.materialize m2 u1
+  let (r3, z3, u3) ← context.materialize m3 u2
+  let cacheKey :=
+    "mulmod256|" ++ context.valKey a0 ++ "|" ++ context.valKey a1 ++ "|" ++
+      context.valKey a2 ++ "|" ++ context.valKey a3 ++ "|" ++ context.valKey b0 ++ "|" ++
+      context.valKey b1 ++ "|" ++ context.valKey b2 ++ "|" ++ context.valKey b3 ++ "|" ++
+      context.valKey m0 ++ "|" ++ context.valKey m1 ++ "|" ++ context.valKey m2 ++ "|" ++
+      context.valKey m3
+  let pre := p0 ++ p1 ++ p2 ++ p3 ++ q0 ++ q1 ++ q2 ++ q3 ++ r0 ++ r1 ++ r2 ++ r3
+  match context.lookupWide u3 cacheKey with
+  | some rv =>
+      let (nm, t4) := context.fresh u3
+      return (pre ++ indent ++ "let " ++ nm ++ " := " ++ packU256Word rv limb ++ nl, nm, t4)
+  | none =>
+      let (av, t4) := context.fresh u3
+      let (bv, t5) := context.fresh t4
+      let (mv, t6) := context.fresh t5
+      let (rv, t7) := context.fresh t6
+      let (nm, t8) := context.fresh (context.rememberWide t7 cacheKey rv)
+      let txt := pre ++
+        indent ++ "let " ++ av ++ " := " ++ packU256 x0 x1 x2 x3 ++ nl ++
+        indent ++ "let " ++ bv ++ " := " ++ packU256 y0 y1 y2 y3 ++ nl ++
+        indent ++ "let " ++ mv ++ " := " ++ packU256 z0 z1 z2 z3 ++ nl ++
+        indent ++ "if iszero(" ++ mv ++ ") { " ++ revert0 ++ " }" ++ nl ++
+        indent ++ "let " ++ rv ++ " := mulmod(" ++ av ++ ", " ++ bv ++ ", " ++ mv ++ ")" ++ nl ++
+        indent ++ "let " ++ nm ++ " := " ++ packU256Word rv limb ++ nl
+      return (txt, nm, t8)
+
+/-- OZ `Math.mulDiv`: 512-bit product, then odd-denominator Newton inverse.
+Wrapping `mul` / `sub` plus `mulmod` recover the high word. `^` is XOR. -/
+private def emitMulDiv256 (context : Context σ) (limb : Nat)
+    (a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 : Ops.Val) (st : σ) :
+    Except String (String × String × σ) := do
+  let indent := context.indent
+  let (p0, x0, s0) ← context.materialize a0 st
+  let (p1, x1, s1) ← context.materialize a1 s0
+  let (p2, x2, s2) ← context.materialize a2 s1
+  let (p3, x3, s3) ← context.materialize a3 s2
+  let (q0, y0, t0) ← context.materialize b0 s3
+  let (q1, y1, t1) ← context.materialize b1 t0
+  let (q2, y2, t2) ← context.materialize b2 t1
+  let (q3, y3, t3) ← context.materialize b3 t2
+  let (r0, z0, u0) ← context.materialize d0 t3
+  let (r1, z1, u1) ← context.materialize d1 u0
+  let (r2, z2, u2) ← context.materialize d2 u1
+  let (r3, z3, u3) ← context.materialize d3 u2
+  let cacheKey :=
+    "mulDiv256|" ++ context.valKey a0 ++ "|" ++ context.valKey a1 ++ "|" ++
+      context.valKey a2 ++ "|" ++ context.valKey a3 ++ "|" ++ context.valKey b0 ++ "|" ++
+      context.valKey b1 ++ "|" ++ context.valKey b2 ++ "|" ++ context.valKey b3 ++ "|" ++
+      context.valKey d0 ++ "|" ++ context.valKey d1 ++ "|" ++ context.valKey d2 ++ "|" ++
+      context.valKey d3
+  let pre := p0 ++ p1 ++ p2 ++ p3 ++ q0 ++ q1 ++ q2 ++ q3 ++ r0 ++ r1 ++ r2 ++ r3
+  match context.lookupWide u3 cacheKey with
+  | some rv =>
+      let (nm, t4) := context.fresh u3
+      return (pre ++ indent ++ "let " ++ nm ++ " := " ++ packU256Word rv limb ++ nl, nm, t4)
+  | none =>
+      let (xv, t4) := context.fresh u3
+      let (yv, t5) := context.fresh t4
+      let (dv, t6) := context.fresh t5
+      let (prod0, t7) := context.fresh t6
+      let (mm, t8) := context.fresh t7
+      let (prod1, t9) := context.fresh t8
+      let (result, t10) := context.fresh t9
+      let (remainder, t11) := context.fresh t10
+      let (twos, t12) := context.fresh t11
+      let (inverse, t13) := context.fresh t12
+      let (nm, t14) := context.fresh (context.rememberWide t13 cacheKey result)
+      let newton :=
+        indent ++ "    " ++ inverse ++ " := mul(" ++ inverse ++ ", sub(2, mul(" ++
+          dv ++ ", " ++ inverse ++ ")))" ++ nl
+      let txt := pre ++
+        indent ++ "let " ++ xv ++ " := " ++ packU256 x0 x1 x2 x3 ++ nl ++
+        indent ++ "let " ++ yv ++ " := " ++ packU256 y0 y1 y2 y3 ++ nl ++
+        indent ++ "let " ++ dv ++ " := " ++ packU256 z0 z1 z2 z3 ++ nl ++
+        indent ++ "if iszero(" ++ dv ++ ") { " ++ revert0 ++ " }" ++ nl ++
+        indent ++ "let " ++ prod0 ++ " := mul(" ++ xv ++ ", " ++ yv ++ ")" ++ nl ++
+        indent ++ "let " ++ mm ++ " := mulmod(" ++ xv ++ ", " ++ yv ++ ", not(0))" ++ nl ++
+        indent ++ "let " ++ prod1 ++ " := sub(sub(" ++ mm ++ ", " ++ prod0 ++
+          "), lt(" ++ mm ++ ", " ++ prod0 ++ "))" ++ nl ++
+        indent ++ "let " ++ result ++ " := 0" ++ nl ++
+        indent ++ "switch " ++ prod1 ++ nl ++
+        indent ++ "case 0 { " ++ result ++ " := div(" ++ prod0 ++ ", " ++ dv ++ ") }" ++ nl ++
+        indent ++ "default {" ++ nl ++
+        indent ++ "  if iszero(gt(" ++ dv ++ ", " ++ prod1 ++ ")) { " ++ revert0 ++ " }" ++ nl ++
+        indent ++ "  let " ++ remainder ++ " := mulmod(" ++ xv ++ ", " ++ yv ++
+          ", " ++ dv ++ ")" ++ nl ++
+        indent ++ "  " ++ prod1 ++ " := sub(" ++ prod1 ++ ", gt(" ++ remainder ++
+          ", " ++ prod0 ++ "))" ++ nl ++
+        indent ++ "  " ++ prod0 ++ " := sub(" ++ prod0 ++ ", " ++ remainder ++ ")" ++ nl ++
+        indent ++ "  let " ++ twos ++ " := and(" ++ dv ++ ", sub(0, " ++ dv ++ "))" ++ nl ++
+        indent ++ "  " ++ dv ++ " := div(" ++ dv ++ ", " ++ twos ++ ")" ++ nl ++
+        indent ++ "  " ++ prod0 ++ " := div(" ++ prod0 ++ ", " ++ twos ++ ")" ++ nl ++
+        indent ++ "  " ++ twos ++ " := add(div(sub(0, " ++ twos ++ "), " ++ twos ++
+          "), 1)" ++ nl ++
+        indent ++ "  " ++ prod0 ++ " := or(" ++ prod0 ++ ", mul(" ++ prod1 ++
+          ", " ++ twos ++ "))" ++ nl ++
+        indent ++ "  let " ++ inverse ++ " := xor(mul(3, " ++ dv ++ "), 2)" ++ nl ++
+        newton ++ newton ++ newton ++ newton ++ newton ++ newton ++
+        indent ++ "  " ++ result ++ " := mul(" ++ prod0 ++ ", " ++ inverse ++ ")" ++ nl ++
+        indent ++ "}" ++ nl ++
+        indent ++ "let " ++ nm ++ " := " ++ packU256Word result limb ++ nl
+      return (txt, nm, t14)
+
 private def emitNot256 (context : Context σ) (limb : Nat)
     (a0 a1 a2 a3 : Ops.Val) (st : σ) : Except String (String × String × σ) := do
   let indent := context.indent
@@ -229,19 +348,23 @@ private def emitArith256 (context : Context σ) (op limb : Nat)
       let packedB := packU256 y0 y1 y2 y3
       let overflow :=
         match op with
-        | 0 => "lt(" ++ rv ++ ", " ++ av ++ ")"
-        | 1 => "gt(" ++ bv ++ ", " ++ av ++ ")"
-        | _ => "and(iszero(iszero(" ++ bv ++ ")), iszero(eq(" ++ av ++ ", div(" ++ rv ++ ", " ++ bv ++ "))))"
+        | 0 => some ("lt(" ++ rv ++ ", " ++ av ++ ")")
+        | 1 => some ("gt(" ++ bv ++ ", " ++ av ++ ")")
+        | 2 => some ("and(iszero(iszero(" ++ bv ++ ")), iszero(eq(" ++ av ++ ", div(" ++ rv ++ ", " ++ bv ++ "))))")
+        | _ => none
       let arith :=
         match op with
         | 0 => "add(" ++ av ++ ", " ++ bv ++ ")"
         | 1 => "sub(" ++ av ++ ", " ++ bv ++ ")"
+        | 4 => "sub(" ++ av ++ ", " ++ bv ++ ")"
         | _ => "mul(" ++ av ++ ", " ++ bv ++ ")"
       let txt := p0 ++ p1 ++ p2 ++ p3 ++ q0 ++ q1 ++ q2 ++ q3 ++
         indent ++ "let " ++ av ++ " := " ++ packedA ++ nl ++
         indent ++ "let " ++ bv ++ " := " ++ packedB ++ nl ++
         indent ++ "let " ++ rv ++ " := " ++ arith ++ nl ++
-        indent ++ "if " ++ overflow ++ " { " ++ revert0 ++ " }" ++ nl ++
+        (match overflow with
+          | some pred => indent ++ "if " ++ pred ++ " { " ++ revert0 ++ " }" ++ nl
+          | none => "") ++
         indent ++ "let " ++ nm ++ " := " ++ packU256Word rv limb ++ nl
       return (txt, nm, t7)
 
@@ -408,6 +531,10 @@ def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array 
       emitCheckedDivMod256 context operation limb a0 a1 a2 a3 b0 b1 b2 b3 st
   | .arith256 op limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitArith256 context op limb a0 a1 a2 a3 b0 b1 b2 b3 st
+  | .mulmod256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, m0, m1, m2, m3] =>
+      emitMulmod256 context limb a0 a1 a2 a3 b0 b1 b2 b3 m0 m1 m2 m3 st
+  | .mulDiv256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, d0, d1, d2, d3] =>
+      emitMulDiv256 context limb a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
   | .keccak256Pair32 limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitKeccak256Pair32 context limb a0 a1 a2 a3 b0 b1 b2 b3 st
   | .merkleVerify256, operands =>

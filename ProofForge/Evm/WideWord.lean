@@ -46,9 +46,14 @@ inductive Query where
   | shift256 (direction : Shift) (limb : Nat)
   /-- Checked unsigned division or modulo; zero divisor reverts. Eight operands. -/
   | checkedDivMod256 (operation : Division) (limb : Nat)
-  /-- Checked 256-bit `add`/`sub`/`mul`; `limb` is 0..3 (w0 lowest).
-  `op` is 0 add, 1 sub, 2 mul. Eight operands: a0..a3, b0..b3. -/
+  /-- Checked 256-bit `add`/`sub`/`mul` and wrapping `mul`/`sub`; `limb` is 0..3 (w0 lowest).
+  `op` is 0 add, 1 sub, 2 mul, 3 wrap-mul, 4 wrap-sub. Eight operands: a0..a3, b0..b3. -/
   | arith256 (op : Nat) (limb : Nat)
+  /-- `mulmod(a, b, m)`; `limb` is 0..3. Twelve operands: a0..a3, b0..b3, m0..m3. -/
+  | mulmod256 (limb : Nat)
+  /-- Floor `(a * b) / denom` with a 512-bit intermediate; `limb` is 0..3.
+  Twelve operands: a0..a3, b0..b3, d0..d3. -/
+  | mulDiv256 (limb : Nat)
   /-- Sorted commutative `keccak256` of two `bytes32` values; `limb` is 0..3 (w0 lowest). -/
   | keccak256Pair32 (limb : Nat)
   /-- Fold a length plus leaf and eight siblings, then compare with a root; 41 operands. -/
@@ -62,6 +67,7 @@ inductive Query where
 def Query.arity : Query → Nat
   | .ge256 | .compare256 _ | .bitwise256 _ _ | .checkedDivMod256 _ _ | .arith256 _ _
   | .keccak256Pair32 _ | .eqBytes32 => 8
+  | .mulmod256 _ | .mulDiv256 _ => 12
   | .merkleVerify256 => 41
   | .ecrecover20 _ => 13
   | .not256 _ => 4
@@ -73,7 +79,8 @@ def Query.wellFormed : Query → Bool
   | .ge256 | .compare256 _ | .eq20 | .eqBytes4 => true
   | .bitwise256 _ limb | .not256 limb | .shift256 _ limb |
       .checkedDivMod256 _ limb => limb ≤ 3
-  | .arith256 op limb => op ≤ 2 && limb ≤ 3
+  | .arith256 op limb => op ≤ 4 && limb ≤ 3
+  | .mulmod256 limb | .mulDiv256 limb => limb ≤ 3
   | .keccak256Pair32 limb => limb ≤ 3
   | .merkleVerify256 | .eqBytes32 => true
   | .ecrecover20 limb => limb ≤ 2
@@ -106,6 +113,12 @@ def Query.canonical (renderValue : V → String) (operands : Array V) : Query �
         s!"({renderOperands renderValue operands})"
   | .arith256 op limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.arith256 {op} {limb}" ++
+        s!"({renderOperands renderValue operands})"
+  | .mulmod256 limb =>
+      s!"ext.ProofForge.Evm.Ops.ValKind.mulmod256 {limb}" ++
+        s!"({renderOperands renderValue operands})"
+  | .mulDiv256 limb =>
+      s!"ext.ProofForge.Evm.Ops.ValKind.mulDiv256 {limb}" ++
         s!"({renderOperands renderValue operands})"
   | .keccak256Pair32 limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.keccak256Pair32 {limb}" ++
