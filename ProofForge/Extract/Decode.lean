@@ -406,6 +406,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
             endsWith baseE ".evmMulDivOffsetRev256" then some (.mulDivOffsetRev256 limb.toNat)
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMulDivCeil256 ||
             endsWith baseE ".evmMulDivCeil256" then some (.mulDivCeil256 limb.toNat)
+        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMulDivCeilOffsetRev256 ||
+            endsWith baseE ".evmMulDivCeilOffsetRev256" then some (.mulDivCeilOffsetRev256 limb.toNat)
         else none
       match ternaryQuery? with
       | some query =>
