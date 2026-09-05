@@ -212,9 +212,9 @@ so Extract keeps the owner stores beside the log. Non-nominee reverts
 @[pf_entry]
 def acceptOwnership (s : State) : Except Error (State × UInt64) :=
   if Access.Ownership.callerIsPending s.ownership then
-    .ok ({ owner := s.ownership, cliffDuration := s.cliffDuration,
-        nativeReleased := s.nativeReleased, dummy := s.dummy, guard := s.guard,
-        ownership := (Access.Ownership.consume s.ownership) },
+    .ok ({ owner := s.ownership, cliffDuration := s.cliffDuration, nativeReleased :=
+      s.nativeReleased, dummy := s.dummy, guard := s.guard, ownership :=
+      Access.Ownership.consume s.ownership },
       Ownable.Log.ownershipTransferred s.owner s.ownership)
   else
     .ok (s, Access.ownerViolation)
