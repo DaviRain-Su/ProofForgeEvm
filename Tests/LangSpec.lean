@@ -23,6 +23,8 @@ open Examples.Lang
 #guard wrap64mix (init 3) == 3
 #guard wrap64nest (init 0) == 3
 #guard wrap64nest (init 3) == 6
+#guard wrap64mul (init 0) == 0
+#guard wrap64mul (init 3) == 0
 #guard Tests.Fixtures.getNarrowPrevious (Tests.Fixtures.initNarrow 7) 0 == 7
 #guard
   match both (init 9) with
@@ -135,6 +137,15 @@ elab "#pf_guard_uint64_ofnat_wrap" : command => do
     throwError "wrap64nest did not add 3 to a nested wrapped 2^64 runtime add"
   unless (evm.entries.find? (·.ixName == "wrap64nest")).isSome do
     throwError "EVM Lang lost wrap64nest"
+  let some mul := source.methods.find? (·.ixName == "wrap64mul")
+    | throwError "Lang lost wrap64mul"
+  unless mul.ops.any (fun
+      | .returnU64 (.mulU64 _ (.lit 0)) => true
+      | .returnU64 (.mulU64 (.lit 0) _) => true
+      | _ => false) do
+    throwError "wrap64mul did not multiply a runtime cell by the wrapped 2^64 literal"
+  unless (evm.entries.find? (·.ixName == "wrap64mul")).isSome do
+    throwError "EVM Lang lost wrap64mul"
 
 #pf_guard_uint64_ofnat_wrap
 
