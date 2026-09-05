@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Fail when UInt64.ofNat of a wide Nat literal is still identity-peeled.
+"""Fail when UInt64.ofNat of a computed wide Nat is still identity-peeled.
 
-asVal of UInt64.ofNat folds a Nat literal through Lean UInt64.ofNat (modulo 2^64).
-Lang.wrap64 publishes 2^64+3 as ABI 3.
-A non-literal still identity-peels.
-Computed Nat overflow then ofNat stays out.
+asVal of UInt64.ofNat folds staticNat? (OfNat and HAdd) through Lean UInt64.ofNat.
+Lang.wrap64 publishes (2^64 + 3) as ABI 3.
+A runtime non-literal still identity-peels.
+Mixed runtime Nat add then ofNat stays out.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -21,19 +21,23 @@ ROOT = Path(__file__).resolve().parents[1]
 STALE_PHRASES = (
     "UInt64.ofNat wrap stays out",
     "UInt64.ofNat wrap of a wider Nat stays a named remainder",
+    "Computed Nat overflow then ofNat stays out",
+    "Computed Nat overflow then `ofNat` stays out",
 )
 
 REQUIRED = (
+    (ROOT / "ProofForge" / "Extract" / "Lexical.lean", "def foldStaticNat?"),
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "isConstNamed e ``UInt64.ofNat"),
-    (ROOT / "ProofForge" / "Extract" / "Decode.lean", "some (.lit (UInt64.ofNat n))"),
+    (ROOT / "ProofForge" / "Extract" / "Decode.lean", "match foldStaticNat? env fuel arg with"),
+    (ROOT / "ProofForge" / "Extract" / "Decode.lean", "if n ≥ UInt64.size then some (.lit (UInt64.ofNat n))"),
     (ROOT / "Examples" / "Lang.lean", "def wrap64"),
-    (ROOT / "Examples" / "Lang.lean", "UInt64.ofNat 18446744073709551619"),
+    (ROOT / "Examples" / "Lang.lean", "UInt64.ofNat (18446744073709551616 + 3)"),
     (ROOT / "Tests" / "LangSpec.lean", "#guard wrap64 (init 0) == 3"),
     (ROOT / "Tests" / "LangSpec.lean", 'source.methods.find? (·.ixName == "wrap64")'),
-    (ROOT / "Tests" / "LangSpec.lean", ".returnU64 (.lit 3)"),
+    (ROOT / "Tests" / "LangSpec.lean", ".returnU64 (.lit 3) => true"),
     (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", 'wrap64()(uint64)'),
     (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", '"wrapped ofNat ABI word is 3"'),
-    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "`UInt64.ofNat` wrap of a Nat literal"),
+    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "`UInt64.ofNat` wrap of a computed Nat"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
 )
 

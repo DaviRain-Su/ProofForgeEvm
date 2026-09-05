@@ -848,6 +848,10 @@ private partial def staticNat? (env : Environment) (fuel : Nat) (e : Expr) : Opt
         if inlineHelperPreservesUserType env helper then none else staticNat? env fuel' unfolded
       else none
 
+/-- Compile-time Nat, including arithmetic that does not fit in `UInt64`. -/
+def foldStaticNat? (env : Environment) (fuel : Nat) (e : Expr) : Option Nat :=
+  staticNat? env fuel e
+
 /-- Read a scalar literal through the static Nat geometry used by source storage descriptors. -/
 def asStaticLit (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
   asLit fuel e <|> do
