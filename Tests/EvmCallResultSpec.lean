@@ -30,6 +30,11 @@ must stay pinned. -/
 #guard CallResult.Policy.retBound (.exactWords 4) == 128
 #guard CallResult.Policy.retBound .strictBool == 32
 #guard CallResult.Policy.retBound (.magicBytes4 "1626ba7e") == 32
+#guard CallResult.Policy.retBound (.tryMagicBytes4 "1626ba7e") == 32
+#guard CallResult.Policy.wellFormed (.tryMagicBytes4 "1626ba7e")
+#guard !CallResult.Policy.wellFormed (.tryMagicBytes4 "1626BA7E")
+#guard CallResult.Policy.wordKinds (.tryMagicBytes4 "1626ba7e") == #[.boolean]
+#guard (CallResult.Request.staticTryMagic 100 "1626ba7e").wellFormed
 #guard CallResult.Policy.retBound (.words #[.address20, .boolean]) == 64
 #guard CallResult.Policy.wellFormed (.exactWords 1)
 #guard CallResult.Policy.wellFormed (.exactWords 4)
@@ -341,6 +346,19 @@ elab "#pf_guard_evm_token_bool_results" : command => do
         "  if shl(32, v1) { revert(0, 0) }\n" ++
         "  if iszero(eq(v1, shl(224, 0x1626ba7e))) { revert(0, 0) }\n" &&
         bound.names == #["v1"] && st == 2
+
+-- Soft magic: no call-failure revert. Bind 0 unless ok and size 32 and the word equals the
+-- left-aligned selector. Do not mload unless the size gate holds.
+#guard
+  match CallResult.Emit.emitBound mockCtx (.staticTryMagic 36 "1626ba7e") "tok" none 0 with
+  | .error _ => false
+  | .ok (txt, bound, st) =>
+      txt ==
+        "  let v0 := staticcall(gas(), tok, 0, 36, 0, 32)\n" ++
+        "  let v1 := 0\n" ++
+        "  if and(v0, eq(returndatasize(), 32)) { v1 := eq(mload(0), shl(224, 0x1626ba7e)) }\n" &&
+        bound.names == #["v1"] && bound.word == some "v1" && st == 2
+      && !txt.contains "revert"
 
 -- S2: typed words validate address (high 12 zero) then bool (0 or 1).
 #guard

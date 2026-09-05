@@ -26,6 +26,10 @@ consumers keep their existing output and fresh-name order.
    - `exactWords n` / `words kinds` / `strictBool` / `magicBytes4` compare `returndatasize()`
      with the full expected static frame, bind each copied word, and validate declared
      bool/address/`bytes4`/magic constraints.
+   - `tryMagicBytes4` skips the call-failure revert. It binds ABI bool `1` only when the
+     call succeeded and returndata is exactly the left-aligned magic word; every other
+     outcome binds `0`. It does not `mload` unless `returndatasize()` is 32, so leftover
+     calldata in memory 0 cannot look like success.
 
 Malformed requests (oversized plans, invalid magic selectors, msg.value on a STATICCALL, a
 missing or unexpected value expression) fail closed with an `extract/unsupported` error instead
@@ -119,6 +123,13 @@ def emitBound (context : Context σ) (request : CallResult.Request) (target : St
     indent ++ "let " ++ ok ++ " := " ++ invoke ++ nl ++
     indent ++ "if iszero(" ++ ok ++ ") { " ++ failStmt request.fail ++ " }" ++ nl
   match request.policy with
+  | .tryMagicBytes4 selector =>
+      let (word, st2) := context.fresh st1
+      return (indent ++ "let " ++ ok ++ " := " ++ invoke ++ nl ++
+        indent ++ "let " ++ word ++ " := 0" ++ nl ++
+        indent ++ "if and(" ++ ok ++ ", eq(returndatasize(), " ++ abiWordSize ++
+          ")) { " ++ word ++ " := eq(mload(0), shl(224, 0x" ++ selector ++ ")) }" ++ nl,
+        { names := #[word] }, st2)
   | .contractSuccess =>
       return (head ++
         indent ++ "if and(iszero(returndatasize()), iszero(extcodesize(" ++ target ++ "))) { " ++

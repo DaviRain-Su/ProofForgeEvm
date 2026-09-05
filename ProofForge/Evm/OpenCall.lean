@@ -219,6 +219,7 @@ def policyCanon : CallResult.Policy → String
   | .exactWords n => s!"word{n}"
   | .strictBool => "bool"
   | .magicBytes4 sel => s!"magic{sel}"
+  | .tryMagicBytes4 sel => s!"trymagic{sel}"
   | .words kinds =>
       "typed[" ++
         String.intercalate "," (kinds.toList.map fun

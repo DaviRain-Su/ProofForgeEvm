@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SignerLink: Ierc1271.checkSignature (1271-only) and checkNow (EOA or 1271). Darwin + Linux.
+# SignerLink: Ierc1271.checkSignature, checkNow (fail-closed), tryNow (Bool). Darwin + Linux.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -151,6 +151,68 @@ pf_evm_require_equal "$(seen 'calls()(uint256)')" "$((wallet_calls + 1))" "requi
 refuse_now_empty "$wallet" "$digest" "$foreign_sig" \
   "requireNow on a wallet still empty-reverts a foreign 1271 answer"
 
+"$solc_bin" --bin --optimize --overwrite -o "$root/build/evm" \
+  "$here/Erc1271ViewWalletMock.sol" >/dev/null
+view_bin="$root/build/evm/Erc1271ViewWalletMock.bin"
+[[ -f "$view_bin" ]] || { echo "FAIL: missing $view_bin" >&2; exit 1; }
+view_wallet="$(pf_evm_deploy_ctor_address "$(tr -d '\n\r ' < "$view_bin")" "$sender")"
+
+try_of='tryNow(address,bytes32,bytes)'
+try_call() {
+  "$cast" call --rpc-url "$rpc" --from "$sender" "$addr" "$try_of(bool)" "$1" "$2" "$3"
+}
+try_send() {
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" "$try_of" "$1" "$2" "$3" >/dev/null
+}
+try_false() { # signer hash signature label
+  pf_evm_require_equal "$(try_call "$1" "$2" "$3")" false "$4"
+  try_send "$1" "$2" "$3"
+}
+
+pf_evm_require_equal "$(try_call "$view_wallet" "$digest" "$good_sig")" true \
+  "tryNow accepts a view ERC-1271 wallet"
+try_send "$view_wallet" "$digest" "$good_sig"
+pf_evm_require_equal "$(accepted)" 6 "tryNow counts a true 1271 answer"
+try_false "$view_wallet" "$digest" "$foreign_sig" \
+  "tryNow answers false on a foreign 1271 answer"
+pf_evm_require_equal "$(accepted)" 6 "a false 1271 answer left the counter in place"
+pf_evm_require_equal "$(try_call "$sender" "$digest" "$good_sig")" true \
+  "tryNow accepts an EOA signer"
+try_send "$sender" "$digest" "$good_sig"
+pf_evm_require_equal "$(accepted)" 7 "tryNow counts a true EOA answer"
+try_false "$sender" "$digest" "$foreign_sig" \
+  "tryNow answers false on a foreign EOA key"
+try_false "$sender" "$digest" "${good_sig:0:130}" \
+  "tryNow answers false on a 64-byte EOA frame"
+try_false "$sender" "$digest" 0x \
+  "tryNow answers false on an empty EOA frame"
+pf_evm_require_equal "$(accepted)" 7 "EOA false answers left the counter in place"
+
+set_view_frame() {
+  "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$view_wallet" 'setFrame(uint256,uint256,bool)' "$1" "$2" "$3" >/dev/null
+}
+set_view_frame "$magic_word" 32 false
+pf_evm_require_equal "$(try_call "$view_wallet" "$digest" 0xdeadbeef)" true \
+  "tryNow accepts a fixed magic frame"
+set_view_frame "$("$python" -I -S -c "print(0xdeadbeef << 224)")" 32 false
+try_false "$view_wallet" "$digest" "$good_sig" "tryNow answers false on a wrong selector"
+set_view_frame "$("$python" -I -S -c "print(($magic_word) | 1)")" 32 false
+try_false "$view_wallet" "$digest" "$good_sig" "tryNow answers false on a dirty low byte"
+set_view_frame "$magic_word" 0 false
+try_false "$view_wallet" "$digest" "$good_sig" "tryNow answers false on an empty frame"
+set_view_frame "$magic_word" 64 false
+try_false "$view_wallet" "$digest" "$good_sig" "tryNow answers false on a two-word frame"
+set_view_frame "$magic_word" 32 true
+try_false "$view_wallet" "$digest" "$good_sig" \
+  "tryNow answers false when the wallet reverts with the magic word"
+pf_evm_require_equal "$(accepted)" 7 "frame false answers left the counter in place"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$view_wallet" 'clearFrame()' >/dev/null
+try_send "$view_wallet" "$digest" "$good_sig"
+pf_evm_require_equal "$(accepted)" 8 "tryNow accepts the view wallet again once the frame is cleared"
+
 yul="$root/build/evm/SignerLink.yul"
 [[ -f "$yul" ]] || { echo "FAIL: missing $yul" >&2; exit 1; }
 mut_dir="$root/build/evm/signerlink-extcodesize-mut"
@@ -161,11 +223,11 @@ from pathlib import Path
 import re, sys
 src = Path('$yul').read_text()
 n = src.count('extcodesize(')
-if n != 1:
-    sys.stderr.write(f'FAIL: expected one extcodesize(, got {n}\\n')
+if n < 1:
+    sys.stderr.write(f'FAIL: expected at least one extcodesize(, got {n}\\n')
     sys.exit(1)
-out, k = re.subn(r'extcodesize\\([^)]*\\)', '0', src, count=1)
-if k != 1:
+out, k = re.subn(r'extcodesize\\([^)]*\\)', '0', src)
+if k < 1:
     sys.stderr.write('FAIL: extcodesize rewrite missed\\n')
     sys.exit(1)
 Path('$mut_dir/SignerLink.yul').write_text(out)
@@ -193,4 +255,4 @@ if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   exit 1
 fi
 
-echo "evm-anvil-signerlink: ok (ERC-1271 isValidSignature via callMagic; checkNow EOA + wallet; extcodesize mutation)"
+echo "evm-anvil-signerlink: ok (ERC-1271 isValidSignature via callMagic; checkNow EOA + wallet; tryNow Bool; extcodesize mutation)"

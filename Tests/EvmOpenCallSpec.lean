@@ -244,6 +244,12 @@ private def hashOperands : Array Ops.Val := #[lit, lit, lit] ++ Array.replicate 
 #guard OpenCall.StaticShape.words4.limbCount == 4
 #guard OpenCall.StaticShape.bool.limbCount == 1
 #guard OpenCall.StaticShape.address.limbCount == 3
+#guard OpenCall.policyCanon (.tryMagicBytes4 "1626ba7e") == "trymagic1626ba7e"
+#guard (CallResult.Request.staticTryMagic 100 "1626ba7e").wellFormed
+#guard ({ name := "isValidSignature"
+          argTypes := #[.scalar (.fixedBytes 32), .bytes 65]
+          kind := .staticcall
+          policy := .tryMagicBytes4 "1626ba7e" } : OpenCall.Query).wellFormed
 #guard (OpenCall.StaticShape.word.query "echo" #[.scalar .uint256]) == echoQuery
 #guard (OpenCall.StaticShape.words2.query "getPair" #[]) == pairQuery
 
