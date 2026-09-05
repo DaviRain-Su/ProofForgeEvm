@@ -340,8 +340,14 @@ returns `a`. -/
 @[irreducible] def evmMulDiv256 (a b denom : UInt256) : UInt256 :=
   let _ := b; let _ := denom; a
 
-/-- Floor `(a * (b + 1)) / (denom + 1)` (OZ virtual offset 0). Checked `+ 1`. Host returns `a`. -/
+/-- Floor `(a * (b + 10)) / (denom + 1)` (OZ `_decimalsOffset() == 1`). Checked `+ 10` / `+ 1`.
+Host returns `a`. -/
 @[irreducible] def evmMulDivOffset256 (a b denom : UInt256) : UInt256 :=
+  let _ := b; let _ := denom; a
+
+/-- Floor `(a * (b + 1)) / (denom + 10)` (OZ `_decimalsOffset() == 1` reverse). Checked `+ 1` / `+ 10`.
+Host returns `a`. -/
+@[irreducible] def evmMulDivOffsetRev256 (a b denom : UInt256) : UInt256 :=
   let _ := b; let _ := denom; a
 
 /-- Ceiling `(a * b) / denom` with a 512-bit intermediate (OZ `Math.mulDiv` + round up).

@@ -87,11 +87,17 @@ Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. -/
   ⟨WideWord.Source.mulDivW0 left right denom, WideWord.Source.mulDivW1 left right denom,
     WideWord.Source.mulDivW2 left right denom, WideWord.Source.mulDivW3 left right denom⟩
 
-/-- Floor `(left * (right + 1)) / (denom + 1)` (OZ `_decimalsOffset() == 0`).
-Checked `+ 1` reverts on overflow. -/
+/-- Floor `(left * (right + 10)) / (denom + 1)` (OZ `_decimalsOffset() == 1`).
+Checked `+ 10` / `+ 1` revert on overflow. -/
 @[pf_inline] def mulDivOffset (left right denom : UInt256) : UInt256 :=
   ⟨WideWord.Source.mulDivOffsetW0 left right denom, WideWord.Source.mulDivOffsetW1 left right denom,
     WideWord.Source.mulDivOffsetW2 left right denom, WideWord.Source.mulDivOffsetW3 left right denom⟩
+
+/-- Floor `(left * (right + 1)) / (denom + 10)` (OZ `_decimalsOffset() == 1` reverse).
+Checked `+ 1` / `+ 10` revert on overflow. -/
+@[pf_inline] def mulDivOffsetRev (left right denom : UInt256) : UInt256 :=
+  ⟨WideWord.Source.mulDivOffsetRevW0 left right denom, WideWord.Source.mulDivOffsetRevW1 left right denom,
+    WideWord.Source.mulDivOffsetRevW2 left right denom, WideWord.Source.mulDivOffsetRevW3 left right denom⟩
 
 /-- Ceiling `(left * right) / denom` with a 512-bit intermediate (OZ `Math.mulDiv` + round up).
 Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. -/
