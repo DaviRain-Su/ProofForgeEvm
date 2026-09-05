@@ -16,7 +16,8 @@ private def expectVault4626Link : CommandElabM Unit := do
     | .ok source => pure source
     | .error reason => throwError reason
   for ixName in #["asset", "totalAssets", "deposit", "redeem", "balanceOf",
-      "totalSupply", "convertToShares", "convertToAssets", "previewMint"] do
+      "totalSupply", "convertToShares", "convertToAssets", "previewMint",
+      "previewWithdraw"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"Vault4626Link is missing {ixName}"
   let program ←

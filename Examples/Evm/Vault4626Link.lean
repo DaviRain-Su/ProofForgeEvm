@@ -2,8 +2,9 @@ import ProofForge.Evm.Sdk
 
 /-!
 Bounded ERC-4626 vault consumer: compile-time fixed underlying asset, floor
-`assets * totalSupply / totalAssets` share ledger, ceiling `previewMint`, closed ERC-20
-asset movement, and ordered reentrancy lock around external calls. Empty supply is 1:1.
+`assets * totalSupply / totalAssets` share ledger, ceiling `previewMint`, ceiling
+`previewWithdraw`, closed ERC-20 asset movement, and ordered reentrancy lock around
+external calls. Empty supply is 1:1.
 -/
 
 namespace Examples.Evm.Vault4626Link
@@ -75,6 +76,11 @@ def previewDeposit (s : State) (assets : UInt256) : UInt256 :=
 @[pf_entry]
 def previewMint (s : State) (sharesAmt : UInt256) : UInt256 :=
   Erc4626.previewMint Immutable.address sharesAmt s.totalShares
+    (ERC20.balanceOfSelf Immutable.address)
+
+@[pf_entry]
+def previewWithdraw (s : State) (assets : UInt256) : UInt256 :=
+  Erc4626.previewWithdraw Immutable.address assets s.totalShares
     (ERC20.balanceOfSelf Immutable.address)
 
 @[pf_entry]

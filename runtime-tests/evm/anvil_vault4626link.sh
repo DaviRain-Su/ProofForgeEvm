@@ -63,6 +63,10 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(ui
   "donated convertToShares is 50"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' 100)" 200 \
   "donated convertToAssets is 200"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(uint256)(uint256)' 1)" 0 \
+  "floor convertToShares(1) is 0"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewWithdraw(uint256)(uint256)' 1)" 1 \
+  "ceiling previewWithdraw(1) is 1"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'mint(address,uint256)' "$addr" 1 >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 201 "uneven totalAssets"

@@ -3,8 +3,9 @@
 
 Erc4626.convertToShares is floor assets * totalSupply / totalAssets.
 Erc4626.previewMint is ceiling shares * totalAssets / totalSupply.
+Erc4626.previewWithdraw is ceiling assets * totalSupply / totalAssets.
 Empty supply is 1:1. Virtual-offset inflation defense stays out.
-Ceiling previewWithdraw and full-precision mulDiv stay out.
+Full-precision mulDiv stays out.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -24,6 +25,8 @@ STALE_PHRASES = (
     "1:1 `Vault4626Link` stays the shipped profile",
     "Ceiling `previewMint` stays out",
     "Ceiling previewMint stays out",
+    "Ceiling `previewWithdraw` stays out",
+    "Ceiling previewWithdraw stays out",
 )
 
 REQUIRED = (
@@ -76,8 +79,24 @@ REQUIRED = (
         "def previewMint (s : State) (sharesAmt : UInt256) : UInt256 :=",
     ),
     (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "def sharesForWithdraw (assets totalSupply totalAssets : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "if UInt256.eq (UInt256.mod prod totalAssets) UInt256.zero then q",
+    ),
+    (
+        ROOT / "Examples" / "Evm" / "Vault4626Link.lean",
+        "def previewWithdraw (s : State) (assets : UInt256) : UInt256 :=",
+    ),
+    (
         ROOT / "Tests" / "EvmErc4626Spec.lean",
-        '"totalSupply", "convertToShares", "convertToAssets", "previewMint"] do',
+        '"totalSupply", "convertToShares", "convertToAssets", "previewMint",',
+    ),
+    (
+        ROOT / "Tests" / "EvmErc4626Spec.lean",
+        '"previewWithdraw"] do',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
@@ -112,8 +131,20 @@ REQUIRED = (
         "unless names.any (· == \"totalShares_w0\") do",
     ),
     (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"ceiling previewWithdraw(1) is 1"',
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"floor convertToShares(1) is 0"',
+    ),
+    (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 ceiling `previewMint`",
+    ),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "ERC-4626 ceiling `previewWithdraw`",
     ),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
 )
