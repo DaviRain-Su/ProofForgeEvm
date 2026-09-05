@@ -75,6 +75,7 @@ open Lean Elab Command
 #guard OzAudit.statusOf 16 == OzAudit.statusPartial
 #guard !OzAudit.isBlocked 16
 #guard !OzAudit.isAbsent 16
+#guard !OzAudit.isTemporaryGap 16
 #guard OzAudit.blockedRowTagged 16
 #guard OzAudit.pathTagOf 5 == OzAudit.tagFinanceVesting
 #guard OzAudit.statusOf 5 == OzAudit.statusPartial
