@@ -154,7 +154,7 @@ so Extract keeps the owner stores beside the log. Non-nominee reverts
 def acceptOwnership (s : State) : Except Error (State × UInt64) :=
   if Access.Ownership.callerIsPending s.ownership then
     .ok ({ owner := s.ownership, cliffDuration := s.cliffDuration, released := s.released,
-        guard := s.guard, ownership := Access.Ownership.consume s.ownership },
+        guard := s.guard, ownership := (Access.Ownership.consume s.ownership) },
       Ownable.Log.ownershipTransferred s.owner s.ownership)
   else
     .ok (s, Access.ownerViolation)
