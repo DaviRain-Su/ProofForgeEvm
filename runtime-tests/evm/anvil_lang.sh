@@ -45,11 +45,15 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64()(uint64)')
   3 "wrapped ofNat ABI word is 3"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64mix()(uint64)')" \
   3 "mixed runtime ofNat ABI word follows cells_0"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64nest()(uint64)')" \
+  6 "nested mixed ofNat ABI word is cells_0 plus 3"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'setAt(uint64,uint64)' 0 4 >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64mix()(uint64)')" \
   4 "mixed runtime ofNat follows a written cells_0"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64nest()(uint64)')" \
+  7 "nested mixed ofNat follows a written cells_0 plus 3"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64()(uint64)')" \
   3 "static wrap64 ignores cells_0"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \

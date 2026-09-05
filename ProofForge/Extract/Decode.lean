@@ -204,6 +204,26 @@ private partial def ecrecoverWideOperands (env : Environment) (fuel : Nat) (args
     let (s0, s1, s2, s3) := bytes32LeavesAsVal env fuel args[base + 3]!
     some #[h0, h1, h2, h3, vv, r0, r1, r2, r3, s0, s1, s2, s3]
 
+/-- Decode a Nat argument of `UInt64.ofNat`, wrapping compile-time overflow.
+Nested mixed `HAdd` reuses the same wrap on each addend. Non-add mixed Nat stays out. -/
+private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : Option Ops.Val :=
+  match foldStaticNat? env fuel x with
+  | some n =>
+    if n ≥ UInt64.size then some (.lit (UInt64.ofNat n))
+    else asVal env fuel x
+  | none =>
+    match asVal env fuel x with
+    | some v => some v
+    | none =>
+      let addends := strip x
+      if (isConstNamed addends ``HAdd.hAdd || isConstNamed addends ``Nat.add ||
+          endsWith addends ".hAdd") && addends.getAppArgs.size ≥ 2 then
+        let args := addends.getAppArgs
+        match ofNatNatArg? env fuel args[args.size - 2]!, ofNatNatArg? env fuel args[args.size - 1]! with
+        | some l, some r => some (.addU64 l r)
+        | _, _ => none
+      else none
+
 private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
   match fuel with
   | 0 => none
@@ -873,27 +893,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
     | some v => some (.bitAnd v (.lit (0xffffffff : UInt64)))
     | none => none
   else if isConstNamed e ``UInt64.ofNat && e.getAppArgs.size ≥ 1 then
-    let arg := e.getAppArgs[e.getAppArgs.size - 1]!
-    match foldStaticNat? env fuel arg with
-    | some n =>
-      if n ≥ UInt64.size then some (.lit (UInt64.ofNat n))
-      else asVal env fuel arg
-    | none =>
-      match asVal env fuel arg with
-      | some v => some v
-      | none =>
-        let addends := strip arg
-        if (isConstNamed addends ``HAdd.hAdd || isConstNamed addends ``Nat.add ||
-            endsWith addends ".hAdd") && addends.getAppArgs.size ≥ 2 then
-          let args := addends.getAppArgs
-          let side (x : Expr) : Option Ops.Val :=
-            match foldStaticNat? env fuel x with
-            | some n => some (.lit (UInt64.ofNat n))
-            | none => asVal env fuel x
-          match side args[args.size - 2]!, side args[args.size - 1]! with
-          | some l, some r => some (.addU64 l r)
-          | _, _ => none
-        else none
+    ofNatNatArg? env fuel e.getAppArgs[e.getAppArgs.size - 1]!
   else if (isConstNamed e ``UInt8.toUInt64 || isConstNamed e ``UInt64.toUInt8 ||
       isConstNamed e ``UInt16.toUInt64 || isConstNamed e ``UInt64.toUInt16 ||
       isConstNamed e ``UInt32.toUInt64 || isConstNamed e ``UInt64.toUInt32 ||
