@@ -64,6 +64,15 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(ui
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' 100)" 200 \
   "donated convertToAssets is 200"
 
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'mint(address,uint256)' "$addr" 1 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 201 "uneven totalAssets"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' 1)" 2 \
+  "floor convertToAssets(1) is 2"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewMint(uint256)(uint256)' 1)" 3 \
+  "ceiling previewMint(1) is 3"
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'burn(address,uint256)' "$addr" 1 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 200 "restored donated totalAssets"
+
 dep2_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" "$addr" 'deposit(uint256,address)' 100 "$sender")"
 pf_evm_typed_event_check "$abi" "$dep2_receipt" Deposit "$topic_dep" \
   "{\"sender\": \"$sender\", \"owner\": \"$sender\", \"assets\": 100, \"shares\": 50}" "second deposit"
