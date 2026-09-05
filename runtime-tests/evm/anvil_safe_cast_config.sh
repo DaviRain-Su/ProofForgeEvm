@@ -72,14 +72,14 @@ done
 # Authorization is a distinct outer policy and runs before narrowing or state publication.
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setLimit(uint128)' 9)" "$other" "non-admin representable limit"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'setLimit(uint128)' 9 >/dev/null 2>&1; then
   echo "FAIL: non-admin limit update unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setLimit(uint128)' "$just_over")" "$other" \
   "non-admin wide input reaches authorization first"
 pf_evm_require_storage "$addr" 3 "$max64" "unauthorized updates are atomic"
@@ -120,14 +120,14 @@ for case in \
   pf_evm_require_storage "$addr" 4 "$max32" "$label is atomic"
 done
 
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setWindow(uint128)' 11)" "$other" "non-admin representable window"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'setWindow(uint128)' 11 >/dev/null 2>&1; then
   echo "FAIL: non-admin window update unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setWindow(uint128)' "$just_over32")" "$other" \
   "non-admin UInt32 overflow reaches authorization first"
 pf_evm_require_storage "$addr" 4 "$max32" "unauthorized window updates are atomic"
@@ -166,7 +166,7 @@ for case in \
   pf_evm_require_storage "$addr" 5 "$max16" "$label is atomic"
 done
 
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setThreshold(uint128)' 13)" "$other" \
   "non-admin representable threshold"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
@@ -174,7 +174,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: non-admin threshold update unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setThreshold(uint128)' "$just_over16")" "$other" \
   "non-admin UInt16 overflow reaches authorization first"
 pf_evm_require_storage "$addr" 5 "$max16" "unauthorized threshold updates are atomic"
@@ -214,14 +214,14 @@ for case in \
   pf_evm_require_storage "$addr" 6 "$max8" "$label is atomic"
 done
 
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setLevel(uint128)' 17)" "$other" "non-admin representable level"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'setLevel(uint128)' 17 >/dev/null 2>&1; then
   echo "FAIL: non-admin level update unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setLevel(uint128)' "$just_over8")" "$other" \
   "non-admin UInt8 overflow reaches authorization first"
 pf_evm_require_storage "$addr" 6 "$max8" "unauthorized level updates are atomic"

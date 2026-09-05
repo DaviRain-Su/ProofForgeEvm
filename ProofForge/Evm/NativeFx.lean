@@ -50,6 +50,7 @@ inductive Call (V : Type) where
   | revertInsufficient (h0 h1 h2 h3 w0 w1 w2 w3 : V)
   | revertUnauthorized (w0 w1 w2 : V)
   | revertOwnableInvalidOwner (w0 w1 w2 : V)
+  | revertOwnableUnauthorizedAccount (w0 w1 w2 : V)
   | revertZeroAddress
   | revertPaused
   | revertCapExceeded
@@ -83,6 +84,8 @@ def Call.mapValues (mapValue : α → β) : Call α → Call β
       .revertUnauthorized (mapValue w0) (mapValue w1) (mapValue w2)
   | .revertOwnableInvalidOwner w0 w1 w2 =>
       .revertOwnableInvalidOwner (mapValue w0) (mapValue w1) (mapValue w2)
+  | .revertOwnableUnauthorizedAccount w0 w1 w2 =>
+      .revertOwnableUnauthorizedAccount (mapValue w0) (mapValue w1) (mapValue w2)
   | .revertZeroAddress => .revertZeroAddress
   | .revertPaused => .revertPaused
   | .revertCapExceeded => .revertCapExceeded
@@ -115,6 +118,8 @@ def Call.mapValuesM [Monad m] (mapValue : α → m β) : Call α → m (Call β)
       return .revertUnauthorized (← mapValue w0) (← mapValue w1) (← mapValue w2)
   | .revertOwnableInvalidOwner w0 w1 w2 =>
       return .revertOwnableInvalidOwner (← mapValue w0) (← mapValue w1) (← mapValue w2)
+  | .revertOwnableUnauthorizedAccount w0 w1 w2 =>
+      return .revertOwnableUnauthorizedAccount (← mapValue w0) (← mapValue w1) (← mapValue w2)
   | .revertZeroAddress => pure .revertZeroAddress
   | .revertPaused => pure .revertPaused
   | .revertCapExceeded => pure .revertCapExceeded
@@ -134,6 +139,7 @@ def Call.values : Call V → Array V
       #[h0, h1, h2, h3, w0, w1, w2, w3]
   | .revertUnauthorized w0 w1 w2 => #[w0, w1, w2]
   | .revertOwnableInvalidOwner w0 w1 w2 => #[w0, w1, w2]
+  | .revertOwnableUnauthorizedAccount w0 w1 w2 => #[w0, w1, w2]
   | .revertZeroAddress | .revertPaused | .revertCapExceeded | .receive => #[]
 
 def Call.anyValue (predicate : V → Bool) (call : Call V) : Bool :=
@@ -147,6 +153,7 @@ def Call.effects : Call V → EffectSummary
   | .sendEth .. | .sendEth256 .. => { externalCall := true }
   | .log .. | .logTransfer256 .. | .logApproval256 .. | .logTyped .. => { logs := true }
   | .revertInsufficient .. | .revertUnauthorized .. | .revertOwnableInvalidOwner ..
+  | .revertOwnableUnauthorizedAccount ..
   | .revertZeroAddress | .revertPaused
   | .revertCapExceeded => {}
   | .receive => { payable := true, receive := true }
@@ -219,6 +226,10 @@ def Call.emitsOwnableInvalidOwner : Call V → Bool
   | .revertOwnableInvalidOwner .. => true
   | _ => false
 
+def Call.emitsOwnableUnauthorizedAccount : Call V → Bool
+  | .revertOwnableUnauthorizedAccount .. => true
+  | _ => false
+
 def Call.emitsZeroAddress : Call V → Bool
   | .revertZeroAddress => true
   | _ => false
@@ -284,6 +295,8 @@ def Call.canonical (renderValue : V → String) : Call V → String
       s!"err.Unauthorized({renderValue w0},{renderValue w1},{renderValue w2})"
   | .revertOwnableInvalidOwner w0 w1 w2 =>
       s!"err.OwnableInvalidOwner({renderValue w0},{renderValue w1},{renderValue w2})"
+  | .revertOwnableUnauthorizedAccount w0 w1 w2 =>
+      s!"err.OwnableUnauthorizedAccount({renderValue w0},{renderValue w1},{renderValue w2})"
   | .revertZeroAddress => "err.ZeroAddress"
   | .revertPaused => "err.Paused"
   | .revertCapExceeded => "err.CapExceeded"

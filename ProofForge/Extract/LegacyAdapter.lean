@@ -235,6 +235,8 @@ partial def toLegacyOp : Op → Except String ProofForge.Ops.Op
       throw "extract/unsupported: legacy adapter cannot represent parameterized Unauthorized"
   | .ext (.evm (.component (.nativeFx (.revertOwnableInvalidOwner ..)))) =>
       throw "extract/unsupported: legacy adapter cannot represent OwnableInvalidOwner"
+  | .ext (.evm (.component (.nativeFx (.revertOwnableUnauthorizedAccount ..)))) =>
+      throw "extract/unsupported: legacy adapter cannot represent OwnableUnauthorizedAccount"
   | .ext (.evm (.component (.nativeFx .revertZeroAddress))) =>
       throw "extract/unsupported: legacy adapter cannot represent ZeroAddress"
   | .ext (.evm (.component (.nativeFx .revertPaused))) =>

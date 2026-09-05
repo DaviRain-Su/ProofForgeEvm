@@ -52,7 +52,7 @@ if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
   echo "FAIL: accept before delay unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'acceptDefaultAdminTransfer()')" "$other" \
   "accept before delay"
 

@@ -22,7 +22,7 @@ def u64Max : UInt64 := ~~~(0 : UInt64)
 def init (_owner : Address) : State :=
   { value := 0 }
 
-/-- 只有构造期 owner 能加。非 owner → `Unauthorized(caller)`。整值比较由 SDK Address 拥有。 -/
+/-- 只有构造期 owner 能加。非 owner → `OwnableUnauthorizedAccount(caller)`。整值比较由 SDK Address 拥有。 -/
 @[pf_entry]
 def bump (s : State) (delta : UInt64) : Except Error (State × UInt64) :=
   if Address.eqImmutable Context.caller then
@@ -32,7 +32,7 @@ def bump (s : State) (delta : UInt64) : Except Error (State × UInt64) :=
     else
       .error .overflow
   else
-    .ok (s, Revert.unauthorized Context.caller)
+    .ok (s, Revert.ownableUnauthorizedAccount Context.caller)
 
 /-- `who` 是零地址 → `ZeroAddress()`。成功只回 `who.w0`，不改 storage。 -/
 @[pf_entry]

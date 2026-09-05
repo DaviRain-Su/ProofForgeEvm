@@ -87,6 +87,10 @@ private def expectVest20Link : CommandElabM Unit := do
     throwError "Vest20Link ABI lost ZeroAddress"
   unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do
     throwError "Vest20Link ABI lost OwnableInvalidOwner"
+  unless abi.contains "\"name\":\"OwnableUnauthorizedAccount\"" do
+    throwError "Vest20Link ABI lost OwnableUnauthorizedAccount"
+  unless !abi.contains "\"name\":\"Unauthorized\"" do
+    throwError "Vest20Link must not advertise Unauthorized"
   unless ctorHasOwnableInvalidOwner program.constructor.ops do
     throwError "Vest20Link constructor lost OwnableInvalidOwner revert"
   unless ctorHasConstructorTransferred program.constructor.ops do
@@ -110,7 +114,7 @@ private def expectVest20Link : CommandElabM Unit := do
       | throwError s!"Vest20Link canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" do
       throwError s!"{ixName} lost the linear formula"
-  unless IR.digestHex program == "194894e2bbdb47e0" do
+  unless IR.digestHex program == "6f387586e59335d5" do
     throwError s!"Vest20Link digest drifted: {IR.digestHex program}"
   logInfo m!"vest20link: digest={IR.digestHex program} abi-ok"
 

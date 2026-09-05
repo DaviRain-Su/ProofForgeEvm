@@ -44,7 +44,7 @@ private def expectAdminDelayLink : CommandElabM Unit := do
       abi.contains "\"name\":\"acceptDefaultAdminTransfer\"" &&
       abi.contains "\"name\":\"defaultAdminDelay\"" do
     throwError s!"AdminDelayLink ABI lost admin-delay surface:\n{abi}"
-  unless IR.digestHex program == "376071c5220a95b7" do
+  unless IR.digestHex program == "200dd10d949030a7" do
     throwError s!"AdminDelayLink digest drifted: {IR.digestHex program}"
 
 elab "#pf_guard_evm_default_admin_delay" : command => expectAdminDelayLink

@@ -4,7 +4,7 @@
 VestLink and Vest20Link revert OwnableInvalidOwner(address) on CREATE of
 address(0) and on transferOwnership(address(0)). Sdk.OzAudit.temporaryGapCount
 stays 0. A doc that still lists that selector as the VestingWallet gap is a
-lying inventory. Remaining remainder is Unauthorized vs OwnableUnauthorizedAccount.
+lying inventory. Remaining remainder is the split native-ETH / ERC-20 wallets.
 
 Usage:
     python3 scripts/check_vest_invalid_owner_honesty.py
@@ -43,10 +43,10 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "evmRevertOwnableInvalidOwner"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "OwnableUnauthorizedAccount(address)"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "b9471739ac722d35"'),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "b9471739ac722d35"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "194894e2bbdb47e0"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "194894e2bbdb47e0"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "fac351201b2369ba"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "fac351201b2369ba"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "6f387586e59335d5"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "6f387586e59335d5"'),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_require_create_ownable_invalid_owner"),
     (ROOT / "runtime-tests" / "evm" / "lib.sh", "pf_evm_strip_ctor_invalid_owner_guard"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "zero new owner"),

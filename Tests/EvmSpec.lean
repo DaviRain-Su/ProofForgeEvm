@@ -103,6 +103,11 @@ open ProofForge.Evm
     == "err.OwnableInvalidOwner(x,x,x)"
 #guard
   (ProofForge.Evm.NativeFx.Call.canonical (fun _ => "x")
+    (.revertOwnableUnauthorizedAccount (.lit 0) (.lit 0) (.lit 0)
+      : ProofForge.Evm.NativeFx.Call ProofForge.Evm.Ops.Val))
+    == "err.OwnableUnauthorizedAccount(x,x,x)"
+#guard
+  (ProofForge.Evm.NativeFx.Call.canonical (fun _ => "x")
     (.revertZeroAddress : ProofForge.Evm.NativeFx.Call ProofForge.Evm.Ops.Val))
     == "err.ZeroAddress"
 #guard

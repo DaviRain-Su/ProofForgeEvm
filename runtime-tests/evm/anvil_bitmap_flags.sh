@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # EvmFeatureFlags: owner-managed feature flags over the StorageBitmap persistent bitmap policy
 # (capacity 128 bits = 2 words). Covers enable/disable/toggle idempotence, the 63/64 word
-# boundary, the final in-range bit 127, OOB rejection (no lower-bit aliasing), Unauthorized
-# gates, and persistent state across failed transactions.
+# boundary, the final in-range bit 127, OOB rejection (no lower-bit aliasing),
+# OwnableUnauthorizedAccount gates, and persistent state across failed transactions.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,8 +46,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
 
-# Non-owner enable reverts Unauthorized(other) and stores nothing.
-pf_evm_require_unauthorized "$addr" "$other" \
+# Non-owner enable reverts OwnableUnauthorizedAccount(other) and stores nothing.
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'enable(uint64)' 7)" "$other" "non-owner enable"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'enable(uint64)' 7 >/dev/null 2>&1; then
@@ -119,23 +119,23 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" 'disable(uint64)' 63 >/dev/null
 pf_evm_require_storage "$addr" 3 1 "disable of a clear bit is an idempotent same-word write"
 
-# Non-owner disable/toggle revert Unauthorized(other) and store nothing.
-pf_evm_require_unauthorized "$addr" "$other" \
+# Non-owner disable/toggle revert OwnableUnauthorizedAccount(other) and store nothing.
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'disable(uint64)' 0)" "$other" "non-owner disable"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'disable(uint64)' 0 >/dev/null 2>&1; then
   echo "FAIL: non-owner disable unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'toggle(uint64)' 0)" "$other" "non-owner toggle"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'toggle(uint64)' 0 >/dev/null 2>&1; then
   echo "FAIL: non-owner toggle unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_named_revert "$addr" "$other" \
-  "$("$cast" calldata 'toggle(uint64)' 500)" 'Unauthorized(address)' \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
+  "$("$cast" calldata 'toggle(uint64)' 500)" "$other" \
   "non-owner OOB toggle hits the owner gate first"
 pf_evm_require_storage "$addr" 3 1 "unauthorized mutations hold word 0"
 pf_evm_require_storage "$addr" 4 9223372036854775809 "unauthorized mutations hold word 1"

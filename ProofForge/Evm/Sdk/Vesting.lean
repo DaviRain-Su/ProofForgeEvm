@@ -17,8 +17,8 @@ The cliff matches OpenZeppelin `VestingWalletCliff`: vested amount is 0 until
 when `cliffDuration > 0`). `cliffDuration = 0` is the linear wallet. `cliffDuration > duration`
 fails closed. CREATE of a zero beneficiary reverts `OwnableInvalidOwner(address)`. Constructor
 `OwnershipTransferred(address(0), owner)` lowers as the else-arm of that revert-guard. The
-remaining named gap on this row is `Unauthorized(address)` rather than OZ
-`OwnableUnauthorizedAccount(address)`, plus the split native-ETH / ERC-20 wallets.
+remaining named gap on this row is the split native-ETH / ERC-20 wallets. Only-owner
+reverts are `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`.
 
 Fail-closed gates:
 - A zero beneficiary reverts `OwnableInvalidOwner` at CREATE and on `transferOwnership`.

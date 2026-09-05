@@ -1830,6 +1830,10 @@ private def errorAbiOwnableInvalidOwner : String :=
   "{\"type\":\"error\",\"name\":\"OwnableInvalidOwner\",\"inputs\":[" ++
     "{\"name\":\"owner\",\"type\":\"address\"}]}"
 
+private def errorAbiOwnableUnauthorizedAccount : String :=
+  "{\"type\":\"error\",\"name\":\"OwnableUnauthorizedAccount\",\"inputs\":[" ++
+    "{\"name\":\"account\",\"type\":\"address\"}]}"
+
 private def errorAbiZeroAddress : String :=
   "{\"type\":\"error\",\"name\":\"ZeroAddress\",\"inputs\":[]}"
 
@@ -1981,6 +1985,10 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
       hasErrorLeaf (fun
         | .component call => call.emitsOwnableInvalidOwner
         | _ => false) m.ops)
+  let needOwnableUnauth := p.entries.any (fun m =>
+    hasErrorLeaf (fun
+      | .component call => call.emitsOwnableUnauthorizedAccount
+      | _ => false) m.ops)
   let needZero :=
     hasErrorLeaf (fun
       | .component call => call.emitsZeroAddress
@@ -2012,6 +2020,7 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
       (if needIns then #[errorAbiInsufficient] else #[]) ++
       (if needUnauth then #[errorAbiUnauthorized] else #[]) ++
       (if needInvalidOwner then #[errorAbiOwnableInvalidOwner] else #[]) ++
+      (if needOwnableUnauth then #[errorAbiOwnableUnauthorizedAccount] else #[]) ++
       (if needZero then #[errorAbiZeroAddress] else #[]) ++
       (if needPaused then #[errorAbiPaused] else #[]) ++
       (if needCap then #[errorAbiCapExceeded] else #[]) ++

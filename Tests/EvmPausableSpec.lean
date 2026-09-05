@@ -43,7 +43,7 @@ open Examples.Evm.TwoStepCounter in
 open Examples.Evm.Credits in
 #guard (init ⟨1, 2, 3⟩).paused == Pausable.running
 
-#guard ProofForge.Evm.Registry.digestOf "TwoStepCounter" == some "9e20eb417583ce6e"
-#guard ProofForge.Evm.Registry.digestOf "Credits" == some "c2ceddddbf415d40"
+#guard ProofForge.Evm.Registry.digestOf "TwoStepCounter" == some "9e15126afbbbc091"
+#guard ProofForge.Evm.Registry.digestOf "Credits" == some "11d0c531446287ce"
 
 end Tests.EvmPausableSpec

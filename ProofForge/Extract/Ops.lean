@@ -65,6 +65,8 @@ private def evmLeaf (kind : Evm.Ops.ValKind) : Val :=
   .ext (.evm (.component (.nativeFx (.revertUnauthorized w0 w1 w2))))
 @[match_pattern] def Op.evmRevertOwnableInvalidOwner (w0 w1 w2 : Val) : Op :=
   .ext (.evm (.component (.nativeFx (.revertOwnableInvalidOwner w0 w1 w2))))
+@[match_pattern] def Op.evmRevertOwnableUnauthorizedAccount (w0 w1 w2 : Val) : Op :=
+  .ext (.evm (.component (.nativeFx (.revertOwnableUnauthorizedAccount w0 w1 w2))))
 @[match_pattern] def Op.evmRevertZeroAddress : Op :=
   .ext (.evm (.component (.nativeFx .revertZeroAddress)))
 @[match_pattern] def Op.evmRevertPaused : Op :=

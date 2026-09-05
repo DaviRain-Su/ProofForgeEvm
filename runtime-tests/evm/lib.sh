@@ -400,6 +400,45 @@ if got != '$who':
 "
 }
 
+# eth_call must revert with ABI error OwnableUnauthorizedAccount(address).
+pf_evm_require_ownable_unauthorized_account() {
+  local addr="$1" from="$2" data="$3" who="$4" message="$5"
+  local sel
+  sel="$("$cast" keccak 'OwnableUnauthorizedAccount(address)')"
+  sel="${sel#0x}"
+  sel="$(printf '%s' "$sel" | cut -c1-8 | tr 'A-Z' 'a-z')"
+  who="$(printf '%s' "$who" | tr 'A-Z' 'a-z')"
+  who="${who#0x}"
+  "$python" -I -S -c "
+import json, urllib.request, urllib.error
+rpc='$rpc'
+payload={
+  'jsonrpc':'2.0','id':1,'method':'eth_call',
+  'params':[{'to':'$addr','from':'$from','data':'$data'}, 'latest']
+}
+req=urllib.request.Request(rpc, data=json.dumps(payload).encode(),
+  headers={'Content-Type':'application/json'})
+try:
+    raw=urllib.request.urlopen(req).read().decode()
+except urllib.error.HTTPError as e:
+    raw=e.read().decode()
+resp=json.loads(raw)
+err=resp.get('error') or {}
+blob=(err.get('data') or '')
+if isinstance(blob, dict):
+    blob=blob.get('data') or blob.get('raw') or ''
+blob=str(blob).lower()
+if blob.startswith('0x'):
+    blob=blob[2:]
+sel='$sel'
+if len(blob) < 8+64 or not blob.startswith(sel):
+    raise SystemExit('FAIL: $message: missing OwnableUnauthorizedAccount(who) (got '+repr(err)+')')
+got=blob[8+24:8+64]
+if got != '$who':
+    raise SystemExit(f'FAIL: $message: OwnableUnauthorizedAccount(0x{got}) != 0x$who')
+"
+}
+
 # eth_call must revert with the ABI error of the given signature (e.g. 'oob()'), no arguments.
 pf_evm_require_named_revert() {
   local addr="$1" from="$2" data="$3" signature="$4" message="$5"

@@ -55,9 +55,9 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'valueOf(uint64)(uint64)' 0)" 0 "key zero starts absent"
 
 # Authorization precedes map policy and preserves both static and hashed state.
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'write(uint64,uint64)' 7 70)" "$other" "non-owner write"
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'remove(uint64)' 7)" "$other" "non-owner remove"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'write(uint64,uint64)' 7 70 >/dev/null 2>&1; then

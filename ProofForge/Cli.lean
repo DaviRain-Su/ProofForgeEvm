@@ -333,19 +333,30 @@ private unsafe def extractEvmPrograms (units : Array BuildUnit) :
     let modules := units.map fun u => ({ module := u.module } : Lean.Import)
     Lean.enableInitializersExecution
     let env ← Lean.importModules modules {} (loadExts := true)
-    return units.mapM fun u =>
+    let mut errors : Array String := #[]
+    let mut programs : Array ProofForge.Evm.IR.Program := #[]
+    for u in units do
       match Extract.extractModuleIR env u.module none >>= Evm.IR.fromExtracted with
-      | .error reason => .error s!"{u.name}: {reason}"
+      | .error reason =>
+        errors := errors.push s!"{u.name}: {reason}"
       | .ok program =>
         if !isExamplesModule u.module then
-          .ok program
+          programs := programs.push program
         else
           let digest := Evm.IR.digestHex program
           match Evm.Registry.digestOf u.name with
           | some expected =>
-            if digest == expected then .ok program
-            else .error s!"{u.name}: ir/mismatch: extracted evm digest {digest} != fixture {expected}"
-          | none => .ok program
+            if digest == expected then
+              programs := programs.push program
+            else
+              errors := errors.push
+                s!"{u.name}: ir/mismatch: extracted evm digest {digest} != fixture {expected}"
+          | none =>
+            programs := programs.push program
+    if errors.isEmpty then
+      return .ok programs
+    else
+      return .error (String.intercalate "\n" errors.toList)
   catch e =>
     return .error s!"source import failed: {e}"
 

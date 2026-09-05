@@ -24,9 +24,9 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   (`finance/VestingWallet`) stays PARTIAL after `VestLink` shipped stored-beneficiary
   `transferOwnership`, parameterless `release()`, a constructor-stored OZ cliff
   (`cliffDuration`, `cliff()`), CREATE of a zero beneficiary that reverts
-  `OwnableInvalidOwner(address)`, and constructor `OwnershipTransferred(address(0), owner)`.
-  Remaining named gap on that row is `Unauthorized(address)` rather than OZ
-  `OwnableUnauthorizedAccount(address)`, plus the split native-ETH / ERC-20 wallets.
+  `OwnableInvalidOwner(address)`, constructor `OwnershipTransferred(address(0), owner)`,
+  and only-owner reverts `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`.
+  Remaining named gap on that row is the split native-ETH / ERC-20 wallets.
   `temporaryGapCount` stays 0.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,

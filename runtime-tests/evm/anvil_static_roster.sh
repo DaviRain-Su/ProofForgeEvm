@@ -61,7 +61,7 @@ pf_evm_require_storage "$addr" 7 0 "OOB update cannot spill into next slot"
 
 other_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 other="$("$cast" wallet address --private-key "$other_key")"
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'setSeat(uint64,uint64,uint8)' 0 9 2)" "$other" \
   "non-admin seat update"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
@@ -101,7 +101,7 @@ pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" \
   'isWriter(address)(bool)' "$other")" false "vacant membership view"
 
 # Non-admin grant reverts Unauthorized(other) and cannot mutate the role slots.
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'grantWriter(address)' "$other")" "$other" "non-admin writer grant"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'grantWriter(address)' "$other" >/dev/null 2>&1; then
@@ -178,7 +178,7 @@ pf_evm_require_storage "$addr" 10 "$ow0" "nonmember revoke holds writer slot0"
 pf_evm_require_storage "$addr" 13 "$pw0" "nonmember revoke holds writer slot1"
 
 # Non-admin revoke reverts Unauthorized(other) and cannot clear a slot.
-pf_evm_require_unauthorized "$addr" "$other" \
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'revokeWriter(address)' "$wr2")" "$other" "non-admin writer revoke"
 if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
     "$addr" 'revokeWriter(address)' "$wr2" >/dev/null 2>&1; then

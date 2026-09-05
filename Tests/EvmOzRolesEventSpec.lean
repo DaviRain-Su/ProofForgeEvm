@@ -126,7 +126,7 @@ private def expectOzRoles : CommandElabM Unit := do
   expectRoleEvents `Examples.Evm.EvmStaticCounter "grantOperator" "revokeOperator"
   expectRoleEvents `Examples.Evm.EvmStaticRoster "grantWriter" "revokeWriter"
   expectDigest `Examples.Evm.EvmStaticCounter "6225c3939859e297"
-  expectDigest `Examples.Evm.EvmStaticRoster "a87e8840e3904357"
+  expectDigest `Examples.Evm.EvmStaticRoster "13617c85ae8d2231"
 
 elab "#pf_guard_evm_oz_roles_events" : command => expectOzRoles
 

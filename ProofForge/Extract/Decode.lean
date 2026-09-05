@@ -4129,6 +4129,13 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
       let (w0, w1, w2) := addr20Leaves env owner
       some (.evmRevertOwnableInvalidOwner w0 w1 w2)
     | none => some (.evmRevertOwnableInvalidOwner (.arg 0) (.arg 1) (.arg 2))
+  else if isConstNamed app ``ProofForge.Evm.Runtime.evmRevertOwnableUnauthorizedAccount ||
+      endsWith app ".evmRevertOwnableUnauthorizedAccount" then
+    match nthFromEnd args 0 with
+    | some account =>
+      let (w0, w1, w2) := addr20Leaves env account
+      some (.evmRevertOwnableUnauthorizedAccount w0 w1 w2)
+    | none => some (.evmRevertOwnableUnauthorizedAccount (.arg 0) (.arg 1) (.arg 2))
   else if isConstNamed app ``ProofForge.Evm.Runtime.evmRevertZeroAddress ||
       endsWith app ".evmRevertZeroAddress" then
     some .evmRevertZeroAddress
@@ -4665,6 +4672,7 @@ private def retOfEvmOps (ops : Array Ops.Op) : Ops.Val :=
   | some (.evmRevertUnauthorized w0 _ _) => w0
   -- Constructor prelude allows only `returnU64 0` after a revert-guard.
   | some (.evmRevertOwnableInvalidOwner ..) => .lit 0
+  | some (.evmRevertOwnableUnauthorizedAccount w0 _ _) => w0
   | some .evmRevertZeroAddress => .lit 0
   | some .evmRevertPaused => .lit 0
   | some .evmRevertCapExceeded => .lit 0
