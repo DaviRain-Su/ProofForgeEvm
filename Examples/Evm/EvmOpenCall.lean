@@ -36,6 +36,7 @@ inductive Remote where
   | supportsInterface (interfaceId : Bytes4)
   | sink (tag : UInt256) (data : BoundedBytes 8)
   | calldataHash (data : BoundedBytes 8)
+  | onERC721Received (operator origin : Address) (tokenId : UInt256) (data : BoundedBytes 8)
   deriving Inhabited
 
 @[pf_entry]
@@ -195,6 +196,19 @@ so a callee that staticcalls `flagOf()` observes the pre-state. -/
 def markThenPing (s : State) (target : Address) : Except Error (State × UInt64) :=
   if (0 : UInt64) ≠ 1 then
     .ok ({ s with dummy := 0, flag := 1 }, OpenCall.callSuccess target Remote.ping)
+  else
+    .error .overflow
+
+/-- Receiver hook through CALL with the magic policy: the callee must answer
+`onERC721Received(address,address,uint256,bytes)` with exactly one word equal to that selector,
+left-aligned. Any other length or word reverts the whole transaction. -/
+@[pf_entry]
+def notifyReceiver (s : State) (target operator origin : Address) (tokenId : UInt256)
+    (data : BoundedBytes 8) : Except Error (State × Bool) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ s with dummy := 0 },
+      Effect.thenTrue
+        (OpenCall.callMagic target (Remote.onERC721Received operator origin tokenId data)))
   else
     .error .overflow
 

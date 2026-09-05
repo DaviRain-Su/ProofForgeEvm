@@ -2,11 +2,11 @@ import ProofForge.Evm.Sdk
 
 /-!
 A contract that puts a CALL's `UInt64` anywhere but the result word. Extraction refuses every
-entry with the `CALL carrier` reason: the word of `OpenCall.call`, `callSuccess`, or `callValue`
-is a sequencing carrier the call policy already decided, not the callee's answer, and it may
-stand only as the entry's result word, alone or under `Effect.thenTrue`. `Tests.EvmOpenCallSpec`
-pins each entry through `extractMethod`; `runtime-tests/evm/anvil_opencall.sh` pins the
-`pf build` surface, which must refuse this module.
+entry with the `CALL carrier` reason: the word of `OpenCall.call`, `callSuccess`, `callValue`, or
+`callMagic` is a sequencing carrier the call policy already decided, not the callee's answer,
+and it may stand only as the entry's result word, alone or under `Effect.thenTrue`.
+`Tests.EvmOpenCallSpec` pins each entry through `extractMethod`;
+`runtime-tests/evm/anvil_opencall.sh` pins the `pf build` surface, which must refuse this module.
 
 Before the refusal each entry compiled. The computed-with shapes lowered to the CALL followed by
 the constant `0`: on Anvil `isZero` answered `false` where the Lean function answers `true`,
@@ -32,6 +32,7 @@ inductive Remote where
   | ping
   | echo (n : UInt256)
   | deposit
+  | hook (n : UInt256)
   deriving Inhabited
 
 @[pf_entry]
@@ -105,6 +106,10 @@ def thenTrueCompared (_s : State) (target : Address) : Bool :=
 def letDropped (s : State) (target : Address) : Except Error (State × UInt64) :=
   let _sent := OpenCall.callSuccess target Remote.ping
   .ok ({ s with flag := 1 }, 1)
+
+@[pf_entry]
+def magicCompared (_s : State) (target : Address) : Bool :=
+  OpenCall.callMagic target (Remote.hook ⟨1, 0, 0, 0⟩) == 1
 
 @[pf_entry]
 def letGuarded (s : State) (target : Address) : Except Error (State × UInt64) :=
