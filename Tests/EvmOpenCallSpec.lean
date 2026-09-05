@@ -542,7 +542,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "ff3eb24ef92f3ac0"
+#guard Registry.digestOf "EvmOpenCall" == some "65230e506893f7c0"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -704,6 +704,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost sinkTrunc"
   let some keep := source.methods.find? (·.ixName == "sinkKeep")
     | throwError "open-call example lost sinkKeep"
+  let some wrap := source.methods.find? (·.ixName == "sinkWrap")
+    | throwError "open-call example lost sinkWrap"
   let some label := source.methods.find? (·.ixName == "sinkString")
     | throwError "open-call example lost sinkString"
   let some _hashString := source.methods.find? (·.ixName == "hashString")
@@ -767,6 +769,16 @@ elab "#pf_guard_evm_open_call_source" : command => do
       keepPlans[0]!.args[1]!.parts[1]! matches .field _ "values_0" &&
       keepPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
     throwError s!"sinkKeep plan diverged: {repr keepPlans}"
+  let wrapPlans := sourceOpenCalls wrap.ops
+  unless wrapPlans.size == 1 && wrapPlans[0]!.name == "sink" &&
+      wrapPlans[0]!.kind == .call && wrapPlans[0]!.policy == .contractSuccess &&
+      wrapPlans[0]!.args.size == 2 &&
+      wrapPlans[0]!.args[1]!.type == .bytes 8 &&
+      wrapPlans[0]!.args[1]!.parts.size == 9 &&
+      wrapPlans[0]!.args[1]!.parts[0]! == .bitAnd (.arg 3) (.lit 0xffffffff) &&
+      wrapPlans[0]!.args[1]!.parts[1]! matches .field _ "values_0" &&
+      wrapPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
+    throwError s!"sinkWrap plan diverged: {repr wrapPlans}"
   unless labelPlans.size == 1 && labelPlans[0]!.name == "label" &&
       labelPlans[0]!.kind == .call && labelPlans[0]!.policy == .contractSuccess &&
       labelPlans[0]!.args.size == 1 &&
@@ -824,6 +836,10 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "EVM open-call example lost sinkKeep"
   unless keepEntry.paramTypes.any (· == ProofForge.Core.Codec.Scalar.uint32) do
     throwError s!"sinkKeep lost the UInt32 keep parameter: {repr keepEntry.paramTypes}"
+  let some wrapEntry := evm.entries.find? (·.ixName == "sinkWrap")
+    | throwError "EVM open-call example lost sinkWrap"
+  unless wrapEntry.paramTypes.any (· == ProofForge.Core.Codec.Scalar.uint64) do
+    throwError s!"sinkWrap lost the UInt64 wide parameter: {repr wrapEntry.paramTypes}"
 
   let yul ←
     match ProofForge.Evm.Emit.emitYul evm with
@@ -876,8 +892,9 @@ elab "#pf_guard_evm_open_call_source" : command => do
       yul.contains "mstore(36, 64)" && yul.contains ", 0, 0, add(100, " &&
       yul.contains "mstore(4, 32)" && yul.contains "staticcall(gas(), v0, 0, add(68, " &&
       yul.contains ":= and(add(" && yul.contains ", 31), not(31))" &&
-      yul.contains "if gt(" && yul.contains ", 8) { revert(0, 0) }" do
-    throwError "open-call Yul omitted the bytes tail offset, size, selector, or capacity revert"
+      yul.contains "if gt(" && yul.contains ", 8) { revert(0, 0) }" &&
+      yul.contains ", 0xffffffff)" do
+    throwError "open-call Yul omitted the bytes tail offset, size, selector, capacity revert, or UInt32.ofNat mask"
   unless yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "label" #["string"]})" &&
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "stringHash" #["string"]})" &&
       !yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "label" #["bytes"]})" &&

@@ -225,6 +225,16 @@ fi
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'sunkLength()(uint256)')" 3 \
   "over-capacity keep never reached sink"
 
+# `UInt32.ofNat` wrap of UInt64 2^32+3 publishes ABI length 3.
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'sinkWrap(address,uint256,bytes,uint64)' "$target" 7 0x0001020304050607 4294967299 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$target" 'sunkLength()(uint256)')" 3 \
+  "wrapped ofNat ABI length is 3"
+pf_evm_require_equal \
+  "$("$cast" call --rpc-url "$rpc" "$target" 'sunkCalldataHash()(bytes32)')" \
+  "$("$cast" keccak "$("$cast" calldata 'sink(uint256,bytes)' 7 0x000102)")" \
+  "wrapped ofNat calldata matches cast calldata length 3"
+
 # Bounded string argument. ABI `string` is not `bytes`: the selector and `cast calldata`
 # encoding must match `label(string)` / `stringHash(string)`, not the bytes twins.
 string_case() {

@@ -4,6 +4,8 @@
 decodePackedByteArgParts mixedParts? reads length from the constructor's
 length argument and GetElem from its values argument.
 sinkKeep publishes a UInt32 parameter as that length.
+asVal of UInt32.ofNat masks a non-literal with 0xffffffff.
+sinkWrap publishes that wrapped length.
 Emit reverts gt(len, capacity).
 A second packed field stays refused.
 Sdk.OzAudit.temporaryGapCount stays 0.
@@ -24,6 +26,7 @@ STALE_PHRASES = (
     "the structure-update base resolution is a decoder follow-up",
     "A source-built `{ data with length := k }` argument stays fail closed",
     "A parameter `{ v with length := keep }` stays out unless emit reverts",
+    "UInt32.ofNat wrap of a wider Nat stays a named remainder",
 )
 
 REQUIRED = (
@@ -47,6 +50,24 @@ REQUIRED = (
         ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh",
         '"keep longer than capacity reverts empty"',
     ),
+    (ROOT / "ProofForge" / "Extract" / "Decode.lean", "some (.bitAnd v (.lit (0xffffffff : UInt64)))"),
+    (ROOT / "Examples" / "Evm" / "EvmOpenCall.lean", "def sinkWrap"),
+    (ROOT / "Examples" / "Evm" / "EvmOpenCall.lean", "{ data with length := UInt32.ofNat wide.toNat }"),
+    (ROOT / "Tests" / "EvmOpenCallSpec.lean", "source.methods.find? (·.ixName == \"sinkWrap\")"),
+    (
+        ROOT / "Tests" / "EvmOpenCallSpec.lean",
+        "wrapPlans[0]!.args[1]!.parts[0]! == .bitAnd (.arg 3) (.lit 0xffffffff)",
+    ),
+    (ROOT / "Tests" / "EvmOpenCallSpec.lean", 'yul.contains ", 0xffffffff)"'),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh",
+        "sinkWrap(address,uint256,bytes,uint64)",
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_opencall.sh",
+        '"wrapped ofNat ABI length is 3"',
+    ),
+    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "OpenCall `UInt32.ofNat` wrap"),
     (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "OpenCall `{ v with length }` packed-tail decoder"),
     (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "OpenCall parameter `{ v with length := keep }`"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
