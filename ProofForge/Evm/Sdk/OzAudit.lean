@@ -20,7 +20,8 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   fail-closed bound versus OZ in-order duplicate application, not a `temporaryGapCount` row.
   Rows 9 and 20 (`IERC721` / `token/ERC721`) stay PARTIAL after `Gallery` shipped bounded
   `totalSupply` / `tokenByIndex` / `tokenOfOwnerByIndex` over UInt64 ids with capacity 4.
-  `temporaryGapCount` stays 0.)
+  Row 5 (`finance/VestingWallet`) stays PARTIAL after `Vest20Link` shipped the ERC-20
+  `released[token]` map. `temporaryGapCount` stays 0.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,
 an independent permanent-blocker bit (`isBlocked`), and for blocked rows a permanent non-goal
