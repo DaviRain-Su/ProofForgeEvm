@@ -189,12 +189,12 @@ n = len(re.findall(pat, src))
 if n < 1:
     sys.stderr.write(f'FAIL: expected at least one native send call(, got {n}\\n')
     sys.exit(1)
-out, k = re.subn(pat, r'staticcall(gas(), mload(0), 0, 0, 0, 0)', src)
+out, k = re.subn(pat, r'call(gas(), mload(0), 0, 0, 0, 0, 0)', src)
 if k != n:
     sys.stderr.write(f'FAIL: call rewrite changed {k}, counted {n}\\n')
     sys.exit(1)
 Path('$mut_dir/VestLink.yul').write_text(out)
-print(f'rewrote {k} native send call( sites to staticcall(')
+print(f'rewrote {k} native send value words to 0')
 "
 mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
   "$mut_dir/VestLink.yul" | "$python" -I -S -c "
@@ -211,12 +211,12 @@ mut_addr="$(printf '%s' "$("$cast" send --json --rpc-url "$rpc" --private-key "$
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$mut_addr" --value 1ether >/dev/null
 "$cast" rpc --rpc-url "$rpc" evm_setNextBlockTimestamp "$after_end" >/dev/null
 "$cast" rpc --rpc-url "$rpc" evm_mine >/dev/null
-if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+if ! "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
     "$mut_addr" 'release()' >/dev/null 2>&1; then
-  echo "FAIL: STATICCALL mutation unexpectedly succeeded at a native send" >&2
+  echo "FAIL: zero-value CALL mutation unexpectedly reverted" >&2
   exit 1
 fi
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$mut_addr")" \
-  1000000000000000000 "STATICCALL mutation left the mutated wallet funded"
+  1000000000000000000 "zero-value CALL mutation left the mutated wallet funded"
 
-echo "evm-anvil-vestlink: ok (release() + transferOwnership + CALL mutation, $runtime_bytes bytes)"
+echo "evm-anvil-vestlink: ok (release() + transferOwnership + value mutation, $runtime_bytes bytes)"
