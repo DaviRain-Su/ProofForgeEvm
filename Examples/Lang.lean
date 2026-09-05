@@ -68,6 +68,12 @@ def setAt (s : State) (i v : UInt64) : Except Error (State × UInt64) :=
 def mask8 (_s : State) (b : UInt8) : UInt64 :=
   b.toUInt64
 
+/-- `UInt64.ofNat` of a Nat literal wider than 64 bits. Lean wraps modulo `2^64`.
+Extract folds the same wrap so the published ABI word matches. -/
+@[pf_entry]
+def wrap64 (_s : State) : UInt64 :=
+  UInt64.ofNat 18446744073709551619
+
 /-- 两叶 return。 -/
 @[pf_entry]
 def both (s : State) : UInt64 × UInt64 :=
