@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Fail when ERC-4626 docs still claim 1:1 conversion or lose floor mul/div.
+"""Fail when ERC-4626 docs still claim 1:1 conversion or lose floor/ceiling math.
 
 Erc4626.convertToShares is floor assets * totalSupply / totalAssets.
+Erc4626.previewMint is ceiling shares * totalAssets / totalSupply.
 Empty supply is 1:1. Virtual-offset inflation defense stays out.
+Ceiling previewWithdraw and full-precision mulDiv stay out.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -20,6 +22,8 @@ STALE_PHRASES = (
     "There is no exchange-rate math, fee accrual, flash-loan callback",
     "1:1 `convertToShares`: assets equal shares when the asset gate passes",
     "1:1 `Vault4626Link` stays the shipped profile",
+    "Ceiling `previewMint` stays out",
+    "Ceiling previewMint stays out",
 )
 
 REQUIRED = (
@@ -60,8 +64,20 @@ REQUIRED = (
         "def sharesForDeposit (assets totalSupply totalAssets : UInt256) : UInt256 :=",
     ),
     (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "def assetsForMint (shares totalSupply totalAssets : UInt256) : UInt256 :=",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "if UInt256.eq (UInt256.mod prod totalSupply) UInt256.zero then q",
+    ),
+    (
+        ROOT / "Examples" / "Evm" / "Vault4626Link.lean",
+        "def previewMint (s : State) (sharesAmt : UInt256) : UInt256 :=",
+    ),
+    (
         ROOT / "Tests" / "EvmErc4626Spec.lean",
-        '"totalSupply", "convertToShares", "convertToAssets"] do',
+        '"totalSupply", "convertToShares", "convertToAssets", "previewMint"] do',
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
@@ -77,6 +93,14 @@ REQUIRED = (
     ),
     (
         ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"ceiling previewMint(1) is 3"',
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"floor convertToAssets(1) is 2"',
+    ),
+    (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
         '"zero totalAssets convertToShares is 0"',
     ),
     (
@@ -89,7 +113,7 @@ REQUIRED = (
     ),
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
-        "ERC-4626 floor exchange-rate math",
+        "ERC-4626 ceiling `previewMint`",
     ),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
 )
