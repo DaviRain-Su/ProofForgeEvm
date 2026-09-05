@@ -65,12 +65,23 @@ OpenCall.callSuccess target (Remote.sink tag data)
 | `OpenCall.call` | CALL | `canonicalTrueOrCodeBackedEmpty` | `UInt64` effect carrier |
 | `OpenCall.callSuccess` | CALL | `contractSuccess` | `UInt64` effect carrier |
 | `OpenCall.callValue` | CALL with `msg.value` | `contractSuccess` | `UInt64` effect carrier |
+| `OpenCall.callMagic` | CALL | `magicBytes4` (the plan's own selector) | `UInt64` effect carrier |
 | `OpenCall.staticWord` | STATICCALL | `exactWord` | `UInt256` |
 | `OpenCall.staticWords2` | STATICCALL | `exactWords 2` | first word as `UInt256` |
 | `OpenCall.staticWords3` | STATICCALL | `exactWords 3` | first word as `UInt256` |
 | `OpenCall.staticWords4` | STATICCALL | `exactWords 4` | first word as `UInt256` |
 | `OpenCall.staticBool` | STATICCALL | `strictBool` | `Bool` |
 | `OpenCall.staticAddress` | STATICCALL | `words #[.address20]` | `Address` |
+
+`OpenCall.callMagic` is the receiver-hook shape. The callee must answer with exactly one word
+equal to the selector it was called by, left-aligned, as `onERC721Received`,
+`onERC1155Received`, `onERC1155BatchReceived`, and ERC-1271 `isValidSignature` do. The magic is
+computed from the payload constructor; you never write a selector. A wrong selector, a dirty low
+byte, an empty frame, a longer frame, or an EOA target reverts the transaction.
+
+```lean
+OpenCall.callMagic receiver (Remote.onERC721Received operator origin tokenId data)
+```
 
 The target may be a parameter or a stored `Address`. Arguments are at most eight one-word
 scalars (integers, `Address`, fixed bytes), and one of them may be a `BoundedBytes n` with
@@ -88,14 +99,26 @@ Address.eq (OpenCall.staticAddress target Remote.ownerOf) who
 OpenCall.staticWord token (Remote.echo (OpenCall.staticWord token (Remote.balanceOf who)))
 ```
 
-A CALL helper's `UInt64` result is an effect carrier, not a value. Sequence it with
-`Effect.thenTrue`, `Effect.abort`, or `Effect.ensure`. A comparison such as
-`OpenCall.callSuccess target Remote.ping == 1` does not read the callee's word. The CALL still
-runs, the comparison is not compiled, and the method returns the carrier's constant `0`. A
-fail-closed refusal of that shape is the next OpenCall unit in
-[oz-sdk-backlog.md](oz-sdk-backlog.md). If the callee reverts, or its returndata does not match
-the policy, your transaction reverts with `revert(0, 0)`, so no partial state remains.
-Reentrancy is visible to the callee. Add `Sdk.Reentrancy` yourself.
+A CALL helper's `UInt64` result is an effect carrier, not a value. The call policy has already
+decided success before the carrier exists, and the carrier never holds the callee's word. It has
+one home: the entry's result word, alone or under `Effect.thenTrue`, `Effect.abort`, or
+`Effect.ensure`. A `let` whose binder reaches that word is the same home
+(`let sent := Effect.thenTrue (OpenCall.callSuccess t Remote.ping)` followed by
+`if s.flag == 0 then .ok ({ s with flag := 1 }, sent) else .error .locked`). Anywhere else does
+not compile. A comparison (`OpenCall.callSuccess target Remote.ping == 1`),
+an operator (`… + 1`), an `if` condition (with or without `Effect.thenTrue` around it), a state
+field (`{ s with flag := OpenCall.callSuccess … }`), a call argument
+(`Remote.echo ⟨OpenCall.callSuccess …, 0, 0, 0⟩`), or a `let` whose binder is dropped
+(`let _ := OpenCall.callSuccess …`) fails extraction with the `CALL carrier out of place`
+reason. Read the callee's answer through a STATICCALL instead. Before this refusal every such
+entry compiled. The computed-with shapes lowered to the CALL followed by the constant `0`, so
+`callSuccess t Remote.ping == 0` answered `false` on chain where the Lean function answers
+`true`; a dropped `let` above an `if` lost the `if` and its stores; `if Effect.thenTrue (call)
+then …` stored without running the CALL. `Tests/EvmOpenCallMisuse.lean` holds each refused
+shape, and `runtime-tests/evm/anvil_opencall.sh` fails if `pf build` ever compiles it again.
+If the callee reverts, or its returndata does not match the policy, your transaction reverts
+with `revert(0, 0)`, so no partial state remains. Reentrancy is visible to the callee. Add
+`Sdk.Reentrancy` yourself.
 
 Evidence: `runtime-tests/evm/anvil_compose.sh` deploys `Erc20Meta`, `Badge`, and `EvmOpenCall`,
 all compiled by `pf`. It moves tokens through `EvmOpenCall.openTransfer` and checks both
@@ -104,7 +127,9 @@ callee revert leaves no partial state. It then reads the token's `balanceOf` and
 the badge's `supportsInterface` answer (both `true` and `false`) through STATICCALL.
 `runtime-tests/evm/anvil_opencall.sh` covers every helper against a Solidity callee, including
 a bool word of `2`, an address word with dirty high bytes, wrong-size frames, empty EOA
-returndata, effect order, and reads in value position (a `Bool` read gating a CALL and selecting
+returndata, effect order, the receiver hook against a Solidity mock (the right magic, a wrong
+selector, a dirty low byte, empty, four-byte, and two-word frames, an EOA), and reads in value
+position (a `Bool` read gating a CALL and selecting
 a word, a `UInt256` read under `UInt256.ge`, an `Address` read under `Address.eq`, and a read as
 another read's argument), each driven to both outcomes.
 
@@ -119,7 +144,7 @@ non-goals.
 2. **Fake guards** — pure-effect methods may need a trivial branch so Extract treats the method as effectful.
 3. **Constructor effects** — deployment-time map writes / logs / value transfers are tightly constrained.
 4. **Events** — closed LOG helpers (`Event.tipped` / `Event.transfer`) plus typed constructors via `Event.emit` and `Event.Indexed` (S1b; see `Examples.Evm.EvmTypedEvents`). Product typed events are **named ABI events** (LOG1–4): topic0 is always the signature hash; ABI JSON is `"anonymous": false`. That is not anonymous LOG0 (a plan-layer geometry only, not a source `Event.emit` shape). Closed ERC-20 `Transfer`/`Approval` are LOG3. `Collectible` / `Badge` emit canonical ERC-721 `Transfer` / `Approval` / `ApprovalForAll` through `Erc721.Log`. `MultiToken` / `CraftToken` emit canonical ERC-1155 `TransferSingle` / `ApprovalForAll` through `Erc1155.Log`; `MultiToken.batchTransferFrom` also emits `TransferBatch`, whose two `uint256[]` fields are bounded dynamic-array tails. A typed event may end with at most two non-indexed `BoundedVec` fields over a closed scalar (at most 63 elements each); they lower to the ABI head-offset plus length-prefixed tail layout, and an indexed array or a scalar declared after an array fails extraction. `TwoStepCounter` / `Credits` emit Ownable2Step `OwnershipTransferStarted` on `transferOwnership` and Ownable `OwnershipTransferred` on `acceptOwnership`/`renounceOwnership`; renunciation clears owner and pending nominee. They also emit Pausable `Paused`/`Unpaused`; `Capped` emits the pause pair. Constructor init stores the owner argument and empty pending state; it does not log. `EvmStaticCounter` / `EvmStaticRoster` emit canonical AccessControl `RoleGranted` / `RoleRevoked` through `Roles.Log` on actual grant/revoke (no `RoleAdminChanged`); `EvmCrew` extends the same pattern to `Roles.Set4`. `EvmQuota` combines `Nonces` and `RateLimit`; stale nonces revert as `Insufficient(current,provided)` and rate exhaustion uses typed `rateLimitExceeded()` (no quota events). Unbounded event payloads are still refused.
-5. **Typed external CALL** — `OpenCall.call` / `callSuccess` / `callValue` / `staticWord` / `staticWords2` / `staticWords3` / `staticWords4` / `staticBool` / `staticAddress` take a typed `Address` and an inductive constructor (name = ABI function, fields = args; one field may be a `BoundedBytes n` with `n ≤ 63`, sent as ABI `bytes` at its runtime length). The compiler assembles calldata and applies one `CallResult` policy. This is not raw CALL: no selector string, caller-built calldata buffer, `delegatecall`, or CREATE2. Reentrancy is visible to the callee; OpenCall does not insert a guard (see `Examples.Evm.EvmOpenCall`).
+5. **Typed external CALL** — `OpenCall.call` / `callSuccess` / `callValue` / `callMagic` / `staticWord` / `staticWords2` / `staticWords3` / `staticWords4` / `staticBool` / `staticAddress` take a typed `Address` and an inductive constructor (name = ABI function, fields = args; one field may be a `BoundedBytes n` with `n ≤ 63`, sent as ABI `bytes` at its runtime length). The compiler assembles calldata and applies one `CallResult` policy. This is not raw CALL: no selector string, caller-built calldata buffer, `delegatecall`, or CREATE2. Reentrancy is visible to the callee; OpenCall does not insert a guard (see `Examples.Evm.EvmOpenCall`).
 6. **NFT modules** — bounded cores with the three canonical ERC-721 events on Collectible/Badge and the two canonical single-id ERC-1155 events on MultiToken/CraftToken. These advertise IERC165 only; incomplete ERC-721/1155 method surfaces must not claim the standard token ids. `MultiToken` adds a bounded `balanceOfBatch` and `batchTransferFrom` over at most four slots (OZ-shaped `ERC1155InvalidArrayLength` and `ERC1155InsufficientBalance` reverts, OZ log rule of one `TransferBatch` over the submitted slots or `TransferSingle` for a one-slot batch, no receiver hook). Not “ship ERC-721/1155” (no safe callbacks, no unbounded batches).
 7. **`Examples.Evm.Token` metadata** — `name` / `symbol` are packed `bytes32` (Anvil gates use that shape). Prefer `Erc20Meta` when external tools expect ERC-20 `string` metadata.
 8. **ERC-20 consumers** — `SafeErc20` / `SafePay` wrap the closed token CALLs. They are not a raw-calldata escape hatch and do not catch-and-retry a failed CALL. `forceApprove` always emits `approve(0)` then `approve(amount)`.

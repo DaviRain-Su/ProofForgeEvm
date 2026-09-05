@@ -436,6 +436,10 @@ The host stub returns 0; extraction preserves the plan. Reentrancy is applicatio
     (_payload : _α) : UInt64 :=
   value.w0
 
+/-- Typed external CALL whose one returned word must be this call's own selector, left-aligned
+(`OpenCall.callMagic`): the receiver-hook convention. Host returns 0. -/
+@[irreducible] def evmOpenCallMagic {_α : Type} (_target : Addr20) (_payload : _α) : UInt64 := 0
+
 /-- Typed STATICCALL with exact-one-word policy (`OpenCall.staticWord`). Host returns 0. -/
 @[irreducible] def evmOpenStaticWord {_α : Type} (_target : Addr20) (_payload : _α) : UInt256 :=
   ⟨0, 0, 0, 0⟩

@@ -4,6 +4,7 @@ import ProofForge.Evm.OpenCall.Emit
 import ProofForge.Evm.CallResult
 import ProofForge.Evm.CallResult.Emit
 import Examples.Evm.EvmOpenCall
+import Tests.EvmOpenCallMisuse
 import Examples.Evm.TipJar
 
 /-!
@@ -428,7 +429,7 @@ private def preludeCtx : OpenCall.Emit.Context Nat :=
 #guard Registry.digestOf "Token" == some "e25dfb4e1eaa54c"
 #guard Registry.digestOf "Vault" == some "bb2f93cb28d7501"
 #guard Registry.digestOf "EvmTypedEvents" == some "90bd573ddf9e2e49"
-#guard Registry.digestOf "EvmOpenCall" == some "9d3084c62ce8260a"
+#guard Registry.digestOf "EvmOpenCall" == some "51c5a865c623b474"
 #guard Registry.digestOf "TipJar" == some "33bcabf27f5b9523"
 #guard
   match Emit.emitYul ProofForge.Evm.Golden.extractedTipJar with
@@ -467,9 +468,13 @@ private partial def sourceOpenCalls (ops : Array ProofForge.Extract.IR.Op) :
     | .forBody _ body => acc ++ sourceOpenCalls body
     | _ => acc
 
+private def extractInferred (env : Environment) (name : Name) :
+    Except String ProofForge.Extract.IR.Method := do
+  ProofForge.Extract.extractMethod env (← ProofForge.Extract.inferKind env name) name
+
 private def expectUnsupported (env : Environment) (name : Name) (fragment : String) :
     CommandElabM Unit := do
-  match ProofForge.Extract.extractMethod env .get name with
+  match extractInferred env name with
   | .ok _ => throwError s!"{name}: unsupported open-call unexpectedly extracted"
   | .error reason =>
       unless reason.contains fragment do
@@ -523,10 +528,40 @@ def stringArg (target : Address) (data : BoundedString 4) : UInt64 :=
 
 end Unsupported
 
-/-- A CALL's word is a dummy carrier. Compared, it still lowers as the effect statement it is,
-never as a `Query` value. -/
-def callWordCompared (_s : Examples.Evm.EvmOpenCall.State) (target : Address) : Bool :=
-  OpenCall.callSuccess target Remote.ping == 1
+/-! The carrier's homes stay compiled, each with its CALL plan kept: the entry's result word,
+the `effect` of `Effect.thenTrue` (and so of `Effect.abort` and `Effect.ensure`), and a `let`
+whose binder reaches the result word. -/
+namespace CarrierWord
+
+def asBool (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  if (0 : UInt64) ≠ 1 then
+    .ok ({ s with dummy := 0 }, Effect.thenTrue (OpenCall.callSuccess target Remote.ping))
+  else
+    .error .overflow
+
+def ensured (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  Effect.ensure (s.flag == 0) s (OpenCall.callSuccess target Remote.ping)
+    (fun _ => .ok ({ s with flag := 1 }, true))
+
+def named (s : Examples.Evm.EvmOpenCall.State) (target : Address) :
+    Except Examples.Evm.EvmOpenCall.Error (Examples.Evm.EvmOpenCall.State × Bool) :=
+  let sent := Effect.thenTrue (OpenCall.callSuccess target Remote.ping)
+  if s.flag == 0 then
+    .ok ({ s with flag := 1 }, sent)
+  else
+    .error .overflow
+
+end CarrierWord
+
+private def expectCallKept (env : Environment) (name : Name) : CommandElabM Unit := do
+  match extractInferred env name with
+  | .error reason => throwError s!"{name}: carrier word unexpectedly refused: {reason}"
+  | .ok method =>
+      let plans := sourceOpenCalls method.ops
+      unless plans.size == 1 && plans[0]!.name == "ping" && plans[0]!.kind == .call do
+        throwError s!"{name} lost its ping CALL: {repr plans}"
 
 elab "#pf_guard_evm_open_call_source" : command => do
   let env ← getEnv
@@ -550,6 +585,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
     | throwError "open-call example lost markThenPing"
   let some sink := source.methods.find? (·.ixName == "sinkBytes")
     | throwError "open-call example lost sinkBytes"
+  let some hook := source.methods.find? (·.ixName == "notifyReceiver")
+    | throwError "open-call example lost notifyReceiver"
   let pingPlans := sourceOpenCalls ping.ops
   let storedPlans := sourceOpenCalls stored.ops
   let xferPlans := sourceOpenCalls xfer.ops
@@ -582,6 +619,19 @@ elab "#pf_guard_evm_open_call_source" : command => do
       sinkPlans[0]!.args[1]!.parts.size == 9 &&
       sinkPlans[0]!.inSize == 100 && sinkPlans[0]!.abiTypes matches .ok #["uint256", "bytes"] do
     throwError s!"sinkBytes plan diverged: {repr sinkPlans}"
+  -- The hook's magic is the plan's own selector, computed from the constructor, never written
+  -- by the author.
+  let hookPlans := sourceOpenCalls hook.ops
+  let hookSelector := ProofForge.Evm.Keccak.selector "onERC721Received"
+    #["address", "address", "uint256", "bytes"]
+  unless hookSelector == "150b7a02" do
+    throwError s!"onERC721Received selector is {hookSelector}"
+  unless hookPlans.size == 1 && hookPlans[0]!.name == "onERC721Received" &&
+      hookPlans[0]!.kind == .call && hookPlans[0]!.policy == .magicBytes4 hookSelector &&
+      hookPlans[0]!.args.size == 4 && hookPlans[0]!.args[3]!.type == .bytes 8 &&
+      hookPlans[0]!.policy.copiedWordCount == 1 &&
+      hookPlans[0]!.policy.wordKinds == #[.bytes4] do
+    throwError s!"notifyReceiver plan diverged: {repr hookPlans}"
 
   let evm ←
     match ProofForge.Evm.IR.fromExtracted source with
@@ -604,6 +654,8 @@ elab "#pf_guard_evm_open_call_source" : command => do
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "echo" #["uint256"]})" &&
       yul.contains s!"shl(224, 0x{ProofForge.Evm.Keccak.selector "getPair" #[]})" do
     throwError s!"open-call Yul omitted CALL/STATICCALL gates or selectors"
+  unless yul.contains s!"shl(224, 0x{hookSelector}))) \{ revert(0, 0) }" do
+    throwError "notifyReceiver Yul lost the magic equality gate"
 
   -- Queries lower through Component.Query.openCall, not Call.invoke. Each read binds exactly
   -- the limbs its source carrier needs: four for `UInt256`, three for `Address`, one for `Bool`.
@@ -699,19 +751,24 @@ elab "#pf_guard_evm_open_call_source" : command => do
       balanceOfLimb 0 ++ "," ++ balanceOfLimb 1 ++ "," ++ balanceOfLimb 2 ++ "," ++
       balanceOfLimb 3 ++ ")))",
      s!"retu(ocallq.0.3.ocall.static.word1.echo({target};"]
-  -- A compared CALL word is still the effect statement plus the dummy word: one `Call.invoke`
-  -- plan, no `Query`, and the comparison is not compiled. No CALL result reaches a value
-  -- position; refusing this shape outright is the next open-call unit.
-  match ProofForge.Extract.extractMethod env .get ``callWordCompared with
-  | .error reason => throwError s!"callWordCompared: {reason}"
-  | .ok method =>
-      let plans := sourceOpenCalls method.ops
-      let dummyReturn := match method.ops.back? with
-        | some (.returnU64 (.lit 0)) => true
-        | _ => false
-      unless plans.size == 1 && plans[0]!.name == "ping" && plans[0]!.kind == .call &&
-          dummyReturn do
-        throwError "callWordCompared must lower as the ping CALL followed by the dummy word"
+  -- A CALL carrier anywhere but the result word is refused; the carrier in its homes keeps
+  -- its plan.
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.compared "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.isZero "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.plusOne "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.stored "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.gated "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.readArg "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.callArg "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.valueCompared "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.thenTrueGated "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.thenTrueCompared "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.letDropped "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.letGuarded "CALL carrier"
+  expectUnsupported env ``Tests.EvmOpenCallMisuse.magicCompared "CALL carrier"
+  expectCallKept env ``CarrierWord.asBool
+  expectCallKept env ``CarrierWord.ensured
+  expectCallKept env ``CarrierWord.named
 
   logInfo s!"EvmOpenCall digest: {ProofForge.Evm.IR.digestHex evm}"
 

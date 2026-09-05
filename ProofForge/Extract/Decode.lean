@@ -113,6 +113,15 @@ private def isEvmOpenCallValueApp (e : Expr) : Bool :=
   isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue ||
     endsWith e ".evmOpenCallValue"
 
+private def isEvmOpenCallMagicApp (e : Expr) : Bool :=
+  isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallMagic ||
+    endsWith e ".evmOpenCallMagic"
+
+/-- Any CALL-kind open-call stub: the effect carriers, as opposed to the STATICCALL reads. -/
+private def isOpenCallPlanApp (e : Expr) : Bool :=
+  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
+    isEvmOpenCallMagicApp e
+
 /-- Runtime stub behind each typed STATICCALL read shape. -/
 private def openStaticStubs : Array (Name × Evm.OpenCall.StaticShape) := #[
   (``ProofForge.Evm.Runtime.evmOpenStaticWord, .word),
@@ -128,8 +137,7 @@ private def openStaticShapeOf (e : Expr) : Option Evm.OpenCall.StaticShape :=
     isConstNamed e stub || endsWith e ("." ++ stub.getString!)).map (·.2)
 
 private def isAnyOpenCallApp (e : Expr) : Bool :=
-  isEvmOpenCallApp e || isEvmOpenCallSuccessApp e || isEvmOpenCallValueApp e ||
-    (openStaticShapeOf e).isSome
+  isOpenCallPlanApp e || (openStaticShapeOf e).isSome
 
 set_option maxRecDepth 2048 in
 mutual
@@ -932,12 +940,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogApproval256) ||
       (endsWith e ".evmLogTyped" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped) ||
-      (endsWith e ".evmOpenCall" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall) ||
-      (endsWith e ".evmOpenCallSuccess" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess) ||
-      (endsWith e ".evmOpenCallValue" ||
-      isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue) ||
+      isOpenCallPlanApp e ||
       (endsWith e ".evmSendEth" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmSendEth) ||
       (endsWith e ".evmSendEth256" ||
@@ -1000,12 +1003,7 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
       else if endsWith e ".evmLogTyped" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTyped then
       some (.lit 0)
-      else if endsWith e ".evmOpenCall" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCall ||
-          endsWith e ".evmOpenCallSuccess" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
-          endsWith e ".evmOpenCallValue" ||
-          isConstNamed e ``ProofForge.Evm.Runtime.evmOpenCallValue then
+      else if isOpenCallPlanApp e then
       some (.lit 0)
       else if endsWith e ".evmLogTransfer256" ||
           isConstNamed e ``ProofForge.Evm.Runtime.evmLogTransfer256 ||
@@ -1364,8 +1362,14 @@ private partial def decodeOpenCallCtor (env : Environment) (e : Expr) : DecodedO
               else .contractSuccess
             valueParts
           }
-          if plan.wellFormed (·.wellFormed IR.ValKind.arity) then .plan plan
-          else .unsupported "malformed open-call plan"
+          if !plan.wellFormed (·.wellFormed IR.ValKind.arity) then
+            .unsupported "malformed open-call plan"
+          else if isEvmOpenCallMagicApp e then
+            -- The hook convention: the callee answers with the selector it was called by.
+            match plan.selectorHex (·.wellFormed IR.ValKind.arity) with
+            | .ok selector => .plan { plan with policy := .magicBytes4 selector }
+            | .error reason => .unsupported reason
+          else .plan plan
     | _, _, _ => .unsupported "open-call lost target or payload"
 
 /-- A typed STATICCALL read in value position: limb `limb` of its result word, accepted only
@@ -3249,6 +3253,70 @@ private def findOpenCallFailure (env : Environment) (e : Expr) : Option String :
           | _ => none
   walk 24 e
 
+/-- Where a CALL's `UInt64` may stand. `word` is the spine from the body to its result word:
+through `Except.ok`, the second component of the result pair, `Effect.thenTrue`, the branches
+of an `if`, a lambda body, and a `let` body. There the carrier is returned and never read.
+`operand` is every side position: an operator or comparison argument, an `if` condition, a call
+argument, a state field, and the value of a `let` whose binder is dropped. In an operand the
+carrier's constant would replace the callee's answer, or the effect would be sequenced as a
+statement the decoder does not keep (a dropped `let` above an `if` lost the `if` and its
+stores, and `if Effect.thenTrue effect then …` never ran the CALL). -/
+private inductive CarrierSlot where
+  | word
+  | operand
+
+private def carrierMisuseReason : String :=
+  "CALL carrier out of place: the `UInt64` from `OpenCall.call`, `callSuccess`, `callValue`, or \
+  `callMagic` is a sequencing carrier the call policy already decided, not the callee's word; it \
+  may stand \
+  only as the entry's result word, alone or under `Effect.thenTrue` (`Effect.abort`, \
+  `Effect.ensure`); computing with it, branching on it, or binding it with `let` and dropping \
+  it is refused; read the callee through a STATICCALL"
+
+/-- A CALL plan in an `operand` slot, or inside any open call's own arguments. `Effect.thenTrue`
+is matched by name before unfolding: unfolded it is `(effect ||| 1) != 0`, an operator over the
+carrier. A `let` whose binder is used is walked with the value in place of the binder, so the
+use sites decide; a `let` whose binder is dropped walks the value as an operand. `decodeBody`
+asks this once over the whole method body, so an `if` condition, a `let` value, and a branch are
+all covered before any decoder path substitutes or folds them. -/
+def findOpenCallCarrierMisuse (env : Environment) (e : Expr) : Option String :=
+  let rec walk (fuel : Nat) (slot : CarrierSlot) (e : Expr) : Option String :=
+    match fuel with
+    | 0 => none
+    | fuel' + 1 =>
+      let e := e.consumeMData
+      let operands (args : Array Expr) : Option String := args.findSome? (walk fuel' .operand)
+      let last (args : Array Expr) : Expr := args[args.size - 1]!
+      match decodeOpenCallCtor env e with
+      | .plan _ =>
+          match slot with
+          | .word => operands e.getAppArgs
+          | .operand => some carrierMisuseReason
+      | .query _ _ => operands e.getAppArgs
+      | .unsupported _ => none
+      | .notOpenCall =>
+        let args := e.getAppArgs
+        if (endsWith e ".Effect.thenTrue" || isExceptOkHead e) && args.size ≥ 1 then
+          walk fuel' slot (last args)
+        else if let some (_, unfolded) := unfoldUserHelper env e then
+          walk fuel' slot unfolded
+        else if (isConstNamed e ``ite || isConstNamed e ``dite) && args.size ≥ 5 then
+          walk fuel' .operand args[args.size - 4]! <|>
+            walk fuel' slot args[args.size - 2]! <|> walk fuel' slot (last args)
+        else if isConstNamed e ``Prod.mk && args.size ≥ 2 then
+          walk fuel' .operand args[args.size - 2]! <|> walk fuel' slot (last args)
+        else
+          match e with
+          | .letE _ _ value body _ =>
+              if body.hasLooseBVar 0 then walk fuel' slot (body.instantiate1 value)
+              else walk fuel' .operand value <|> walk fuel' slot body
+          | .lam _ _ body _ => walk fuel' slot body
+          | .app .. =>
+              if e.getAppFn.isLambda then walk fuel' slot e.headBeta else operands args
+          | .proj _ _ struct => walk fuel' .operand struct
+          | _ => none
+  walk 256 .word e
+
 private def findTypedSourceFailure (env : Environment) (e : Expr) : Option String :=
   findTypedEventFailure env e <|> findOpenCallFailure env e
 
@@ -3896,12 +3964,7 @@ private def opOfRuntimeApp (env : Environment) (app : Expr) : Option Ops.Op :=
     match decodeEventCtor env app with
     | .typed frame tails => some (.evmLogTyped frame tails)
     | .unsupported _ | .notEvent => none
-  else if isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCall ||
-      endsWith app ".evmOpenCall" ||
-      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCallSuccess ||
-      endsWith app ".evmOpenCallSuccess" ||
-      isConstNamed app ``ProofForge.Evm.Runtime.evmOpenCallValue ||
-      endsWith app ".evmOpenCallValue" then
+  else if isOpenCallPlanApp app then
     match decodeOpenCallCtor env app with
     | .plan plan => some (.evmComponent (.openCall (.invoke plan)))
     | .unsupported _ | .notOpenCall | .query _ _ => none

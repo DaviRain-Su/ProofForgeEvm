@@ -76,4 +76,5 @@ mint / allowance / pause / cap。
 `Tests/EvmPayableSpec.lean` / `EvmLogErrorSpec.lean` / `EvmPrecompileSpec.lean` /
 `EvmCallResultSpec.lean`：payable 守卫、命名错误、预编译与封闭 CALL 结果。
 `Tests/EvmOpenCallSpec.lean` + `anvil_opencall.sh`：typed OpenCall 目标、两词返回、CALL value、
-EOA / 畸形 returndata、CALL 后 `sstore`。
+EOA / 畸形 returndata、CALL 后 `sstore`，以及 CALL 载体离开结果字时的编译期拒绝
+（`Tests/EvmOpenCallMisuse.lean` 是被拒绝的固定样例，`pf build` 编译它即失败）。
