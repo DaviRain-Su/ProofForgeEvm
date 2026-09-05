@@ -2,8 +2,8 @@
 """Fail when TwoStepCounter/Credits CREATE no longer matches OwnableInvalidOwner plus OwnershipTransferred.
 
 TwoStepCounter and Credits CREATE of address(0) revert OwnableInvalidOwner(address).
-CREATE of a nonzero owner logs OwnershipTransferred(address(0), owner). Nominate-zero
-on transferOwnership reverts OwnableInvalidOwner(address). Sdk.OzAudit.temporaryGapCount stays 0.
+CREATE of a nonzero owner logs OwnershipTransferred(address(0), owner).
+transferOwnership(0) nominates zero (OZ cancel). Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
     python3 scripts/check_twostep_ctor_honesty.py
@@ -35,10 +35,10 @@ REQUIRED = (
     (ROOT / "Examples" / "Evm" / "Credits.lean", "Revert.ownableInvalidOwner owner"),
     (ROOT / "Examples" / "Evm" / "TwoStepCounter.lean", "Ownable.Log.constructorTransferred owner"),
     (ROOT / "Examples" / "Evm" / "Credits.lean", "Ownable.Log.constructorTransferred owner"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "f53ac3264ec9cf51"'),
-    (ROOT / "Tests" / "EvmOzPolicyEventSpec.lean", 'expectDigest `Examples.Evm.TwoStepCounter "f53ac3264ec9cf51"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "9bbe0424c5bc56d0"'),
-    (ROOT / "Tests" / "EvmOzPolicyEventSpec.lean", 'expectDigest `Examples.Evm.Credits "9bbe0424c5bc56d0"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "af949b4ad7572721"'),
+    (ROOT / "Tests" / "EvmOzPolicyEventSpec.lean", 'expectDigest `Examples.Evm.TwoStepCounter "af949b4ad7572721"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "38e5e3c91cadf3e6"'),
+    (ROOT / "Tests" / "EvmOzPolicyEventSpec.lean", 'expectDigest `Examples.Evm.Credits "38e5e3c91cadf3e6"'),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
@@ -46,7 +46,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
-        "Nominate-zero reverts `OwnableInvalidOwner(address)`.",
+        "Nominate-zero nominates the zero address (OZ cancel).",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Ownable.lean",
@@ -54,7 +54,7 @@ REQUIRED = (
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Ownable.lean",
-        "`transferOwnership` of a zero nominee reverts",
+        "`transferOwnership(0)` nominates the zero",
     ),
     (ROOT / "Tests" / "EvmOzPolicyEventSpec.lean", "ctorHasOwnableInvalidOwner"),
     (ROOT / "Tests" / "EvmOzPolicyEventSpec.lean", "ctorHasConstructorTransferred"),

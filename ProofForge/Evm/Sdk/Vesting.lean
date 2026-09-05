@@ -24,8 +24,8 @@ remaining implementable gap on VestLink. ABI `released()` / `released(address)` 
 `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`.
 
 Fail-closed gates:
-- A zero beneficiary reverts `OwnableInvalidOwner` at CREATE. Nominate-zero on
-  `transferOwnership` reverts `OwnableInvalidOwner(address)`.
+- A zero beneficiary reverts `OwnableInvalidOwner` at CREATE. `transferOwnership(0)`
+  nominates zero (OZ cancel).
 - Overflowing `start + duration`, or `cliffDuration > duration`, still deploy and yield zero
   views and no release.
 - `releasable` never underflows; zero duration behaves as a timelock at `start`.

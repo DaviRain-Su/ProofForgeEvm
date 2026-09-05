@@ -200,17 +200,19 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" \
   'creditOf(address)(uint256)' "$third")" \
   0 "new-owner claim debits credit"
 
-# zero-address nomination reverts.
-if "$cast" send --rpc-url "$rpc" --private-key "$third_key" \
-    "$addr" 'transferOwnership(address)' \
-    0x0000000000000000000000000000000000000000 >/dev/null 2>&1; then
-  echo "FAIL: zero-address transferOwnership unexpectedly succeeded" >&2
+# OZ cancel: nominate then transferOwnership(0).
+"$cast" send --rpc-url "$rpc" --private-key "$third_key" \
+  "$addr" 'transferOwnership(address)' "$sender" >/dev/null
+pf_evm_require_ownable2step_cancel_via_zero "$addr" "$third" "$third_key" \
+  "$abi" "$topic_started" "zero-address transferOwnership"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    "$addr" 'acceptOwnership()' >/dev/null 2>&1; then
+  echo "FAIL: cancelled-via-zero acceptOwnership unexpectedly succeeded" >&2
   exit 1
 fi
-pf_evm_require_ownable_invalid_owner "$addr" "$third" \
-  "$("$cast" calldata 'transferOwnership(address)' \
-    0x0000000000000000000000000000000000000000)" "$zero" \
-  "zero-address transferOwnership"
+pf_evm_require_ownable_unauthorized_account "$addr" "$sender" \
+  "$("$cast" calldata 'acceptOwnership()')" "$sender" \
+  "cancelled-via-zero acceptOwnership"
 
 # Renunciation clears both the owner and a live pending nomination.
 "$cast" send --rpc-url "$rpc" --private-key "$third_key" \

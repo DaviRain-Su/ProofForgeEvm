@@ -142,7 +142,7 @@ private def expectVest20Link : CommandElabM Unit := do
       | throwError s!"Vest20Link canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" do
       throwError s!"{ixName} lost the linear formula"
-  unless IR.digestHex program == "9a9cce6e0d2a58a2" do
+  unless IR.digestHex program == "a12b192153112fb4" do
     throwError s!"Vest20Link digest drifted: {IR.digestHex program}"
   logInfo m!"vest20link: digest={IR.digestHex program} abi-ok"
 

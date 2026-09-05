@@ -121,9 +121,6 @@ fi
 pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
   "$("$cast" calldata 'transferOwnership(address)' "$other")" "$other" \
   "non-owner transferOwnership"
-pf_evm_require_ownable_invalid_owner "$addr" "$beneficiary" \
-  "$("$cast" calldata 'transferOwnership(address)' "$zero")" "$zero" \
-  "zero new owner"
 rotate_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'transferOwnership(address)' "$other")"
 pf_evm_typed_event_check "$abi" "$rotate_receipt" OwnershipTransferStarted "$topic_started" \
@@ -131,6 +128,23 @@ pf_evm_typed_event_check "$abi" "$rotate_receipt" OwnershipTransferStarted "$top
   "transferOwnership OwnershipTransferStarted LOG3"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'pendingOwner()(address)')" \
   "$other" "pendingOwner after nominate"
+pf_evm_require_ownable2step_cancel_via_zero "$addr" "$beneficiary" "$private_key" \
+  "$abi" "$topic_started" "zero new owner"
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'acceptOwnership()' >/dev/null 2>&1; then
+  echo "FAIL: cancelled-via-zero acceptOwnership unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
+  "$("$cast" calldata 'acceptOwnership()')" "$other" \
+  "cancelled-via-zero acceptOwnership"
+rotate_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'transferOwnership(address)' "$other")"
+pf_evm_typed_event_check "$abi" "$rotate_receipt" OwnershipTransferStarted "$topic_started" \
+  "{\"previousOwner\": \"$beneficiary\", \"newOwner\": \"$other\"}" \
+  "re-nominate OwnershipTransferStarted LOG3"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'pendingOwner()(address)')" \
+  "$other" "pendingOwner after re-nominate"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'beneficiary()(address)')" \
   "$beneficiary" "beneficiary unchanged until accept"
 pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'owner()(address)')" \
