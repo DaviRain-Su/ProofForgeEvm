@@ -135,6 +135,7 @@ run_guards() {
   python3 scripts/check_vest_unauthorized_honesty.py
   python3 scripts/check_vest_dual_honesty.py
   python3 scripts/check_twostep_ctor_honesty.py
+  python3 scripts/check_vest_released_honesty.py
   python3 scripts/check_safe3_honesty.py
   python3 scripts/check_erc721_enum_honesty.py
 }

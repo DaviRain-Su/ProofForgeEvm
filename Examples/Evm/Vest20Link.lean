@@ -5,6 +5,8 @@ Dual-asset vesting consumer. Constructor stores the beneficiary and cliff durati
 `start` / `duration` as immutables. Native ETH uses one `nativeReleased` counter. Each ERC-20
 token's paid-out amount lives in a hashed address map. `release()` pays `releasable()` through
 `Ether.send`. `release(address)` pays `releasable(token)` through `SafeErc20.transfer`.
+`released()` and `released(address)` are the OZ paid-amount views (`released__eth` /
+`released__token`; the hashed map stays `released`).
 `transferOwnership` is one-step Ownable rotation of the stored beneficiary. VestLink stays the
 smaller ETH-only profile, including `release(uint256)`. There is no arbitrary schedule mutation.
 A zero beneficiary reverts `OwnableInvalidOwner(address)` in the constructor. The success path
@@ -95,7 +97,7 @@ def endTime (s : State) : UInt256 :=
     UInt256.zero
 
 @[pf_entry]
-def releasedOf (s : State) (token : Address) : UInt256 :=
+def released__token (s : State) (token : Address) : UInt256 :=
   if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     if Vesting.wellFormedToken token then
       released.get token
@@ -105,7 +107,7 @@ def releasedOf (s : State) (token : Address) : UInt256 :=
     UInt256.zero
 
 @[pf_entry]
-def releasedOf__eth (s : State) : UInt256 :=
+def released__eth (s : State) : UInt256 :=
   if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     s.nativeReleased
   else

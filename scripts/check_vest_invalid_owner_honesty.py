@@ -4,8 +4,7 @@
 VestLink and Vest20Link revert OwnableInvalidOwner(address) on CREATE of
 address(0) and on transferOwnership(address(0)). Sdk.OzAudit.temporaryGapCount
 stays 0. A doc that still lists that selector as the VestingWallet gap is a
-lying inventory. Remaining remainder is no Ownable2Step and ABI releasedOf rather
-than OZ released.
+lying inventory. Remaining remainder is no Ownable2Step.
 
 Usage:
     python3 scripts/check_vest_invalid_owner_honesty.py

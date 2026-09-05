@@ -94,7 +94,7 @@ def endTime (s : State) : UInt256 :=
     UInt256.zero
 
 @[pf_entry]
-def releasedOf (s : State) : UInt256 :=
+def released (s : State) : UInt256 :=
   if Vesting.canSchedule s.owner Immutable.u64 Immutable.u64b s.cliffDuration then
     s.released
   else

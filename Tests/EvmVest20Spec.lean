@@ -5,8 +5,8 @@ import Examples.Evm.Vest20Link
 
 /-!
 Dual-asset vesting: `Vest20Link.release(address)` pays `releasable(token)` through
-`SafeErc20.transfer`, `releasedOf(address)` is a hashed `token → paid` map, `release()` pays
-`releasable()` native ETH, `releasedOf()` is the native counter, `transferOwnership` rotates
+`SafeErc20.transfer`, `released(address)` is a hashed `token → paid` map, `release()` pays
+`releasable()` native ETH, `released()` is the native counter, `transferOwnership` rotates
 the stored beneficiary, `cliff()` is the OZ `VestingWalletCliff` timestamp, and both
 `ERC20Released` and `EtherReleased` are typed logs. VestLink stays the ETH-only smaller
 profile. `temporaryGapCount` stays 0.
@@ -43,7 +43,7 @@ private def expectVest20Link : CommandElabM Unit := do
     | .ok source => pure source
     | .error reason => throwError reason
   for ixName in
-      #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "releasedOf",
+      #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "released",
         "releasable", "vestedAmount", "transferOwnership", "release", "receive"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"Vest20Link is missing {ixName}"
@@ -51,8 +51,8 @@ private def expectVest20Link : CommandElabM Unit := do
     throwError "Vest20Link lost the release() / release(address) overload pair"
   unless (source.methods.filter (·.ixName == "releasable")).size >= 2 do
     throwError "Vest20Link lost the releasable() / releasable(address) overload pair"
-  unless (source.methods.filter (·.ixName == "releasedOf")).size >= 2 do
-    throwError "Vest20Link lost the releasedOf() / releasedOf(address) overload pair"
+  unless (source.methods.filter (·.ixName == "released")).size >= 2 do
+    throwError "Vest20Link lost the released() / released(address) overload pair"
   unless (source.methods.filter (·.ixName == "vestedAmount")).size >= 2 do
     throwError "Vest20Link lost the vestedAmount(uint64) / vestedAmount(address,uint64) overload pair"
   let program ←
@@ -73,8 +73,12 @@ private def expectVest20Link : CommandElabM Unit := do
       e.ixName == "releasable" && e.selector == ProofForge.Crypto.Keccak.selector "releasable" #[]) do
     throwError "Vest20Link lost releasable()"
   unless program.entries.any (fun e =>
-      e.ixName == "releasedOf" && e.selector == ProofForge.Crypto.Keccak.selector "releasedOf" #[]) do
-    throwError "Vest20Link lost releasedOf()"
+      e.ixName == "released" && e.selector == ProofForge.Crypto.Keccak.selector "released" #[]) do
+    throwError "Vest20Link lost released()"
+  unless program.entries.any (fun e =>
+      e.ixName == "released" &&
+        e.selector == ProofForge.Crypto.Keccak.selector "released" #["address"]) do
+    throwError "Vest20Link lost released(address)"
   unless program.entries.any (fun e =>
       e.ixName == "vestedAmount" &&
         e.selector == ProofForge.Crypto.Keccak.selector "vestedAmount" #["uint64"]) do
@@ -90,7 +94,7 @@ private def expectVest20Link : CommandElabM Unit := do
     | .error reason => throwError reason
   unless abi.contains "\"name\":\"beneficiary\"" &&
       abi.contains "\"name\":\"cliff\"" &&
-      abi.contains "\"name\":\"releasedOf\"" &&
+      abi.contains "\"name\":\"released\"" &&
       abi.contains "\"name\":\"releasable\"" &&
       abi.contains "\"name\":\"vestedAmount\"" &&
       abi.contains "\"name\":\"release\"" &&
@@ -101,6 +105,8 @@ private def expectVest20Link : CommandElabM Unit := do
       abi.contains "\"name\":\"EtherReleased\"" &&
       abi.contains "\"type\":\"receive\"" do
     throwError s!"Vest20Link ABI lost dual-asset vesting surface:\n{abi}"
+  unless !abi.contains "\"name\":\"releasedOf\"" do
+    throwError "Vest20Link must not advertise releasedOf"
   unless abi.contains "\"name\":\"ZeroAddress\"" do
     throwError "Vest20Link ABI lost ZeroAddress"
   unless abi.contains "\"name\":\"OwnableInvalidOwner\"" do

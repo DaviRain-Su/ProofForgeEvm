@@ -48,7 +48,7 @@ private def expectVestLink : CommandElabM Unit := do
     | .ok source => pure source
     | .error reason => throwError reason
   for ixName in
-      #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "releasedOf",
+      #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "released",
         "releasable", "vestedAmount", "transferOwnership", "release", "receive"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"VestLink is missing {ixName}"
@@ -80,7 +80,7 @@ private def expectVestLink : CommandElabM Unit := do
       abi.contains "\"name\":\"duration\"" &&
       abi.contains "\"name\":\"cliff\"" &&
       abi.contains "\"name\":\"endTime\"" &&
-      abi.contains "\"name\":\"releasedOf\"" &&
+      abi.contains "\"name\":\"released\"" &&
       abi.contains "\"name\":\"releasable\"" &&
       abi.contains "\"name\":\"vestedAmount\"" &&
       abi.contains "\"name\":\"release\"" &&
@@ -98,6 +98,8 @@ private def expectVestLink : CommandElabM Unit := do
     throwError "VestLink ABI lost OwnableUnauthorizedAccount"
   unless !abi.contains "\"name\":\"Unauthorized\"" do
     throwError "VestLink must not advertise Unauthorized"
+  unless !abi.contains "\"name\":\"releasedOf\"" do
+    throwError "VestLink must not advertise releasedOf"
   unless ctorHasOwnableInvalidOwner program.constructor.ops do
     throwError "VestLink constructor lost OwnableInvalidOwner revert"
   unless ctorHasConstructorTransferred program.constructor.ops do

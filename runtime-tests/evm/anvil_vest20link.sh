@@ -92,7 +92,7 @@ if ! "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
 fi
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$beneficiary")" \
   0 "pre-start release pays zero"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address)(uint256)' "$token")" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released(address)(uint256)' "$token")" \
   0 "pre-start released map stays zero"
 
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
@@ -117,14 +117,14 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address
   250 "beneficiary received the quarter"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$addr")" \
   750 "vesting wallet kept the unvested remainder"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address)(uint256)' "$token")" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released(address)(uint256)' "$token")" \
   250 "released map credits token A"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address)(uint256)' "$token_b")" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released(address)(uint256)' "$token_b")" \
   0 "token B released map is independent"
 token_lc="$("$python" -I -S -c "print('$token'.lower())")"
 pf_evm_typed_event_check "$abi" "$release_receipt" ERC20Released "$topic0" \
   "{\"token\": \"$token_lc\", \"amount\": 250}" "quarter ERC-20 release"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released()(uint256)')" \
   0 "native released stays zero after ERC-20 quarter"
 eth_topic="$("$cast" keccak 'EtherReleased(uint256)')"
 half=$((start_ts + duration / 2))
@@ -133,9 +133,9 @@ eth_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key"
   "$addr" 'release()')"
 pf_evm_typed_event_check "$abi" "$eth_receipt" EtherReleased "$eth_topic" \
   '{"amount": 500000000000000000}' "release() pays the ETH half"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released()(uint256)')" \
   500000000000000000 "native released counter after half release()"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address)(uint256)' "$token")" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released(address)(uint256)' "$token")" \
   250 "ERC-20 released map stays independent of the ETH book"
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$addr")" \
   500000000000000000 "wallet kept half of the ETH"
@@ -176,7 +176,7 @@ eth_rest="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'release()')"
 pf_evm_typed_event_check "$abi" "$eth_rest" EtherReleased "$eth_topic" \
   '{"amount": 500000000000000000}' "release() after rotation pays the ETH remainder"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf()(uint256)')" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released()(uint256)')" \
   1000000000000000000 "native released counter after full release()"
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$addr")" \
   0 "wallet empty of ETH after remainder"
@@ -191,7 +191,7 @@ if after - before != 500000000000000000:
   "$addr" 'release(address)' "$token_b" >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token_b" 'balanceOf(address)(uint256)' "$other")" \
   400 "rotated beneficiary received the full token B allocation"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address)(uint256)' "$token_b")" \
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released(address)(uint256)' "$token_b")" \
   400 "released map credits token B"
 
 zero_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$zero" "$start_ts" "$duration" 0)"
