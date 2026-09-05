@@ -11,11 +11,13 @@ and the explicit owner/pending-state clear used by `renounceOwnership` remain in
 the application.
 
 Constructor policy that *is* extractable: applications store a nonzero owner argument into an
-explicit `State` field and start with `Access.Ownership.none`. Constructor logs and constructor
-zero-owner reverts are **not** extractable: `Evm.Emit` refuses constructor effects
+explicit `State` field and start with `Access.Ownership.none`. A dropped-let
+`Revert.zeroAddress` before the `returnState` vector lowers as a constructor prefix. VestLink and
+Vest20Link CREATE of `address(0)` revert `ZeroAddress()`. Constructor logs are still refused
 (`extract/unsupported: EVM constructor effects are not lowered`). `Log.constructorTransferred`
 exists so the ABI-identical `OwnershipTransferred(address(0), newOwner)` shape is spelled once,
-but it must be used from a runtime entry, not from `init`.
+but it must be used from a runtime entry, not from `init`. TwoStepCounter and Credits still
+store a zero owner without reverting CREATE.
 -/
 
 /-- Canonical Ownable / Ownable2Step events. Constructor and field names are the ABI surface.

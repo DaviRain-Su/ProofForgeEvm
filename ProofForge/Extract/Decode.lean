@@ -4707,9 +4707,14 @@ private def decodeEvmEffect (env : Environment) (e : Expr) : Option (Array Ops.O
       collectEvmQueryOps env e
 
 /-- Whether `e` performs an effect or reads through a query anywhere. A `let` bound to such a
-value must stay a local: substituting it would repeat the call or read at every use. -/
+value must stay a local: substituting it would repeat the call or read at every use.
+
+`collectEvmEffectOps` answers `none` when a branch has effects but the condition has no
+`asCmp`/`asVal` lowering. `asCondition` still lowers that `if` (Address.isZero via
+`asBoolVal`). Without this, a dropped `let` around that `if` was substituted away. -/
 private def containsEvmEffect (env : Environment) (e : Expr) : Bool :=
-  (decodeEvmEffect env e).isSome || containsEvmQuery env e
+  (decodeEvmEffect env e).isSome || containsEvmQuery env e ||
+    (conditionalEffectFailure env e).isSome
 
 /-- True when some unused `let` binder's value is an EVM effect. `substLets` instantiates that
 binder and discards the value, so the write never reaches `decodeExpr`. -/

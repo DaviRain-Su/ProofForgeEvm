@@ -150,13 +150,13 @@ if after - before != 750000000000000000:
 "
 
 zero_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$zero" "$start_ts" "$duration" 0)"
-zero_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
-  --create "0x${bytecode}${zero_encoded#0x}")"
-zero_addr="$(printf '%s' "$zero_receipt" | pf_evm_contract_address)"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$zero_addr" 'start()(uint256)')" \
-  0 "zero beneficiary fails closed on start"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$zero_addr" 'releasable()(uint256)')" \
-  0 "zero beneficiary fails closed on releasable"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    --create "0x${bytecode}${zero_encoded#0x}" >/dev/null 2>&1; then
+  echo "FAIL: zero-owner constructor CREATE unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_create_zero_address "$bytecode" "$zero_encoded" "$beneficiary" \
+  "zero beneficiary CREATE"
 
 max_u64=18446744073709551615
 bad_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' \
@@ -208,6 +208,39 @@ fi
 
 yul="$root/build/evm/VestLink.yul"
 [[ -f "$yul" ]] || { echo "FAIL: missing $yul" >&2; exit 1; }
+ctor_mut_dir="$root/build/evm/vestlink-ctor-mut"
+rm -rf "$ctor_mut_dir"
+mkdir -p "$ctor_mut_dir"
+pf_evm_strip_ctor_zero_guard "$yul" VestLink "$ctor_mut_dir/VestLink.yul"
+ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$ctor_mut_dir/VestLink.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc produced no VestLink constructor-guard mutation bytecode')
+print(hexes[-1])
+")"
+ctor_mut_zero="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$zero" "$start_ts" "$duration" 0)"
+pf_evm_require_create_ok "$ctor_mut_code" "$ctor_mut_zero" "$beneficiary" \
+  "constructor-guard mutation CREATE"
+ctor_mut_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${ctor_mut_code}${ctor_mut_zero#0x}")" \
+  || { echo "FAIL: mutation unexpectedly still reverted" >&2; exit 1; }
+ctor_mut_addr="$(printf '%s' "$ctor_mut_receipt" | "$python" -I -S -c "
+import json,sys
+r=json.load(sys.stdin)
+st=str(r.get('status') or '').lower()
+if st not in ('0x1','1'):
+    raise SystemExit('FAIL: mutation unexpectedly still reverted')
+addr=r.get('contractAddress') or ''
+if not addr or set(addr[2:])=={'0'}:
+    raise SystemExit('FAIL: mutation unexpectedly still reverted')
+print(addr)
+")"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$ctor_mut_addr" 'owner()(address)')" \
+  "$zero" "constructor-guard mutation stored a zero owner"
+
 mut_dir="$root/build/evm/vestlink-call-mut"
 rm -rf "$mut_dir"
 mkdir -p "$mut_dir"
@@ -249,4 +282,4 @@ fi
 pf_evm_require_uint "$("$cast" balance --rpc-url "$rpc" "$mut_addr")" \
   1000000000000000000 "zero-value CALL mutation left the mutated wallet funded"
 
-echo "evm-anvil-vestlink: ok (release() + transferOwnership + cliff + value mutation, $runtime_bytes bytes)"
+echo "evm-anvil-vestlink: ok (release() + transferOwnership + cliff + zero-owner CREATE + constructor-guard mutation + value mutation, $runtime_bytes bytes)"

@@ -8,10 +8,10 @@ beneficiary. `release()` pays the currently releasable amount (OZ ABI). `release
 permits a partial payout. The ERC-20 `released[token]` map lives on `Vest20Link`. There is no
 arbitrary schedule mutation.
 
-Invalid configuration (zero beneficiary, overflowing `start + duration`, or
-`cliffDuration > duration`) fails closed to zero views and a no-op `release`. Before the cliff,
-`vestedAmount` is 0 even when `timestamp ≥ start`. After the cliff the linear formula still uses
-`timestamp - start`.
+A zero beneficiary reverts `ZeroAddress` in the constructor. Overflowing `start + duration` or
+`cliffDuration > duration` still fails closed to zero views and a no-op `release`. Before the
+cliff, `vestedAmount` is 0 even when `timestamp ≥ start`. After the cliff the linear formula still
+uses `timestamp - start`.
 
 Schedule math is spelled inline at this boundary so extract can emit linear vesting; SDK helpers
 supply gates and the typed event only.
@@ -44,6 +44,11 @@ inductive Error where
 
 @[pf_entry]
 def init (beneficiary : Address) (_start _duration cliffDuration : UInt64) : State :=
+  let _ :=
+    if Address.isZero beneficiary then
+      Revert.zeroAddress
+    else
+      (0 : UInt64)
   { owner := beneficiary, cliffDuration := cliffDuration, released := UInt256.zero,
     guard := Reentrancy.notEntered }
 

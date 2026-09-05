@@ -29,6 +29,12 @@ open Lean Elab Command
 #guard Vesting.vestedAmount ⟨1000, 0, 0, 0⟩ (100 : UInt64) (1000 : UInt64) (500 : UInt64)
     (1100 : UInt64) == ⟨1000, 0, 0, 0⟩
 
+private partial def ctorHasZeroAddress (ops : Array IR.Op) : Bool :=
+  ops.any fun
+    | .component call => call.emitsZeroAddress
+    | .ite _ _ _ t f => ctorHasZeroAddress t || ctorHasZeroAddress f
+    | _ => false
+
 private def expectVestLink : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -80,6 +86,17 @@ private def expectVestLink : CommandElabM Unit := do
     throwError s!"VestLink ABI lost vesting surface:\n{abi}"
   unless !abi.contains "\"name\":\"royaltyInfo\"" do
     throwError "VestLink must not grow a royalty surface"
+  unless abi.contains "\"name\":\"ZeroAddress\"" do
+    throwError "VestLink ABI lost ZeroAddress"
+  unless ctorHasZeroAddress program.constructor.ops do
+    throwError "VestLink constructor lost ZeroAddress revert"
+  let yul ←
+    match Emit.emitYul program with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  let ctorYul := (yul.splitOn "_runtime")[0]!
+  unless ctorYul.contains "0xd92e233d" do
+    throwError s!"VestLink constructor Yul lost ZeroAddress:\n{ctorYul}"
   -- The mid-vesting branch is the linear formula over the SELFBALANCE read, not the read. When
   -- the query scan still descended into operator arguments, the read under the arithmetic was
   -- taken as the body's result and `releasable()` answered the raw balance.
@@ -89,7 +106,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "87acbed203c29f11" do
+  unless IR.digestHex program == "65e199169e0e2b14" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

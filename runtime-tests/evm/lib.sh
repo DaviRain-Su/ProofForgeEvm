@@ -575,6 +575,109 @@ if len(blob) < 8 or not blob.startswith(sel):
 "
 }
 
+# CREATE simulation must revert with ABI error ZeroAddress(). BYTECODE is the
+# creation hex without 0x. ENCODED is the ABI-encoded constructor args including 0x.
+pf_evm_require_create_zero_address() {
+  local bytecode="$1" encoded="$2" from="$3" message="$4"
+  local sel data
+  sel="$("$cast" keccak 'ZeroAddress()')"
+  sel="${sel#0x}"
+  sel="$(printf '%s' "$sel" | cut -c1-8 | tr 'A-Z' 'a-z')"
+  data="0x${bytecode}${encoded#0x}"
+  "$python" -I -S -c "
+import json, urllib.request, urllib.error
+rpc='$rpc'
+payload={
+  'jsonrpc':'2.0','id':1,'method':'eth_call',
+  'params':[{'from':'$from','data':'$data'}, 'latest']
+}
+req=urllib.request.Request(rpc, data=json.dumps(payload).encode(),
+  headers={'Content-Type':'application/json'})
+try:
+    raw=urllib.request.urlopen(req).read().decode()
+except urllib.error.HTTPError as e:
+    raw=e.read().decode()
+resp=json.loads(raw)
+err=resp.get('error') or {}
+blob=(err.get('data') or '')
+if isinstance(blob, dict):
+    blob=blob.get('data') or blob.get('raw') or ''
+blob=str(blob).lower()
+if blob.startswith('0x'):
+    blob=blob[2:]
+sel='$sel'
+if len(blob) < 8 or not blob.startswith(sel):
+    raise SystemExit('FAIL: $message: missing ZeroAddress() (got '+repr(err)+')')
+"
+}
+
+# CREATE simulation must succeed. Used after stripping the constructor ZeroAddress
+# guard. Fails if that mutation still reverts ZeroAddress().
+pf_evm_require_create_ok() {
+  local bytecode="$1" encoded="$2" from="$3" message="$4"
+  local sel data
+  sel="$("$cast" keccak 'ZeroAddress()')"
+  sel="${sel#0x}"
+  sel="$(printf '%s' "$sel" | cut -c1-8 | tr 'A-Z' 'a-z')"
+  data="0x${bytecode}${encoded#0x}"
+  "$python" -I -S -c "
+import json, urllib.request, urllib.error
+rpc='$rpc'
+payload={
+  'jsonrpc':'2.0','id':1,'method':'eth_call',
+  'params':[{'from':'$from','data':'$data'}, 'latest']
+}
+req=urllib.request.Request(rpc, data=json.dumps(payload).encode(),
+  headers={'Content-Type':'application/json'})
+try:
+    raw=urllib.request.urlopen(req).read().decode()
+except urllib.error.HTTPError as e:
+    raw=e.read().decode()
+resp=json.loads(raw)
+err=resp.get('error') or {}
+if not err:
+    raise SystemExit(0)
+blob=(err.get('data') or '')
+if isinstance(blob, dict):
+    blob=blob.get('data') or blob.get('raw') or ''
+blob=str(blob).lower()
+if blob.startswith('0x'):
+    blob=blob[2:]
+sel='$sel'
+if blob.startswith(sel):
+    raise SystemExit('FAIL: mutation unexpectedly still reverted')
+raise SystemExit('FAIL: $message: CREATE still reverted ('+repr(err)+')')
+"
+}
+
+# Write DEST_YUL from SRC_YUL with the constructor-only ZeroAddress revert removed
+# once. NAME is the Yul object (VestLink / Vest20Link). The runtime object must keep
+# 0xd92e233d so transferOwnership is not stripped.
+pf_evm_strip_ctor_zero_guard() {
+  local src="$1" name="$2" dest="$3"
+  "$python" -I -S -c "
+from pathlib import Path
+import re, sys
+src = Path('$src').read_text()
+marker = 'object \"${name}_runtime\"'
+idx = src.find(marker)
+if idx < 0:
+    sys.stderr.write(f'FAIL: missing {marker}\\n')
+    sys.exit(1)
+head, tail = src[:idx], src[idx:]
+pat = r'mstore\\(0, shl\\(224, 0xd92e233d\\)\\)\\s*revert\\(0, 4\\)'
+out, k = re.subn(pat, '', head, count=1)
+if k != 1:
+    sys.stderr.write(f'FAIL: constructor ZeroAddress revert not found (k={k})\\n')
+    sys.exit(1)
+if '0xd92e233d' not in tail:
+    sys.stderr.write('FAIL: runtime lost ZeroAddress selector after constructor strip\\n')
+    sys.exit(1)
+Path('$dest').write_text(out + tail)
+print('stripped one constructor ZeroAddress revert; runtime selector kept')
+"
+}
+
 pf_evm_deploy_ctor_address() {
   local bytecode="$1"
   local addr="$2"

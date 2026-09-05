@@ -1390,27 +1390,72 @@ private def emitCFGEntry (p : IR.Program) (method : IR.Method) : Except String S
 private def q (s : String) : String :=
   "\"" ++ s ++ "\""
 
-private def emitConstructorStores (p : IR.Program) : Except String String := do
-  let graph ← p.constructor.toCFG
-  unless graph.blocks.all (·.instructions.isEmpty) do
-    throw "extract/unsupported: EVM constructor effects are not lowered"
-  let exits := graph.blocks.filterMap fun block => match block.terminator with
-    | .exit (.initialize values) => some values
-    | _ => none
-  unless exits.size == 1 do
-    throw "evm/cfg: constructor requires exactly one initialize exit"
-  let vs := exits[0]!
+/-- True when `op` is only a constructor ZeroAddress revert-guard, including a dummy
+`returnU64 0` else-arm. Logs, CALL, and stores stay refused. -/
+private partial def ctorOpIsRevertGuard (op : IR.Op) : Bool :=
+  match op with
+  | .ite _ _ _ thn els => thn.all ctorOpIsRevertGuard && els.all ctorOpIsRevertGuard
+  | .component call => call.emitsZeroAddress
+  | .returnU64 (.lit 0) => true
+  | _ => false
+
+private def splitConstructorOps (ops : Array IR.Op) :
+    Except String (Array IR.Op × Array IR.Op) := do
+  match ops.findIdx? (fun | .returnState _ => true | _ => false) with
+  | none => throw "extract/unsupported: init missing returnState"
+  | some i => do
+      let guardOps := ops.extract 0 i
+      let rest := ops.extract i ops.size
+      unless guardOps.all ctorOpIsRevertGuard do
+        throw "extract/unsupported: EVM constructor effects are not lowered"
+      unless rest.all (fun
+        | .returnState _ | .returnU64 _ => true
+        | _ => false) do
+        throw "extract/unsupported: EVM constructor effects are not lowered"
+      return (guardOps, rest)
+
+private partial def stripDummyCtorReturns (ops : Array IR.Op) : Array IR.Op :=
+  ops.filterMap fun op =>
+    match op with
+    | .returnU64 (.lit 0) => none
+    | .ite cmp lhs rhs thn els =>
+        some (.ite cmp lhs rhs (stripDummyCtorReturns thn) (stripDummyCtorReturns els))
+    | other => some other
+
+private partial def emitConstructorStores (p : IR.Program) : Except String String := do
+  let (guard, rest) ← splitConstructorOps p.constructor.ops
+  let paramTypes ← p.constructor.resolvedParamTypes
+  let paramFrame : ParamFrame := { stem := "ctor_arg" }
+  let vs ←
+    if guard.isEmpty then
+      let graph ← p.constructor.toCFG
+      unless graph.blocks.all (·.instructions.isEmpty) do
+        throw "extract/unsupported: EVM constructor effects are not lowered"
+      let exits := graph.blocks.filterMap fun block => match block.terminator with
+        | .exit (.initialize values) => some values
+        | _ => none
+      unless exits.size == 1 do
+        throw "evm/cfg: constructor requires exactly one initialize exit"
+      pure exits[0]!
+    else
+      pure (rest.filterMap fun
+        | .returnState v => some v
+        | _ => none)
   if vs.isEmpty then
     throw "extract/unsupported: init missing returnState"
   if !p.schema.isEmpty && vs.size != p.slots.size then
     throw (s!"extract/unsupported: init initializes {vs.size} state leaves, " ++
       s!"schema requires {p.slots.size}")
   let mut body := ""
+  unless guard.isEmpty do
+    let (txt, _) ←
+      emitOps p "    " paramFrame p.constructor.paramCount paramTypes
+        (stripDummyCtorReturns guard) {}
+    body := txt
   let mut i : Nat := 0
-  let paramTypes ← p.constructor.resolvedParamTypes
   for s in p.slots do
     if h : i < vs.size then
-      let v ← loadVal p { stem := "ctor_arg" } p.constructor.paramCount paramTypes vs[i]
+      let v ← loadVal p paramFrame p.constructor.paramCount paramTypes vs[i]
       unless v == "0" do
         body := body ++ storeSlot "    " s.index (maskExpr s.width v)
     i := i + 1
@@ -1907,10 +1952,14 @@ def emitAbiChecked (p : IR.Program) : Except String String := do
     hasErrorLeaf (fun
       | .component call => call.emitsUnauthorized
       | _ => false) m.ops)
-  let needZero := p.entries.any (fun m =>
+  let needZero :=
     hasErrorLeaf (fun
       | .component call => call.emitsZeroAddress
-      | _ => false) m.ops)
+      | _ => false) p.constructor.ops ||
+    p.entries.any (fun m =>
+      hasErrorLeaf (fun
+        | .component call => call.emitsZeroAddress
+        | _ => false) m.ops)
   let needPaused := p.entries.any (fun m =>
     hasErrorLeaf (fun
       | .component call => call.emitsPaused

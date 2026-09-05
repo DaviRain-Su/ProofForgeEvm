@@ -142,10 +142,13 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'releasedOf(address
   400 "released map credits token B"
 
 zero_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$zero" "$start_ts" "$duration" 0)"
-zero_addr="$(printf '%s' "$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
-  --create "0x${bytecode}${zero_encoded#0x}")" | pf_evm_contract_address)"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$zero_addr" 'releasable(address)(uint256)' "$token")" \
-  0 "zero beneficiary fails closed on releasable"
+if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+    --create "0x${bytecode}${zero_encoded#0x}" >/dev/null 2>&1; then
+  echo "FAIL: zero-owner constructor CREATE unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_create_zero_address "$bytecode" "$zero_encoded" "$beneficiary" \
+  "zero beneficiary CREATE"
 
 now_cliff="$(pf_evm_to_dec "$("$cast" block --rpc-url "$rpc" latest --json | "$python" -I -S -c 'import json,sys; print(json.load(sys.stdin)["timestamp"])')")"
 c_start=$((now_cliff + 100))
@@ -173,6 +176,39 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address
 
 yul="$root/build/evm/Vest20Link.yul"
 [[ -f "$yul" ]] || { echo "FAIL: missing $yul" >&2; exit 1; }
+ctor_mut_dir="$root/build/evm/vest20link-ctor-mut"
+rm -rf "$ctor_mut_dir"
+mkdir -p "$ctor_mut_dir"
+pf_evm_strip_ctor_zero_guard "$yul" Vest20Link "$ctor_mut_dir/Vest20Link.yul"
+ctor_mut_code="$("$solc_bin" --strict-assembly --optimize --evm-version cancun --bin \
+  "$ctor_mut_dir/Vest20Link.yul" | "$python" -I -S -c "
+import sys
+lines=[ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+hexes=[ln for ln in lines if len(ln)>100 and all(c in '0123456789abcdefABCDEF' for c in ln)]
+if not hexes:
+    raise SystemExit('FAIL: solc produced no Vest20Link constructor-guard mutation bytecode')
+print(hexes[-1])
+")"
+ctor_mut_zero="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$zero" "$start_ts" "$duration" 0)"
+pf_evm_require_create_ok "$ctor_mut_code" "$ctor_mut_zero" "$beneficiary" \
+  "constructor-guard mutation CREATE"
+ctor_mut_receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$private_key" \
+  --create "0x${ctor_mut_code}${ctor_mut_zero#0x}")" \
+  || { echo "FAIL: mutation unexpectedly still reverted" >&2; exit 1; }
+ctor_mut_addr="$(printf '%s' "$ctor_mut_receipt" | "$python" -I -S -c "
+import json,sys
+r=json.load(sys.stdin)
+st=str(r.get('status') or '').lower()
+if st not in ('0x1','1'):
+    raise SystemExit('FAIL: mutation unexpectedly still reverted')
+addr=r.get('contractAddress') or ''
+if not addr or set(addr[2:])=={'0'}:
+    raise SystemExit('FAIL: mutation unexpectedly still reverted')
+print(addr)
+")"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$ctor_mut_addr" 'owner()(address)')" \
+  "$zero" "constructor-guard mutation stored a zero owner"
+
 mut_dir="$root/build/evm/vest20link-call-mut"
 rm -rf "$mut_dir"
 mkdir -p "$mut_dir"
@@ -215,4 +251,4 @@ fi
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token" 'balanceOf(address)(uint256)' "$beneficiary")" \
   "$before_mut" "STATICCALL mutation left the original beneficiary token A balance unchanged"
 
-echo "evm-anvil-vest20link: ok (ERC-20 map release + rotation + ERC20Released + two-token independence + CALL mutation, $runtime_bytes bytes)"
+echo "evm-anvil-vest20link: ok (ERC-20 map release + rotation + ERC20Released + two-token independence + zero-owner CREATE + constructor-guard mutation + CALL mutation, $runtime_bytes bytes)"
