@@ -50,12 +50,14 @@ def bytes12 : FixedBytes 12 := ⟨0x0706050403020100, 0x0b0a0908, 0, 0⟩
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.mulDivOffset256 3)
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.mulDivOffsetRev256 3)
 #guard ProofForge.Evm.WideWord.Query.wellFormed (.mulDivCeil256 3)
+#guard ProofForge.Evm.WideWord.Query.wellFormed (.mulDivCeilOffsetRev256 3)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.bitwise256 .xor 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulmod256 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulDiv256 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulDivOffset256 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulDivOffsetRev256 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulDivCeil256 4)
+#guard !ProofForge.Evm.WideWord.Query.wellFormed (.mulDivCeilOffsetRev256 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.not256 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.shift256 .right 4)
 #guard !ProofForge.Evm.WideWord.Query.wellFormed (.checkedDivMod256 .quotient 4)
@@ -131,6 +133,15 @@ private def emitsCheckedDivMod (operation : ProofForge.Evm.WideWord.Division)
   | .error _ => false
   | .ok (text, result, st) =>
       text.contains "if iszero(iszero(v15))" && text.contains "v19 := add(v19, 1)" &&
+        result == "v23" && st == 24
+
+#guard
+  match ProofForge.Evm.WideWord.Emit.emitQuery mockContext (.mulDivCeilOffsetRev256 0)
+      (Array.replicate 12 (.lit 0)) 0 with
+  | .error _ => false
+  | .ok (text, result, st) =>
+      text.contains "add(v13, 1)" && text.contains "add(v14, 10)" &&
+        text.contains "if iszero(iszero(v15))" && text.contains "v19 := add(v19, 1)" &&
         result == "v23" && st == 24
 
 #guard

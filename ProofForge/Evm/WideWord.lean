@@ -63,6 +63,9 @@ inductive Query where
   /-- Ceiling `(a * b) / denom` with a 512-bit intermediate; `limb` is 0..3.
   Twelve operands: a0..a3, b0..b3, d0..d3. -/
   | mulDivCeil256 (limb : Nat)
+  /-- Ceiling `(a * (b + 1)) / (denom + 10)` (OZ `_decimalsOffset() == 1` reverse);
+  `limb` is 0..3. Twelve operands: a0..a3, b0..b3, d0..d3. -/
+  | mulDivCeilOffsetRev256 (limb : Nat)
   /-- Sorted commutative `keccak256` of two `bytes32` values; `limb` is 0..3 (w0 lowest). -/
   | keccak256Pair32 (limb : Nat)
   /-- Fold a length plus leaf and eight siblings, then compare with a root; 41 operands. -/
@@ -76,7 +79,8 @@ inductive Query where
 def Query.arity : Query → Nat
   | .ge256 | .compare256 _ | .bitwise256 _ _ | .checkedDivMod256 _ _ | .arith256 _ _
   | .keccak256Pair32 _ | .eqBytes32 => 8
-  | .mulmod256 _ | .mulDiv256 _ | .mulDivOffset256 _ | .mulDivOffsetRev256 _ | .mulDivCeil256 _ => 12
+  | .mulmod256 _ | .mulDiv256 _ | .mulDivOffset256 _ | .mulDivOffsetRev256 _
+      | .mulDivCeil256 _ | .mulDivCeilOffsetRev256 _ => 12
   | .merkleVerify256 => 41
   | .ecrecover20 _ => 13
   | .not256 _ => 4
@@ -90,7 +94,7 @@ def Query.wellFormed : Query → Bool
       .checkedDivMod256 _ limb => limb ≤ 3
   | .arith256 op limb => op ≤ 4 && limb ≤ 3
   | .mulmod256 limb | .mulDiv256 limb | .mulDivOffset256 limb | .mulDivOffsetRev256 limb
-      | .mulDivCeil256 limb => limb ≤ 3
+      | .mulDivCeil256 limb | .mulDivCeilOffsetRev256 limb => limb ≤ 3
   | .keccak256Pair32 limb => limb ≤ 3
   | .merkleVerify256 | .eqBytes32 => true
   | .ecrecover20 limb => limb ≤ 2
@@ -138,6 +142,9 @@ def Query.canonical (renderValue : V → String) (operands : Array V) : Query �
         s!"({renderOperands renderValue operands})"
   | .mulDivCeil256 limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.mulDivCeil256 {limb}" ++
+        s!"({renderOperands renderValue operands})"
+  | .mulDivCeilOffsetRev256 limb =>
+      s!"ext.ProofForge.Evm.Ops.ValKind.mulDivCeilOffsetRev256 {limb}" ++
         s!"({renderOperands renderValue operands})"
   | .keccak256Pair32 limb =>
       s!"ext.ProofForge.Evm.Ops.ValKind.keccak256Pair32 {limb}" ++

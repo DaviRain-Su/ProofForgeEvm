@@ -66,6 +66,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint
 # 2^128 * 2^128 overflows checked 256-bit mul; mulDiv keeps a 512-bit intermediate.
 two128=340282366920938463463374607431768211456
 two128_plus_8=340282366920938463463374607431768211464
+two128_minus_8=340282366920938463463374607431768211448
 two128_minus_9=340282366920938463463374607431768211447
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" \
   'mint(address,uint256)' "$sender" "$two128" >/dev/null
@@ -78,7 +79,7 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToShares(ui
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' "$two128")" \
   "$two128_minus_9" "full-precision convertToAssets(2^128) is 2^128-9"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewMint(uint256)(uint256)' "$two128")" \
-  "$two128" "full-precision previewMint(2^128) is 2^128"
+  "$two128_minus_8" "full-precision previewMint(2^128) is 2^128-8"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewWithdraw(uint256)(uint256)' "$two128")" \
   "$two128" "full-precision previewWithdraw(2^128) is 2^128"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
@@ -115,8 +116,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewWithdraw(ui
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 201 "uneven totalAssets"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(uint256)(uint256)' 1)" 1 \
   "floor convertToAssets(1) is 1"
-pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewMint(uint256)(uint256)' 1)" 3 \
-  "ceiling previewMint(1) is 3"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewMint(uint256)(uint256)' 1)" 2 \
+  "ceiling previewMint(1) is 2"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$token" 'burn(address,uint256)' "$addr" 1 >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalAssets()(uint256)')" 200 "restored donated totalAssets"
 

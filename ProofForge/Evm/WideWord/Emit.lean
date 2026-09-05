@@ -190,7 +190,8 @@ Wrapping `mul` / `sub` plus `mulmod` recover the high word. `^` is XOR.
 When `offset` is true, packed right takes checked `+ 10` and denom takes
 checked `+ 1` (OZ `_decimalsOffset() == 1`). When `offsetRev` is true, packed
 right takes checked `+ 1` and denom takes checked `+ 10`. When `ceil` is true,
-a nonzero remainder adds one (checked overflow). -/
+a nonzero remainder adds one (checked overflow). `offset`/`offsetRev` may
+combine with `ceil`. -/
 private def emitMulDiv256 (context : Context σ) (limb : Nat) (offset ceil offsetRev : Bool)
     (a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 : Ops.Val) (st : σ) :
     Except String (String × String × σ) := do
@@ -208,7 +209,9 @@ private def emitMulDiv256 (context : Context σ) (limb : Nat) (offset ceil offse
   let (r2, z2, u2) ← context.materialize d2 u1
   let (r3, z3, u3) ← context.materialize d3 u2
   let tag :=
-    if offset then "mulDivOffset256|"
+    if offset && ceil then "mulDivCeilOffset256|"
+    else if offsetRev && ceil then "mulDivCeilOffsetRev256|"
+    else if offset then "mulDivOffset256|"
     else if offsetRev then "mulDivOffsetRev256|"
     else if ceil then "mulDivCeil256|"
     else "mulDiv256|"
@@ -583,6 +586,8 @@ def emitQuery (context : Context σ) (query : WideWord.Query) (operands : Array 
       emitMulDiv256 context limb false false true a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
   | .mulDivCeil256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, d0, d1, d2, d3] =>
       emitMulDiv256 context limb false true false a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
+  | .mulDivCeilOffsetRev256 limb, [a0, a1, a2, a3, b0, b1, b2, b3, d0, d1, d2, d3] =>
+      emitMulDiv256 context limb false true true a0 a1 a2 a3 b0 b1 b2 b3 d0 d1 d2 d3 st
   | .keccak256Pair32 limb, [a0, a1, a2, a3, b0, b1, b2, b3] =>
       emitKeccak256Pair32 context limb a0 a1 a2 a3 b0 b1 b2 b3 st
   | .merkleVerify256, operands =>
