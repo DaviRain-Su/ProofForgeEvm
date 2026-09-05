@@ -6,8 +6,8 @@ ERC-20 vesting consumer. Constructor stores the beneficiary and cliff duration, 
 `release(address)` pays the currently releasable amount through `SafeErc20.transfer`, matching
 OpenZeppelin `release(address token)`. `transferOwnership` is one-step Ownable rotation of the
 stored beneficiary. Native-ETH `release()` / `release(uint256)` stay on `VestLink`. There is no
-arbitrary schedule mutation. Before the cliff, `vestedAmount` is 0. After the cliff the linear
-formula still uses `timestamp - start`.
+arbitrary schedule mutation. A zero beneficiary reverts `ZeroAddress` in the constructor. Before
+the cliff, `vestedAmount` is 0. After the cliff the linear formula still uses `timestamp - start`.
 
 Schedule math is spelled inline at this boundary so extract can emit linear vesting. SDK helpers
 supply gates and the typed event only.
@@ -43,6 +43,11 @@ inductive Error where
 
 @[pf_entry]
 def init (beneficiary : Address) (_start _duration cliffDuration : UInt64) : State :=
+  let _ :=
+    if Address.isZero beneficiary then
+      Revert.zeroAddress
+    else
+      (0 : UInt64)
   { owner := beneficiary, cliffDuration := cliffDuration, dummy := 0, guard := Reentrancy.notEntered }
 
 @[pf_entry]

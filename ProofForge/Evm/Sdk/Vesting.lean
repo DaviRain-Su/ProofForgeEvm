@@ -15,10 +15,13 @@ mutation. Consumers must validate `canSchedule` before advertising schedule view
 The cliff matches OpenZeppelin `VestingWalletCliff`: vested amount is 0 until
 `start + cliffDuration`, then the linear formula still runs from `start` (a jump at the cliff
 when `cliffDuration > 0`). `cliffDuration = 0` is the linear wallet. `cliffDuration > duration`
-fails closed. Constructor zero-owner revert is still not lowered.
+fails closed. CREATE of a zero beneficiary reverts `ZeroAddress()`. Constructor
+`OwnershipTransferred(address(0), owner)` is still not lowered. The CREATE selector is
+`ZeroAddress()`, not OZ `OwnableInvalidOwner(address)`.
 
 Fail-closed gates:
-- Zero beneficiary, overflowing `start + duration`, or `cliffDuration > duration` yield zero
+- A zero beneficiary reverts `ZeroAddress` at CREATE.
+- Overflowing `start + duration`, or `cliffDuration > duration`, still deploy and yield zero
   views and no release.
 - `releasable` never underflows; zero duration behaves as a timelock at `start`.
 

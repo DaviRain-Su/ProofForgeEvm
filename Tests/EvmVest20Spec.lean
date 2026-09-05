@@ -22,6 +22,12 @@ open Lean Elab Command
 #guard Vesting.endAt (100 : UInt64) (900 : UInt64) == (1000 : UInt64)
 #guard Vesting.cliffAt (100 : UInt64) (900 : UInt64) (400 : UInt64) == (500 : UInt64)
 
+private partial def ctorHasZeroAddress (ops : Array IR.Op) : Bool :=
+  ops.any fun
+    | .component call => call.emitsZeroAddress
+    | .ite _ _ _ t f => ctorHasZeroAddress t || ctorHasZeroAddress f
+    | _ => false
+
 private def expectVest20Link : CommandElabM Unit := do
   let env ← getEnv
   let source ←
@@ -71,13 +77,24 @@ private def expectVest20Link : CommandElabM Unit := do
     throwError "Vest20Link must not grow an EtherReleased surface"
   unless !abi.contains "\"type\":\"receive\"" do
     throwError "Vest20Link must not grow a receive entry"
+  unless abi.contains "\"name\":\"ZeroAddress\"" do
+    throwError "Vest20Link ABI lost ZeroAddress"
+  unless ctorHasZeroAddress program.constructor.ops do
+    throwError "Vest20Link constructor lost ZeroAddress revert"
+  let yul ←
+    match Emit.emitYul program with
+    | .ok yul => pure yul
+    | .error reason => throwError reason
+  let ctorYul := (yul.splitOn "_runtime")[0]!
+  unless ctorYul.contains "0xd92e233d" do
+    throwError s!"Vest20Link constructor Yul lost ZeroAddress:\n{ctorYul}"
   let canon := IR.canonical program
   for ixName in #["releasable", "vestedAmount"] do
     let some entry := (canon.splitOn "/").find? (·.startsWith s!"view:{ixName}:")
       | throwError s!"Vest20Link canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" do
       throwError s!"{ixName} lost the linear formula"
-  unless IR.digestHex program == "f07336584ca318a" do
+  unless IR.digestHex program == "198b50791da92adb" do
     throwError s!"Vest20Link digest drifted: {IR.digestHex program}"
   logInfo m!"vest20link: digest={IR.digestHex program} abi-ok"
 
