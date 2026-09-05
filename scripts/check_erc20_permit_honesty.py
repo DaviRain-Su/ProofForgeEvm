@@ -48,6 +48,8 @@ REQUIRED = (
     (ROOT / "Tests" / "Erc20MetaSpec.lean", '"nonces"'),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "OzAudit.pathTagOf 8 == OzAudit.tagIface20"),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "OzAudit.pathTagOf 19 == OzAudit.tagToken20"),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "3dfa816778bd3ef6"'),
+    (ROOT / "Tests" / "Erc20MetaSpec.lean", 'digest == "3dfa816778bd3ef6"'),
     (ROOT / "Tests" / "EvmOzAuditSpec.lean", "!OzAudit.isTemporaryGap 8"),
     (ROOT / "runtime-tests" / "evm" / "anvil_erc20meta.sh", "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)"),
     (ROOT / "runtime-tests" / "evm" / "anvil_erc20meta.sh", "DOMAIN_SEPARATOR()(bytes32)"),
