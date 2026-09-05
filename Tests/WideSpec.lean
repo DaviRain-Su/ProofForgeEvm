@@ -122,7 +122,7 @@ private def emitsCheckedDivMod (operation : ProofForge.Evm.WideWord.Division)
       (Array.replicate 12 (.lit 0)) 0 with
   | .error _ => false
   | .ok (text, result, st) =>
-      text.contains "add(v16, 10)" && text.contains "if lt(v16, 10)" &&
+      text.contains "add(v14, 10)" && text.contains "if lt(v14, 10)" &&
         result == "v22" && st == 23
 
 #guard
