@@ -18,6 +18,7 @@ open Examples.Lang
 #guard shl (init 0) 1 65 == 2
 #guard shr (init 0) 8 67 == 1
 #guard mask8 (init 0) 7 == 7
+#guard wrap64 (init 0) == 3
 #guard Tests.Fixtures.getNarrowPrevious (Tests.Fixtures.initNarrow 7) 0 == 7
 #guard
   match both (init 9) with
@@ -91,5 +92,26 @@ elab "#pf_guard_nat_sub_semantics" : command => do
 
 #guard ProofForge.Evm.Keccak.selector "mask8" #["uint8"] ==
   ProofForge.Evm.Keccak.selectorOfWidths "mask8" #[1]
+
+elab "#pf_guard_uint64_ofnat_wrap" : command => do
+  let env ← getEnv
+  let source ←
+    match ProofForge.Extract.extractModuleIR env `Examples.Lang with
+    | .ok source => pure source
+    | .error reason => throwError reason
+  let some wrap := source.methods.find? (·.ixName == "wrap64")
+    | throwError "Lang lost wrap64"
+  unless wrap.ops.any (fun
+      | .returnU64 (.lit 3) => true
+      | _ => false) do
+    throwError "wrap64 did not fold 2^64+3 to 3"
+  let evm ←
+    match ProofForge.Evm.IR.fromExtracted source with
+    | .ok program => pure program
+    | .error reason => throwError reason
+  unless (evm.entries.find? (·.ixName == "wrap64")).isSome do
+    throwError "EVM Lang lost wrap64"
+
+#pf_guard_uint64_ofnat_wrap
 
 end Tests.LangSpec

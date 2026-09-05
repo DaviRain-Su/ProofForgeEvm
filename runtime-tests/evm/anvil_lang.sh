@@ -41,6 +41,9 @@ if "$cast" call --rpc-url "$rpc" "$addr" 'mask8(uint8)(uint64)' 256 >/dev/null 2
   exit 1
 fi
 
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64()(uint64)')" \
+  3 "wrapped ofNat ABI word is 3"
+
 pair="$("$cast" call --rpc-url "$rpc" "$addr" 'both()(uint64,uint64)')"
 left="$(printf '%s\n' "$pair" | head -n1)"
 right="$(printf '%s\n' "$pair" | tail -n1)"
