@@ -4,7 +4,8 @@
 Access.ownerViolation and VestLink/Vest20 transferOwnership revert
 OwnableUnauthorizedAccount(address). Sdk.OzAudit.temporaryGapCount stays 0.
 A doc that still lists Unauthorized versus OwnableUnauthorizedAccount as the
-VestingWallet remainder is a lying inventory. Remaining remainder is VestLink remains ETH-only.
+VestingWallet remainder is a lying inventory. Remaining named restriction is VestLink is the
+ETH-only smaller profile (Vest20Link is dual-asset).
 
 Usage:
     python3 scripts/check_vest_unauthorized_honesty.py
@@ -39,7 +40,7 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Evm" / "NativeFx.lean", "revertOwnableUnauthorizedAccount"),
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "evmRevertOwnableUnauthorizedAccount"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
-    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "Remaining named gap on that row is VestLink remains ETH-only."),
+    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "Remaining named restriction on that row is VestLink is the ETH-only smaller profile (Vest20Link is dual-asset)."),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "897a7934eb6291be"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "897a7934eb6291be"'),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "226bbefeac922a65"'),

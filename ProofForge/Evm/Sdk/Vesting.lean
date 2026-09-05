@@ -19,8 +19,8 @@ when `cliffDuration > 0`). `cliffDuration = 0` is the linear wallet. `cliffDurat
 fails closed. CREATE of a zero beneficiary reverts `OwnableInvalidOwner(address)`. Constructor
 `OwnershipTransferred(address(0), owner)` lowers as the else-arm of that revert-guard.
 `Vest20Link` is the dual-asset wallet: native ETH `release()` plus ERC-20 `release(address)`.
-VestLink stays the ETH-only smaller profile. The remaining named gap on this row is VestLink
-remains ETH-only. ABI `released()` / `released(address)` match OZ. Only-owner reverts are
+VestLink stays the ETH-only smaller profile. Dual-asset release lives on Vest20Link, not as a
+remaining implementable gap on VestLink. ABI `released()` / `released(address)` match OZ. Only-owner reverts are
 `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`.
 
 Fail-closed gates:

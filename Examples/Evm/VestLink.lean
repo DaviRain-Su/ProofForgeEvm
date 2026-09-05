@@ -12,8 +12,7 @@ A zero beneficiary reverts `OwnableInvalidOwner(address)` in the constructor. Th
 `OwnershipTransferred(address(0), beneficiary)`. Overflowing `start + duration` or
 `cliffDuration > duration` still fails closed to zero views and a no-op `release`. Before the
 cliff, `vestedAmount` is 0 even when `timestamp ≥ start`. After the cliff the linear formula still
-uses `timestamp - start`. `Vest20Link` is the dual-asset wallet. This module stays the ETH-only
-smaller profile, including `release(uint256)`.
+uses `timestamp - start`. `Vest20Link` is the dual-asset wallet. This module stays the ETH-only smaller profile, including `release(uint256)`.
 
 Schedule math is spelled inline at this boundary so extract can emit linear vesting; SDK helpers
 supply gates and the typed event only.

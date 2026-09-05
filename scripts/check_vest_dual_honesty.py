@@ -4,7 +4,8 @@
 Vest20Link is the dual-asset wallet: receive plus release() for native ETH, and
 release(address) for ERC-20. Sdk.OzAudit.temporaryGapCount stays 0. A doc that
 still lists the split wallets as the VestingWallet remainder is a lying
-inventory. Remaining remainder is VestLink remains ETH-only.
+inventory. Remaining named restriction is VestLink is the ETH-only smaller profile
+(Vest20Link is dual-asset).
 
 Usage:
     python3 scripts/check_vest_dual_honesty.py
@@ -43,7 +44,7 @@ REQUIRED = (
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "nativeReleased"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Vesting.Log.etherReleased"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
-    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "Remaining named gap on that row is VestLink remains ETH-only."),
+    (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "Remaining named restriction on that row is VestLink is the ETH-only smaller profile (Vest20Link is dual-asset)."),
     (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "226bbefeac922a65"'),
     (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "226bbefeac922a65"'),
     (ROOT / "Tests" / "EvmVest20Spec.lean", "Vest20Link lost release()"),
