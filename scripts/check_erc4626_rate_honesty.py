@@ -3,7 +3,7 @@
 
 Erc4626.convertToShares is floor assets * (totalSupply + 1) / (totalAssets + 1) via mulDivOffset.
 Erc4626.previewMint is ceiling shares * totalAssets / totalSupply via mulDivCeil.
-Erc4626.previewWithdraw is ceiling assets * totalSupply / totalAssets.
+Erc4626.previewWithdraw is ceiling assets * totalSupply / totalAssets via mulDivCeil.
 Empty supply is 1:1. Virtual +1 when supply is nonzero (OZ `_decimalsOffset() == 0`).
 Sdk.OzAudit.temporaryGapCount stays 0.
 
@@ -31,6 +31,8 @@ STALE_PHRASES = (
     "There is no virtual-offset inflation defense, fee accrual, flash-loan",
     "Virtual-offset inflation defense stays out",
     "Ceiling conversions still use checked 256-bit mul. Virtual-offset is Phase 33",
+    "Ceiling `previewWithdraw` still uses checked 256-bit mul",
+    "if UInt256.eq (UInt256.mod prod totalAssets) UInt256.zero then q",
 )
 
 REQUIRED = (
@@ -69,6 +71,10 @@ REQUIRED = (
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
         "mulDivCeil shares totalAssets totalSupply",
+    ),
+    (
+        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
+        "mulDivCeil assets totalSupply totalAssets",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Runtime.lean",
@@ -137,10 +143,6 @@ REQUIRED = (
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
         "def sharesForWithdraw (assets totalSupply totalAssets : UInt256) : UInt256 :=",
-    ),
-    (
-        ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",
-        "if UInt256.eq (UInt256.mod prod totalAssets) UInt256.zero then q",
     ),
     (
         ROOT / "Examples" / "Evm" / "Vault4626Link.lean",
@@ -215,6 +217,10 @@ REQUIRED = (
         '"full-precision previewMint(2^128) is 2^128"',
     ),
     (
+        ROOT / "runtime-tests" / "evm" / "anvil_vault4626link.sh",
+        '"full-precision previewWithdraw(2^128) is 2^128"',
+    ),
+    (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 ceiling `previewMint`",
     ),
@@ -233,6 +239,10 @@ REQUIRED = (
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "ERC-4626 ceiling `previewMint` via `mulDivCeil`",
+    ),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "ERC-4626 ceiling `previewWithdraw` via `mulDivCeil`",
     ),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Erc4626.lean",

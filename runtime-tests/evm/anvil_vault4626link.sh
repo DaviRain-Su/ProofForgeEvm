@@ -77,6 +77,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'convertToAssets(ui
   "$two128" "full-precision convertToAssets(2^128) is 2^128"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewMint(uint256)(uint256)' "$two128")" \
   "$two128" "full-precision previewMint(2^128) is 2^128"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'previewWithdraw(uint256)(uint256)' "$two128")" \
+  "$two128" "full-precision previewWithdraw(2^128) is 2^128"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" "$addr" \
   'redeem(uint256,address,address)' "$two128" "$sender" "$sender" >/dev/null
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'totalSupply()(uint256)')" 0 \
