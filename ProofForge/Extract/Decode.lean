@@ -840,8 +840,10 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
     | none => none
   else if isConstNamed e ``UInt64.ofNat && e.getAppArgs.size ≥ 1 then
     let arg := e.getAppArgs[e.getAppArgs.size - 1]!
-    match natLiteral? arg with
-    | some n => some (.lit (UInt64.ofNat n))
+    match foldStaticNat? env fuel arg with
+    | some n =>
+      if n ≥ UInt64.size then some (.lit (UInt64.ofNat n))
+      else asVal env fuel arg
     | none => asVal env fuel arg
   else if (isConstNamed e ``UInt8.toUInt64 || isConstNamed e ``UInt64.toUInt8 ||
       isConstNamed e ``UInt16.toUInt64 || isConstNamed e ``UInt64.toUInt16 ||
