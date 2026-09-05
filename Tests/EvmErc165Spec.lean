@@ -3,6 +3,7 @@ import ProofForge.Evm.Commands
 import ProofForge.Evm.Emit
 import Examples.Evm.Collectible
 import Examples.Evm.Badge
+import Examples.Evm.Gallery
 import Examples.Evm.MultiToken
 import Examples.Evm.CraftToken
 import Examples.Evm.ReceiverLink
@@ -26,6 +27,7 @@ open Lean Elab Command
 #guard Erc165.supportsToken Erc165.erc721 Erc165.erc721
 #guard Erc165.erc721Receiver == (⟨0x027a0b15, 0, 0, 0⟩ : Bytes4)
 #guard Erc165.erc1155Receiver == (⟨0xe012234e, 0, 0, 0⟩ : Bytes4)
+#guard Erc165.erc721Enumerable == (⟨0x639d0e78, 0, 0, 0⟩ : Bytes4)
 
 private partial def valueContainsBytes4Equality : Ops.Val → Bool
   | .arg _ | .local _ | .lit _ | .loopIx => false
@@ -79,6 +81,7 @@ private def expectErc165 : CommandElabM Unit := do
   expectErc165Abi `Examples.Evm.MultiToken
   expectErc165Abi `Examples.Evm.CraftToken
   expectErc165Abi `Examples.Evm.ReceiverLink
+  expectErc165Abi `Examples.Evm.Gallery
 
 elab "#pf_guard_evm_erc165" : command => expectErc165
 
@@ -89,5 +92,6 @@ elab "#pf_guard_evm_erc165" : command => expectErc165
 #pf_evm_build Examples.Evm.MultiToken
 #pf_evm_build Examples.Evm.CraftToken
 #pf_evm_build Examples.Evm.ReceiverLink
+#pf_evm_build Examples.Evm.Gallery
 
 end Tests.EvmErc165Spec
