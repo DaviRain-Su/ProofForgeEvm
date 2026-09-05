@@ -93,6 +93,12 @@ Checked `+ 1` reverts on overflow. -/
   ⟨WideWord.Source.mulDivOffsetW0 left right denom, WideWord.Source.mulDivOffsetW1 left right denom,
     WideWord.Source.mulDivOffsetW2 left right denom, WideWord.Source.mulDivOffsetW3 left right denom⟩
 
+/-- Ceiling `(left * right) / denom` with a 512-bit intermediate (OZ `Math.mulDiv` + round up).
+Zero `denom` reverts. A quotient that does not fit in 256 bits reverts. -/
+@[pf_inline] def mulDivCeil (left right denom : UInt256) : UInt256 :=
+  ⟨WideWord.Source.mulDivCeilW0 left right denom, WideWord.Source.mulDivCeilW1 left right denom,
+    WideWord.Source.mulDivCeilW2 left right denom, WideWord.Source.mulDivCeilW3 left right denom⟩
+
 @[pf_inline] def bitAnd (left right : UInt256) : UInt256 :=
   WideWord.Source.bitAnd256 left right
 

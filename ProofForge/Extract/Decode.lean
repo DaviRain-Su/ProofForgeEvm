@@ -402,6 +402,8 @@ private partial def asValNamed (env : Environment) (fuel : Nat) (n : Name) (e : 
             endsWith baseE ".evmMulDiv256" then some (.mulDiv256 limb.toNat)
         else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMulDivOffset256 ||
             endsWith baseE ".evmMulDivOffset256" then some (.mulDivOffset256 limb.toNat)
+        else if isConstNamed baseE ``ProofForge.Evm.Runtime.evmMulDivCeil256 ||
+            endsWith baseE ".evmMulDivCeil256" then some (.mulDivCeil256 limb.toNat)
         else none
       match ternaryQuery? with
       | some query =>
@@ -1292,6 +1294,7 @@ private partial def uint256Leaves (env : Environment) (e : Expr) :
         isConstNamed e ``ProofForge.Evm.Runtime.evmMulmod256 || endsWith e ".evmMulmod256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmMulDiv256 || endsWith e ".evmMulDiv256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmMulDivOffset256 || endsWith e ".evmMulDivOffset256" ||
+        isConstNamed e ``ProofForge.Evm.Runtime.evmMulDivCeil256 || endsWith e ".evmMulDivCeil256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmAnd256 || endsWith e ".evmAnd256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmOr256 || endsWith e ".evmOr256" ||
         isConstNamed e ``ProofForge.Evm.Runtime.evmXor256 || endsWith e ".evmXor256" ||
@@ -5998,6 +6001,7 @@ private def decodePlain (env : Environment) (e : Expr) (stateful : Bool)
       isConstNamed e ``ProofForge.Evm.Runtime.evmMulmod256 || endsWith e ".evmMulmod256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmMulDiv256 || endsWith e ".evmMulDiv256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmMulDivOffset256 || endsWith e ".evmMulDivOffset256" ||
+      isConstNamed e ``ProofForge.Evm.Runtime.evmMulDivCeil256 || endsWith e ".evmMulDivCeil256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmAnd256 || endsWith e ".evmAnd256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmOr256 || endsWith e ".evmOr256" ||
       isConstNamed e ``ProofForge.Evm.Runtime.evmXor256 || endsWith e ".evmXor256" ||
