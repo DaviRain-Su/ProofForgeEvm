@@ -42,6 +42,10 @@ REQUIRED = (
     (ROOT / "Examples" / "Evm" / "Credits.lean", "Revert.ownableInvalidOwner candidate"),
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner newOwner"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner newOwner"),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "f53ac3264ec9cf51"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "9bbe0424c5bc56d0"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "86c8363611ee3cc7"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "9a9cce6e0d2a58a2"'),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
