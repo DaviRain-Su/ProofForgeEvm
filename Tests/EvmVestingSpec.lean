@@ -5,7 +5,7 @@ import Examples.Evm.VestLink
 
 /-!
 Bounded native-ETH vesting: linear schedule with a constructor-stored OZ cliff, stored
-beneficiary with Ownable2Step `transferOwnership` plus `acceptOwnership`, OZ `release()` plus
+beneficiary with Ownable2Step `transferOwnership` plus `acceptOwnership` plus `renounceOwnership`, OZ `release()` plus
 partial `release(uint256)`, ordered reentrancy lock, fail-closed schedule gates, EtherReleased
 typed event. `temporaryGapCount` stays 0.
 -/
@@ -49,8 +49,8 @@ private def expectVestLink : CommandElabM Unit := do
     | .error reason => throwError reason
   for ixName in
       #["beneficiary", "owner", "start", "duration", "cliff", "endTime", "released",
-        "releasable", "vestedAmount", "transferOwnership", "acceptOwnership", "pendingOwner",
-        "release", "receive"] do
+        "releasable", "vestedAmount", "transferOwnership", "acceptOwnership", "renounceOwnership",
+        "pendingOwner", "release", "receive"] do
     unless source.methods.any (·.ixName == ixName) do
       throwError s!"VestLink is missing {ixName}"
   let program ←
@@ -88,6 +88,7 @@ private def expectVestLink : CommandElabM Unit := do
       abi.contains "\"name\":\"owner\"" &&
       abi.contains "\"name\":\"transferOwnership\"" &&
       abi.contains "\"name\":\"acceptOwnership\"" &&
+      abi.contains "\"name\":\"renounceOwnership\"" &&
       abi.contains "\"name\":\"pendingOwner\"" &&
       abi.contains "\"name\":\"OwnershipTransferred\"" &&
       abi.contains "\"name\":\"OwnershipTransferStarted\"" &&
@@ -145,7 +146,7 @@ private def expectVestLink : CommandElabM Unit := do
       | throwError s!"VestLink canonical IR lost {ixName}"
     unless entry.contains "checkedDivMod256" && entry.contains "selfBalance256 0()" do
       throwError s!"{ixName} lost the linear formula around the SELFBALANCE read"
-  unless IR.digestHex program == "fef481a06aef2a5d" do
+  unless IR.digestHex program == "4d4f50a585db704d" do
     throwError s!"VestLink digest drifted: {IR.digestHex program}"
   logInfo m!"vestlink: digest={IR.digestHex program} abi-ok"
 

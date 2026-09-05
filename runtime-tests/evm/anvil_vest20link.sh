@@ -231,6 +231,28 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$token_b" 'balanceOf(addre
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'released(address)(uint256)' "$token_b")" \
   400 "released map credits token B"
 
+"$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'transferOwnership(address)' "$beneficiary" >/dev/null
+receipt="$("$cast" send --json --rpc-url "$rpc" --private-key "$other_key" \
+  "$addr" 'renounceOwnership()')"
+pf_evm_typed_event_check "$abi" "$receipt" OwnershipTransferred "$topic_own" \
+  "{\"previousOwner\": \"$other\", \"newOwner\": \"0x0000000000000000000000000000000000000000\"}" \
+  "renounceOwnership OwnershipTransferred LOG3"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'owner()(address)')" \
+  "0x0000000000000000000000000000000000000000" "owner cleared after renounce"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'pendingOwner()(address)')" \
+  "0x0000000000000000000000000000000000000000" "pendingOwner cleared after renounce"
+pf_evm_require_equal "$("$cast" call --rpc-url "$rpc" "$addr" 'beneficiary()(address)')" \
+  "0x0000000000000000000000000000000000000000" "beneficiary fails closed after renounce"
+if "$cast" send --rpc-url "$rpc" --private-key "$other_key" \
+    "$addr" 'transferOwnership(address)' "$beneficiary" >/dev/null 2>&1; then
+  echo "FAIL: owner action after renounce unexpectedly succeeded" >&2
+  exit 1
+fi
+pf_evm_require_ownable_unauthorized_account "$addr" "$other" \
+  "$("$cast" calldata 'transferOwnership(address)' "$beneficiary")" "$other" \
+  "owner action after renounce"
+
 zero_encoded="$("$cast" abi-encode 'constructor(address,uint64,uint64,uint64)' "$zero" "$start_ts" "$duration" 0)"
 if "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
     --create "0x${bytecode}${zero_encoded#0x}" >/dev/null 2>&1; then

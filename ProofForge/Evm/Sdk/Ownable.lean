@@ -19,7 +19,8 @@ VestLink, Vest20Link, TwoStepCounter, and Credits CREATE of `address(0)` revert
 writes, value transfers, and any other constructor log stay refused
 (`extract/unsupported: EVM constructor effects are not lowered`). VestLink, Vest20Link,
 TwoStepCounter, and Credits `transferOwnership(0)` nominates the zero
-address (OZ cancel).
+address (OZ cancel). VestLink and Vest20Link `renounceOwnership` clears owner
+and pending the same way TwoStepCounter and Credits do.
 -/
 
 /-- Canonical Ownable / Ownable2Step events. Constructor and field names are the ABI surface.

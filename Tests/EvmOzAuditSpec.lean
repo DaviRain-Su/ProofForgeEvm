@@ -19,6 +19,7 @@ plus wider payloads. `temporaryGapCount` stays 0. Counters stay 2 DONE / 21 PART
 9 blocked / 0 gap. Rows 8 and 19 stay PARTIAL after issuer `permit` on `Erc20Meta`.
 Row 16 stays PARTIAL after `cancelAuthorization`.
 Row 1 nominate-zero nominates the zero address (OZ cancel).
+VestLink and Vest20Link ship `renounceOwnership`.
 -/
 
 namespace Tests.EvmOzAuditSpec

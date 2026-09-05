@@ -30,7 +30,8 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   `OwnableInvalidOwner(address)`, constructor `OwnershipTransferred(address(0), owner)`,
   only-owner reverts `OwnableUnauthorizedAccount(address)` via `Access.ownerViolation`, and
   `Vest20Link` as the dual-asset wallet (`release()` native ETH plus `release(address)` ERC-20),
-  and Ownable2Step `transferOwnership` / `acceptOwnership` / `pendingOwner`.
+  and Ownable2Step `transferOwnership` / `acceptOwnership` / `pendingOwner` /
+  `renounceOwnership`.
   Remaining named restriction on that row is VestLink is the ETH-only smaller profile (Vest20Link is dual-asset).
   Rows 8 and 19 (`IERC20*` / `token/ERC20`) stay PARTIAL after `Erc20Meta` shipped issuer
   `permit` / `DOMAIN_SEPARATOR` / `nonces` over the closed Token/1 EIP-2612 path.
@@ -44,6 +45,7 @@ Authority snapshot (2026-09-03 re-inventory for W5 slice 1):
   and after `transferOwnership(0)` nominates zero (OZ cancel).
   Nominate-zero nominates the zero address (OZ cancel).
   Remaining named restriction on that row is the bounded two-step profile.
+  TwoStepCounter extra `cancelOwnership` is that remainder.
   `temporaryGapCount` stays 0.)
 
 Each table row carries a stable path tag (top-level OZ path group), a DONE/PARTIAL/ABSENT status,

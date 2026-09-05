@@ -8,6 +8,7 @@ token's paid-out amount lives in a hashed address map. `release()` pays `releasa
 `released()` and `released(address)` are the OZ paid-amount views (`released__eth` /
 `released__token`; the hashed map stays `released`).
 `transferOwnership` nominates a pending owner. `acceptOwnership` rotates the stored beneficiary.
+`renounceOwnership` clears owner and pending.
 VestLink stays the smaller ETH-only profile, including `release(uint256)`. There is no arbitrary
 schedule mutation.
 A zero beneficiary reverts `OwnableInvalidOwner(address)` in the constructor. The success path
@@ -214,6 +215,17 @@ def acceptOwnership (s : State) : Except Error (State × UInt64) :=
       s.nativeReleased, dummy := s.dummy, guard := s.guard, ownership :=
       Access.Ownership.consume s.ownership },
       Ownable.Log.ownershipTransferred s.owner s.ownership)
+  else
+    .ok (s, Access.ownerViolation)
+
+/-- Permanently remove the current owner and clear any pending nominee. Non-owner reverts
+`OwnableUnauthorizedAccount(caller)`. Success emits `OwnershipTransferred(previous, address(0))`.
+After this, `canSchedule` fails closed. -/
+@[pf_entry]
+def renounceOwnership (s : State) : Except Error (State × UInt64) :=
+  if Access.requireOwner s.owner then
+    .ok ({ s with owner := Address.zero, ownership := Access.Ownership.cancel s.ownership },
+      Ownable.Log.ownershipTransferred s.owner Address.zero)
   else
     .ok (s, Access.ownerViolation)
 

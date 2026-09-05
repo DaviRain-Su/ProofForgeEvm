@@ -33,18 +33,20 @@ STALE_PHRASES = (
 
 REQUIRED = (
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "def acceptOwnership"),
+    (ROOT / "Examples" / "Evm" / "VestLink.lean", "def renounceOwnership"),
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "def pendingOwner"),
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "Revert.ownableInvalidOwner beneficiary"),
     (ROOT / "Examples" / "Evm" / "VestLink.lean", "Ownable.Log.ownershipTransferStarted"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def acceptOwnership"),
+    (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def renounceOwnership"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "def pendingOwner"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.zeroAddress"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Revert.ownableInvalidOwner beneficiary"),
     (ROOT / "Examples" / "Evm" / "Vest20Link.lean", "Ownable.Log.ownershipTransferStarted"),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "fef481a06aef2a5d"'),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "fef481a06aef2a5d"'),
-    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "a12b192153112fb4"'),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "a12b192153112fb4"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "4d4f50a585db704d"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", 'IR.digestHex program == "4d4f50a585db704d"'),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "daab53b9a3e785ac"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", 'IR.digestHex program == "daab53b9a3e785ac"'),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
     (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean",
@@ -54,9 +56,9 @@ REQUIRED = (
         ROOT / "ProofForge" / "Evm" / "Sdk" / "Vesting.lean",
         "nominates zero (OZ cancel)",
     ),
-    (ROOT / "Tests" / "EvmVestingSpec.lean", '"acceptOwnership", "pendingOwner"'),
+    (ROOT / "Tests" / "EvmVestingSpec.lean", '"acceptOwnership", "renounceOwnership"'),
     (ROOT / "Tests" / "EvmVestingSpec.lean", "OwnershipTransferStarted"),
-    (ROOT / "Tests" / "EvmVest20Spec.lean", '"acceptOwnership", "pendingOwner"'),
+    (ROOT / "Tests" / "EvmVest20Spec.lean", '"acceptOwnership", "renounceOwnership"'),
     (ROOT / "Tests" / "EvmVest20Spec.lean", "OwnershipTransferStarted"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "acceptOwnership()"),
     (ROOT / "runtime-tests" / "evm" / "anvil_vestlink.sh", "OwnershipTransferStarted"),
@@ -74,7 +76,7 @@ REQUIRED = (
     ),
     (
         ROOT / "docs" / "product" / "writing-contracts.md",
-        "Ownable2Step `transferOwnership` plus `acceptOwnership`",
+        "Ownable2Step `transferOwnership` plus `acceptOwnership` plus `renounceOwnership`",
     ),
 )
 
