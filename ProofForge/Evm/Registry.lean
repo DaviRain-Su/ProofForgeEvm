@@ -52,7 +52,7 @@ def entries : Array Entry := #[
   { name := "Gallery", digest := "9fdfc61d00414718" },
   { name := "Badge", digest := "bdb4d1d1a4e9baa7" },
   { name := "TipJar", digest := "33bcabf27f5b9523" },
-  { name := "Lang", digest := "90cbe4e5a13ba98f" },
+  { name := "Lang", digest := "54376192fcf2f4e1" },
   { name := "Vault", digest := "bb2f93cb28d7501" },
   { name := "Ownable", digest := "86d62e4974bfb6fd" },
   { name := "Token", digest := "e25dfb4e1eaa54c" },

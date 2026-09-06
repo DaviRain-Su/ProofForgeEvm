@@ -207,7 +207,8 @@ private partial def ecrecoverWideOperands (env : Environment) (fuel : Nat) (args
 /-- Decode a Nat argument of `UInt64.ofNat`, wrapping compile-time overflow.
 Nested mixed `HAdd` and mixed `HMul` reuse the same wrap on each operand.
 Mixed `HSub` wraps a compile-time overflow minuend minus a runtime side.
-Saturating mixed Nat.sub (runtime minus overflow) stays out. -/
+Saturating mixed Nat.sub of a runtime UInt64-range minuend minus overflow is 0.
+A wrapping mixed minuend minus overflow stays out. -/
 private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : Option Ops.Val :=
   match foldStaticNat? env fuel x with
   | some n =>
@@ -240,7 +241,15 @@ private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : O
             | some r => some (.subU64 (.lit (UInt64.ofNat n)) r)
             | none => none
           else none
-        | none => none
+        | none =>
+          match foldStaticNat? env fuel args[args.size - 1]! with
+          | some m =>
+            if m ≥ UInt64.size then
+              match asVal env fuel args[args.size - 2]! with
+              | some _ => some (.lit 0)
+              | none => none
+            else none
+          | none => none
       else none
 
 private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=
