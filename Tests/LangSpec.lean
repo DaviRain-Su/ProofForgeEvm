@@ -32,6 +32,9 @@ open Examples.Lang
 #guard wrap64sat (init 3) == 0
 #guard wrap64wsub (init 0) == 0
 #guard wrap64wsub (init 3) == 3
+#guard wrap64rsub (init 3) == 3
+#guard wrap64rsub { cells := #v[3, 5, 0, 0] } == 0
+#guard wrap64rsub { cells := #v[5, 2, 0, 0] } == 3
 #guard Tests.Fixtures.getNarrowPrevious (Tests.Fixtures.initNarrow 7) 0 == 7
 #guard
   match both (init 9) with
@@ -178,6 +181,14 @@ elab "#pf_guard_uint64_ofnat_wrap" : command => do
     throwError "wrap64wsub did not sub a wrapped overflow from a wrapping mixed minuend"
   unless (evm.entries.find? (·.ixName == "wrap64wsub")).isSome do
     throwError "EVM Lang lost wrap64wsub"
+  let some rsub := source.methods.find? (·.ixName == "wrap64rsub")
+    | throwError "Lang lost wrap64rsub"
+  unless rsub.ops.any (fun
+      | .returnU64 (.select .ge _ _ (.subU64 _ _) (.lit 0)) => true
+      | _ => false) do
+    throwError "wrap64rsub did not saturate two runtime Nat.sub sides"
+  unless (evm.entries.find? (·.ixName == "wrap64rsub")).isSome do
+    throwError "EVM Lang lost wrap64rsub"
   let yul ←
     match ProofForge.Evm.Emit.emitYul evm with
     | .ok text => pure text

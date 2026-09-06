@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when UInt64.ofNat of a wrapping mixed minuend minus overflow is still refused.
+"""Fail when UInt64.ofNat of mixed Nat.sub of two runtime sides is still refused.
 
 asVal of UInt64.ofNat folds staticNat? (OfNat and HAdd) through Lean UInt64.ofNat.
 A mixed HAdd wraps the static side and addU64s a runtime side.
@@ -15,7 +15,7 @@ Lang.wrap64mul publishes cells[0] * 2^64 as ABI 0.
 Lang.wrap64sub publishes 2^64 - cells[0] as ABI wrapping 0 - cells[0].
 Lang.wrap64sat publishes cells[0] - 2^64 as ABI 0.
 Lang.wrap64wsub publishes (cells[0] + 2^64) - 2^64 as ABI cells[0].
-A mixed Nat.sub of two runtime sides stays out.
+Lang.wrap64rsub publishes cells[0] - cells[1] as ABI saturating Nat.sub.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -52,6 +52,8 @@ STALE_PHRASES = (
     "Wrapping mixed minuend minus overflow stays out",
     "Wrapping mixed minuend stays out",
     "A wrapping mixed minuend stays out",
+    "A mixed Nat.sub of two runtime sides stays out",
+    "Mixed Nat.sub of two runtime sides stays out",
 )
 
 REQUIRED = (
@@ -63,6 +65,7 @@ REQUIRED = (
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "isConstNamed addends ``HMul.hMul"),
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "isConstNamed addends ``HSub.hSub"),
     (ROOT / "ProofForge" / "Extract" / "Decode.lean", "some (.subU64 l (.lit (UInt64.ofNat m)))"),
+    (ROOT / "ProofForge" / "Extract" / "Decode.lean", "some (.select .ge l r (.subU64 l r) (.lit 0))"),
     (ROOT / "Examples" / "Lang.lean", "def wrap64"),
     (ROOT / "Examples" / "Lang.lean", "UInt64.ofNat (18446744073709551616 + 3)"),
     (ROOT / "Examples" / "Lang.lean", "def wrap64mix"),
@@ -77,6 +80,8 @@ REQUIRED = (
     (ROOT / "Examples" / "Lang.lean", "UInt64.ofNat (s.cells[0]!.toNat - 18446744073709551616)"),
     (ROOT / "Examples" / "Lang.lean", "def wrap64wsub"),
     (ROOT / "Examples" / "Lang.lean", "UInt64.ofNat ((s.cells[0]!.toNat + 18446744073709551616) - 18446744073709551616)"),
+    (ROOT / "Examples" / "Lang.lean", "def wrap64rsub"),
+    (ROOT / "Examples" / "Lang.lean", "UInt64.ofNat (s.cells[0]!.toNat - s.cells[1]!.toNat)"),
     (ROOT / "Tests" / "LangSpec.lean", "#guard wrap64 (init 0) == 3"),
     (ROOT / "Tests" / "LangSpec.lean", "#guard wrap64mix (init 3) == 3"),
     (ROOT / "Tests" / "LangSpec.lean", "#guard wrap64nest (init 3) == 6"),
@@ -84,6 +89,7 @@ REQUIRED = (
     (ROOT / "Tests" / "LangSpec.lean", "#guard wrap64sub (init 3) == u64Max - 2"),
     (ROOT / "Tests" / "LangSpec.lean", "#guard wrap64sat (init 3) == 0"),
     (ROOT / "Tests" / "LangSpec.lean", "#guard wrap64wsub (init 3) == 3"),
+    (ROOT / "Tests" / "LangSpec.lean", "#guard wrap64rsub { cells := #v[3, 5, 0, 0] } == 0"),
     (ROOT / "Tests" / "LangSpec.lean", 'source.methods.find? (·.ixName == "wrap64")'),
     (ROOT / "Tests" / "LangSpec.lean", 'source.methods.find? (·.ixName == "wrap64mix")'),
     (ROOT / "Tests" / "LangSpec.lean", 'source.methods.find? (·.ixName == "wrap64nest")'),
@@ -91,6 +97,7 @@ REQUIRED = (
     (ROOT / "Tests" / "LangSpec.lean", 'source.methods.find? (·.ixName == "wrap64sub")'),
     (ROOT / "Tests" / "LangSpec.lean", 'source.methods.find? (·.ixName == "wrap64sat")'),
     (ROOT / "Tests" / "LangSpec.lean", 'source.methods.find? (·.ixName == "wrap64wsub")'),
+    (ROOT / "Tests" / "LangSpec.lean", 'source.methods.find? (·.ixName == "wrap64rsub")'),
     (ROOT / "ProofForge" / "Evm" / "Emit.lean",
      "A `.lit 0` minuend is wrapping ofNat (2^64 - n) and must not revert."),
     (ROOT / "Tests" / "LangSpec.lean", ".returnU64 (.lit 3) => true"),
@@ -111,7 +118,9 @@ REQUIRED = (
     (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", '"saturating mixed Nat.sub ofNat ABI word is 0"'),
     (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", 'wrap64wsub()(uint64)'),
     (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", '"wrapping mixed minuend ofNat ABI word follows cells_0"'),
-    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "`UInt64.ofNat` wrap of wrapping mixed minuend minus overflow"),
+    (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", 'wrap64rsub()(uint64)'),
+    (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", '"mixed Nat.sub of two runtime sides saturates when cells_0 < cells_1"'),
+    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "`UInt64.ofNat` wrap of mixed Nat.sub of two runtime sides"),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
 )
 
