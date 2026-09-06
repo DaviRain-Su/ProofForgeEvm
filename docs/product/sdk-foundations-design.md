@@ -1,8 +1,10 @@
 # Fable SDK foundations design / SDK 基础设计
 
 > Status: design proposal. S0, S1a/S1b, S2 (#9), S3 OpenCall (#10), S4a–d (#11–#14), and
-> S5 Base RPC gates (#8) are on `main` as of 2026-09-03. Remaining S4 (ERC-1155 `TransferBatch`,
-> `RoleAdminChanged`, constructor Ownable logs) is not claimed. Anonymous LOG0 is not a product
+> S5 Base RPC gates (#8) are on `main` as of 2026-09-03. Phase 2 shipped bounded ERC-1155
+> `TransferBatch` / `balanceOfBatch` / `safeBatchTransferFrom` on `MultiToken`. Constructor
+> Ownable logs shipped on TwoStepCounter, Credits, VestLink, and Vest20Link. Remaining S4 is
+> `RoleAdminChanged` (no role-admin rotation API). Anonymous LOG0 is not a product
 > `Event.emit` shape — typed events are named ABI events (LOG1–4, signature topic always).
 
 ## Objective / 目标
@@ -205,14 +207,14 @@ for the stated subset. It does not mean a drop-in or complete OpenZeppelin imple
 | Surface | Current `main` | Remaining S4 | Honest boundary |
 |---|---|---|---|
 | ERC-20 events | Closed `Transfer`/`Approval` logs and ABI (`Token`, `Erc20Meta`) | Re-express through typed events only if zero-churn equivalence holds | Existing ERC-20-style subset, not a blanket full-ERC claim |
-| ERC-165 | No SDK implementation found | Bounded `supportsInterface(bytes4)` policy for explicitly implemented interface IDs; `0xffffffff` is false | Reports only interfaces whose required surface is actually present |
-| ERC-721 | O(1) core plus canonical `Transfer`/`Approval`/`ApprovalForAll` on Collectible/Badge (S4a, #11) | ERC-165 ID only when the full advertised function set exists; safe callbacks / metadata URI | No “full ERC-721” claim without safe-transfer/receiver and metadata decisions |
-| ERC-1155 | Bounded single-id core plus canonical `TransferSingle`/`ApprovalForAll` on MultiToken/CraftToken (S4c, #13) | `TransferBatch` only with a separately approved bounded dynamic-event plan | Single-id bounded core with those two events; no “full ERC-1155” claim |
+| ERC-165 | Bounded `Sdk.Erc165` / `supportsInterface(bytes4)` (W1) | none | Reports only interfaces whose required surface is actually present; `0xffffffff` is false |
+| ERC-721 | O(1) core plus canonical `Transfer`/`Approval`/`ApprovalForAll` on Collectible/Badge (S4a, #11); outbound and receiving hooks and bounded enumerable shipped later | Unbounded enumerable map | No “full ERC-721” claim |
+| ERC-1155 | Bounded single-id core plus canonical `TransferSingle`/`ApprovalForAll` on MultiToken/CraftToken (S4c, #13); Phase 2 bounded `TransferBatch` / `balanceOfBatch` / `safeBatchTransferFrom` on `MultiToken` | Unbounded batches | `DuplicateId()` is the batch bound, not a gap; no “full ERC-1155” claim |
 
 The `TransferBatch` payload contains dynamic arrays and does not fit S1a's one-word-per-argument or
-the current four-data-word `LogPlan` contract. S4 must not fake it with a nonstandard fixed event.
-It is either deferred or implemented as a distinct bounded dynamic-event plan with exact ABI
-offset/length tests.
+the original four-data-word `LogPlan` contract. Phase 2 implemented it as a distinct bounded
+dynamic-event plan with exact ABI offset/length tests (`anvil_multitoken.sh`). Unbounded arrays
+stay out.
 
 Acceptance compares topic 0, indexed topics, data bytes, and ABI JSON against the canonical
 OpenZeppelin event declarations. ERC-165 tests include supported IDs, an unsupported ID, and the
@@ -245,8 +247,9 @@ Examples land in dependency order and each wave stays honest about its supported
 
 1. **Wave A — policy events:** Ownable/Pausable/Roles examples adopt typed events and ERC-165 where
    applicable. *(S4b landed `OwnershipTransferred` + `Paused`/`Unpaused` on TwoStepCounter,
-   Credits, and Capped; not constructor logs. W3 adds Ownable2Step `OwnershipTransferStarted`
-   on `transferOwnership`. Constructor Ownable logs remain unlowered. S4d landed `RoleGranted` /
+   Credits, and Capped. Constructor Ownable logs later shipped on TwoStepCounter, Credits,
+   VestLink, and Vest20Link. W3 adds Ownable2Step `OwnershipTransferStarted`
+   on `transferOwnership`. S4d landed `RoleGranted` /
    `RoleRevoked` on EvmStaticCounter / EvmStaticRoster; not `RoleAdminChanged` — `Set2` has no
    admin-role rotation API. W3 slice 2 extends `Set4`/`EvmCrew` with the same LOG4 events;
    `Nonces`/`RateLimit`/`EvmQuota` add closed nonce/rate failures without quota events: stale
@@ -256,10 +259,11 @@ Examples land in dependency order and each wave stays honest about its supported
    canonical events; not ERC-165, safe callbacks, or metadata URI.)*
 3. **Wave C — ERC-1155 single-id:** MultiToken/CraftToken adopt `TransferSingle` and
    `ApprovalForAll`. *(S4c landed LOG4 `TransferSingle` with two data words and LOG3
-   `ApprovalForAll` on both examples; not `TransferBatch`, safe callbacks, metadata URI, or
-   ERC-165.)*
-4. **Wave D — bounded batch/cross-contract examples:** only after the required bounded dynamic
-   event and `OpenCall` policies are independently accepted.
+   `ApprovalForAll` on both examples. Phase 2 shipped `TransferBatch` on `MultiToken` plus
+   `balanceOfBatch` and `safeBatchTransferFrom`. Safe callbacks, metadata URI, and ERC-165
+   shipped later.)*
+4. **Wave D — bounded batch/cross-contract examples:** landed. Bounded `TransferBatch` is Phase 2;
+   `OpenCall` policies are S3 / Phases 0–3. Unbounded batches stay out.
 
 Every wave requires a source example, extractor/IR structural gate, ABI golden, Yul build, Anvil
 behavior and receipt assertions, and support-matrix wording. An example is not evidence for a
