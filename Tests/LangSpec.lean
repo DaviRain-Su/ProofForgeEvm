@@ -28,6 +28,8 @@ open Examples.Lang
 #guard wrap64sub (init 0) == 0
 #guard wrap64sub (init 1) == u64Max
 #guard wrap64sub (init 3) == u64Max - 2
+#guard wrap64sat (init 0) == 0
+#guard wrap64sat (init 3) == 0
 #guard Tests.Fixtures.getNarrowPrevious (Tests.Fixtures.initNarrow 7) 0 == 7
 #guard
   match both (init 9) with
@@ -157,6 +159,14 @@ elab "#pf_guard_uint64_ofnat_wrap" : command => do
     throwError "wrap64sub did not subtract a runtime cell from the wrapped 2^64 literal"
   unless (evm.entries.find? (·.ixName == "wrap64sub")).isSome do
     throwError "EVM Lang lost wrap64sub"
+  let some sat := source.methods.find? (·.ixName == "wrap64sat")
+    | throwError "Lang lost wrap64sat"
+  unless sat.ops.any (fun
+      | .returnU64 (.lit 0) => true
+      | _ => false) do
+    throwError "wrap64sat did not saturate runtime minus 2^64 to 0"
+  unless (evm.entries.find? (·.ixName == "wrap64sat")).isSome do
+    throwError "EVM Lang lost wrap64sat"
   let yul ←
     match ProofForge.Evm.Emit.emitYul evm with
     | .ok text => pure text
