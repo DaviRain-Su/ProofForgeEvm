@@ -209,7 +209,7 @@ Nested mixed `HAdd` and mixed `HMul` reuse the same wrap on each operand.
 Mixed `HSub` wraps a compile-time overflow minuend minus a runtime side.
 Saturating mixed Nat.sub of a runtime UInt64-range minuend minus overflow is 0.
 A wrapping mixed minuend minus overflow wraps the minuend then `subU64`s the overflow.
-A mixed Nat.sub of two runtime sides stays out. -/
+Mixed Nat.sub of two runtime sides saturates via `select .ge`. -/
 private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : Option Ops.Val :=
   match foldStaticNat? env fuel x with
   | some n =>
@@ -253,7 +253,11 @@ private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : O
                 | some l => some (.subU64 l (.lit (UInt64.ofNat m)))
                 | none => none
             else none
-          | none => none
+          | none =>
+            match ofNatNatArg? env fuel args[args.size - 2]!,
+                  ofNatNatArg? env fuel args[args.size - 1]! with
+            | some l, some r => some (.select .ge l r (.subU64 l r) (.lit 0))
+            | _, _ => none
       else none
 
 private partial def asVal (env : Environment) (fuel : Nat) (e : Expr) : Option Ops.Val :=

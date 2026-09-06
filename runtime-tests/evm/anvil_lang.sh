@@ -55,6 +55,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64sat()(uint64
   0 "saturating mixed Nat.sub ofNat ABI word is 0"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64wsub()(uint64)')" \
   3 "wrapping mixed minuend ofNat ABI word follows cells_0"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64rsub()(uint64)')" \
+  3 "mixed Nat.sub of two runtime sides is cells_0 minus cells_1"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'setAt(uint64,uint64)' 0 4 >/dev/null
@@ -70,6 +72,8 @@ pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64sat()(uint64
   0 "saturating mixed Nat.sub stays 0 after a written cells_0"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64wsub()(uint64)')" \
   4 "wrapping mixed minuend ofNat follows a written cells_0"
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64rsub()(uint64)')" \
+  4 "mixed Nat.sub of two runtime sides follows a written cells_0"
 pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64()(uint64)')" \
   3 "static wrap64 ignores cells_0"
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
@@ -80,6 +84,11 @@ left="$(printf '%s\n' "$pair" | head -n1)"
 right="$(printf '%s\n' "$pair" | tail -n1)"
 pf_evm_require_uint "$left" 3 "both.left"
 pf_evm_require_uint "$right" 0 "both.right"
+
+"$cast" send --rpc-url "$rpc" --private-key "$private_key" \
+  "$addr" 'setAt(uint64,uint64)' 1 5 >/dev/null
+pf_evm_require_uint "$("$cast" call --rpc-url "$rpc" "$addr" 'wrap64rsub()(uint64)')" \
+  0 "mixed Nat.sub of two runtime sides saturates when cells_0 < cells_1"
 
 "$cast" send --rpc-url "$rpc" --private-key "$private_key" \
   "$addr" 'setAt(uint64,uint64)' 1 9 >/dev/null

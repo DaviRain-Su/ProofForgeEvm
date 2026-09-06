@@ -110,6 +110,12 @@ def wrap64sat (s : State) : UInt64 :=
 def wrap64wsub (s : State) : UInt64 :=
   UInt64.ofNat ((s.cells[0]!.toNat + 18446744073709551616) - 18446744073709551616)
 
+/-- Mixed Nat.sub of two runtime UInt64-range sides, then `UInt64.ofNat`.
+Nat.sub saturates, so the published word is 0 when `cells[0] < cells[1]`. -/
+@[pf_entry]
+def wrap64rsub (s : State) : UInt64 :=
+  UInt64.ofNat (s.cells[0]!.toNat - s.cells[1]!.toNat)
+
 /-- 两叶 return。 -/
 @[pf_entry]
 def both (s : State) : UInt64 × UInt64 :=
