@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when UInt64.ofNat of mixed Nat.sub of two runtime sides is still refused.
+"""Fail when the UInt64.ofNat wrap series is still treated as open.
 
 asVal of UInt64.ofNat folds staticNat? (OfNat and HAdd) through Lean UInt64.ofNat.
 A mixed HAdd wraps the static side and addU64s a runtime side.
@@ -16,6 +16,7 @@ Lang.wrap64sub publishes 2^64 - cells[0] as ABI wrapping 0 - cells[0].
 Lang.wrap64sat publishes cells[0] - 2^64 as ABI 0.
 Lang.wrap64wsub publishes (cells[0] + 2^64) - 2^64 as ABI cells[0].
 Lang.wrap64rsub publishes cells[0] - cells[1] as ABI saturating Nat.sub.
+The UInt64.ofNat wrap series is closed. No remaining ofNat wrap leftover is named.
 Sdk.OzAudit.temporaryGapCount stays 0.
 
 Usage:
@@ -54,6 +55,8 @@ STALE_PHRASES = (
     "A wrapping mixed minuend stays out",
     "A mixed Nat.sub of two runtime sides stays out",
     "Mixed Nat.sub of two runtime sides stays out",
+    "A further ofNat wrap leftover stays named",
+    "The next ofNat wrap remainder",
 )
 
 REQUIRED = (
@@ -121,6 +124,13 @@ REQUIRED = (
     (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", 'wrap64rsub()(uint64)'),
     (ROOT / "runtime-tests" / "evm" / "anvil_lang.sh", '"mixed Nat.sub of two runtime sides saturates when cells_0 < cells_1"'),
     (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "`UInt64.ofNat` wrap of mixed Nat.sub of two runtime sides"),
+    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "`UInt64.ofNat` wrap series closed"),
+    (ROOT / "docs" / "product" / "oz-sdk-backlog.md", "No remaining ofNat wrap leftover"),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "TwoStepCounter extra `cancelOwnership` stays the named restriction already on TwoStepCounter",
+    ),
+    (ROOT / "ProofForge" / "Evm" / "Registry.lean", 'digest := "d23fd6b5e3d23359"'),
     (ROOT / "ProofForge" / "Evm" / "Sdk" / "OzAudit.lean", "def temporaryGapCount : UInt64 := 0"),
 )
 
