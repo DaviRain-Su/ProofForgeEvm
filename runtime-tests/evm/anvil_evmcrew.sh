@@ -34,6 +34,8 @@ op5="$("$cast" wallet address --private-key "$op5_key")"
 role_crew="$("$cast" keccak "CREW_ROLE")"
 sig_granted="$(pf_evm_typed_event_sig "$abi" RoleGranted)"
 sig_revoked="$(pf_evm_typed_event_sig "$abi" RoleRevoked)"
+pf_evm_typed_event_undeclared "$abi" RoleAdminChanged \
+  "ABI RoleAdminChanged stays out"
 topic_granted="$("$cast" keccak "$sig_granted")"
 topic_revoked="$("$cast" keccak "$sig_revoked")"
 

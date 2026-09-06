@@ -5,7 +5,8 @@ import Examples.Evm.EvmCrew
 
 /-!
 W3 Set4: canonical AccessControl `RoleGranted` / `RoleRevoked` (LOG4) on EvmCrew slot writes.
-Live receipt matrices live in `runtime-tests/evm/anvil_evmcrew.sh`.
+There is no `RoleAdminChanged` (no admin-role rotation API). Live receipt matrices live in
+`runtime-tests/evm/anvil_evmcrew.sh`.
 -/
 
 namespace Tests.EvmOzCrewEventSpec
@@ -28,6 +29,9 @@ private def roleRevokedAbi : String :=
     "{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true}," ++
     "{\"name\":\"account\",\"type\":\"address\",\"indexed\":true}," ++
     "{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true}],\"anonymous\":false}"
+
+private def roleAdminChangedAbi : String :=
+  "{\"type\":\"event\",\"name\":\"RoleAdminChanged\""
 
 private def roleGrantedTopic : String :=
   ProofForge.Crypto.Keccak.keccak256HexOfString "RoleGranted(bytes32,address,address)"
@@ -101,6 +105,8 @@ private def expectRoleEvents (moduleName : Name) (grantName revokeName : String)
     | .error reason => throwError reason
   unless abi.contains roleGrantedAbi && abi.contains roleRevokedAbi do
     throwError s!"{moduleName} ABI lost RoleGranted/RoleRevoked:\n{abi}"
+  unless !abi.contains roleAdminChangedAbi do
+    throwError s!"{moduleName} ABI unexpectedly contains RoleAdminChanged:\n{abi}"
   let yul ←
     match Emit.emitYul evm with
     | .ok yul => pure yul

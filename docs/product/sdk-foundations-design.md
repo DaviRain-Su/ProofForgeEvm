@@ -3,8 +3,8 @@
 > Status: design proposal. S0, S1a/S1b, S2 (#9), S3 OpenCall (#10), S4a–d (#11–#14), and
 > S5 Base RPC gates (#8) are on `main` as of 2026-09-03. Phase 2 shipped bounded ERC-1155
 > `TransferBatch` / `balanceOfBatch` / `safeBatchTransferFrom` on `MultiToken`. Constructor
-> Ownable logs shipped on TwoStepCounter, Credits, VestLink, and Vest20Link. Remaining S4 is
-> `RoleAdminChanged` (no role-admin rotation API). Anonymous LOG0 is not a product
+> Ownable logs shipped on TwoStepCounter, Credits, VestLink, and Vest20Link.
+> `RoleAdminChanged` stays out as a named restriction (no role-admin rotation API). Anonymous LOG0 is not a product
 > `Event.emit` shape — typed events are named ABI events (LOG1–4, signature topic always).
 
 ## Objective / 目标

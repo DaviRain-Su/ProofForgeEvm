@@ -30,6 +30,9 @@ STALE_PHRASES = (
     "No SDK implementation found",
     "Constructor Ownable logs remain unlowered",
     "Remaining S4 (not a “full ERC” claim): constructor `OwnershipTransferred`, `RoleAdminChanged`",
+    "Remaining S4 is `RoleAdminChanged`",
+    "Remaining S4 is\n> `RoleAdminChanged`",
+    "Remaining S4 (not a “full ERC” claim): `RoleAdminChanged`",
 )
 
 REQUIRED = (
@@ -56,6 +59,10 @@ REQUIRED = (
     (
         ROOT / "docs" / "product" / "oz-sdk-backlog.md",
         "S4 TransferBatch / constructor-log honesty",
+    ),
+    (
+        ROOT / "docs" / "product" / "oz-sdk-backlog.md",
+        "S4 RoleAdminChanged named restriction",
     ),
 )
 
