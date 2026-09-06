@@ -86,6 +86,12 @@ def wrap64mix (s : State) : UInt64 :=
 def wrap64nest (s : State) : UInt64 :=
   UInt64.ofNat ((s.cells[0]!.toNat + 18446744073709551616) + 3)
 
+/-- Mixed runtime Nat times a compile-time overflow, then `UInt64.ofNat`.
+`2^64` wraps to 0, so the published word is 0. -/
+@[pf_entry]
+def wrap64mul (s : State) : UInt64 :=
+  UInt64.ofNat (s.cells[0]!.toNat * 18446744073709551616)
+
 /-- 两叶 return。 -/
 @[pf_entry]
 def both (s : State) : UInt64 × UInt64 :=

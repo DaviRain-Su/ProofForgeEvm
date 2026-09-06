@@ -205,7 +205,7 @@ private partial def ecrecoverWideOperands (env : Environment) (fuel : Nat) (args
     some #[h0, h1, h2, h3, vv, r0, r1, r2, r3, s0, s1, s2, s3]
 
 /-- Decode a Nat argument of `UInt64.ofNat`, wrapping compile-time overflow.
-Nested mixed `HAdd` reuses the same wrap on each addend. Non-add mixed Nat stays out. -/
+Nested mixed `HAdd` and mixed `HMul` reuse the same wrap on each operand. Mixed `HSub` stays out. -/
 private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : Option Ops.Val :=
   match foldStaticNat? env fuel x with
   | some n =>
@@ -221,6 +221,12 @@ private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : O
         let args := addends.getAppArgs
         match ofNatNatArg? env fuel args[args.size - 2]!, ofNatNatArg? env fuel args[args.size - 1]! with
         | some l, some r => some (.addU64 l r)
+        | _, _ => none
+      else if (isConstNamed addends ``HMul.hMul || isConstNamed addends ``Nat.mul ||
+          endsWith addends ".hMul") && addends.getAppArgs.size ≥ 2 then
+        let args := addends.getAppArgs
+        match ofNatNatArg? env fuel args[args.size - 2]!, ofNatNatArg? env fuel args[args.size - 1]! with
+        | some l, some r => some (.mulU64 l r)
         | _, _ => none
       else none
 
