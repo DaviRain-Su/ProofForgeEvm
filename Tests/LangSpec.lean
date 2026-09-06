@@ -25,6 +25,9 @@ open Examples.Lang
 #guard wrap64nest (init 3) == 6
 #guard wrap64mul (init 0) == 0
 #guard wrap64mul (init 3) == 0
+#guard wrap64sub (init 0) == 0
+#guard wrap64sub (init 1) == u64Max
+#guard wrap64sub (init 3) == u64Max - 2
 #guard Tests.Fixtures.getNarrowPrevious (Tests.Fixtures.initNarrow 7) 0 == 7
 #guard
   match both (init 9) with
@@ -146,6 +149,22 @@ elab "#pf_guard_uint64_ofnat_wrap" : command => do
     throwError "wrap64mul did not multiply a runtime cell by the wrapped 2^64 literal"
   unless (evm.entries.find? (·.ixName == "wrap64mul")).isSome do
     throwError "EVM Lang lost wrap64mul"
+  let some sub := source.methods.find? (·.ixName == "wrap64sub")
+    | throwError "Lang lost wrap64sub"
+  unless sub.ops.any (fun
+      | .returnU64 (.subU64 (.lit 0) _) => true
+      | _ => false) do
+    throwError "wrap64sub did not subtract a runtime cell from the wrapped 2^64 literal"
+  unless (evm.entries.find? (·.ixName == "wrap64sub")).isSome do
+    throwError "EVM Lang lost wrap64sub"
+  let yul ←
+    match ProofForge.Evm.Emit.emitYul evm with
+    | .ok text => pure text
+    | .error reason => throwError reason
+  unless yul.contains "and(sub(0, sload(0)), 0xffffffffffffffff)" do
+    throwError "wrap64sub did not emit masked wrapping 0 minus cells_0"
+  if yul.contains "if lt(0, sload(0))" then
+    throwError "wrap64sub still takes the checked-sub revert on a wrapped 2^64 minuend"
 
 #pf_guard_uint64_ofnat_wrap
 
