@@ -83,6 +83,8 @@ pf_evm_require_equal "$sig_granted" 'RoleGranted(bytes32,address,address)' \
   "ABI RoleGranted signature"
 pf_evm_require_equal "$sig_revoked" 'RoleRevoked(bytes32,address,address)' \
   "ABI RoleRevoked signature"
+pf_evm_typed_event_undeclared "$abi" RoleAdminChanged \
+  "ABI RoleAdminChanged stays out"
 topic_granted="$("$cast" keccak "$sig_granted")"
 topic_revoked="$("$cast" keccak "$sig_revoked")"
 

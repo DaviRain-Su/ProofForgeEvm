@@ -840,6 +840,18 @@ print(ev['name']+'('+','.join(i['type'] for i in ev['inputs'])+')')
 "
 }
 
+# ABI_JSON must not declare event NAME (named restriction, not a missing emit).
+pf_evm_typed_event_undeclared() {
+  local abi_json="$1" name="$2" label="$3"
+  "$python" -I -S -c "
+import json
+abi=json.load(open('$abi_json'))
+events=[e for e in abi if e.get('type')=='event' and e.get('name')=='$name']
+if events:
+    raise SystemExit(f'FAIL: $label: ABI must not declare $name, got {len(events)}')
+"
+}
+
 # Decode the receipt log with topic0 == keccak(sig) using the ABI declaration of NAME:
 # indexed inputs come from topics in declaration order, non-indexed inputs from the data
 # section: one head word per input, holding the value for a static type or the byte offset of
