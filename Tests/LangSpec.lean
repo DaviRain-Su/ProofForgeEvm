@@ -161,8 +161,8 @@ elab "#pf_guard_uint64_ofnat_wrap" : command => do
     match ProofForge.Evm.Emit.emitYul evm with
     | .ok text => pure text
     | .error reason => throwError reason
-  unless yul.contains "sub(0, sload(0))" do
-    throwError "wrap64sub did not emit wrapping 0 minus cells_0"
+  unless yul.contains "and(sub(0, sload(0)), 0xffffffffffffffff)" do
+    throwError "wrap64sub did not emit masked wrapping 0 minus cells_0"
   if yul.contains "if lt(0, sload(0))" then
     throwError "wrap64sub still takes the checked-sub revert on a wrapped 2^64 minuend"
 

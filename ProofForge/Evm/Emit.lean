@@ -579,16 +579,20 @@ private partial def materializeVal (p : IR.Program) (indent : String) (paramPref
         let (preR, rv, st2) ← materializeVal p indent paramPrefix paramCount paramWidths r st1
         let (nm, st3) := fresh st2
         -- A `.lit 0` minuend is wrapping ofNat (2^64 - n) and must not revert.
+        -- EVM sub is 256-bit, so mask to 64 bits to match Lean UInt64 wrap.
         -- Runtime-minuend `subU64` keeps the underflow revert; `checkedSubU64` owns Except.
         let wrapZeroMinuend :=
           match l with
           | .lit n => n == 0
           | _ => false
+        let subExpr := "sub(" ++ lv ++ ", " ++ rv ++ ")"
+        let value :=
+          if wrapZeroMinuend then "and(" ++ subExpr ++ ", " ++ u64MaxYul ++ ")" else subExpr
         let guard :=
           if wrapZeroMinuend then ""
           else indent ++ "if lt(" ++ lv ++ ", " ++ rv ++ ") { " ++ revert0 ++ " }" ++ nl
         let txt := preL ++ preR ++ guard ++
-          indent ++ "let " ++ nm ++ " := sub(" ++ lv ++ ", " ++ rv ++ ")" ++ nl
+          indent ++ "let " ++ nm ++ " := " ++ value ++ nl
         return (txt, nm, st3)
     | .mulU64 l r =>
         let (preL, lv, st1) ← materializeVal p indent paramPrefix paramCount paramWidths l st
