@@ -578,8 +578,16 @@ private partial def materializeVal (p : IR.Program) (indent : String) (paramPref
         let (preL, lv, st1) ← materializeVal p indent paramPrefix paramCount paramWidths l st
         let (preR, rv, st2) ← materializeVal p indent paramPrefix paramCount paramWidths r st1
         let (nm, st3) := fresh st2
-        let txt := preL ++ preR ++
-          indent ++ "if lt(" ++ lv ++ ", " ++ rv ++ ") { " ++ revert0 ++ " }" ++ nl ++
+        -- A `.lit 0` minuend is wrapping ofNat (2^64 - n) and must not revert.
+        -- Runtime-minuend `subU64` keeps the underflow revert; `checkedSubU64` owns Except.
+        let wrapZeroMinuend :=
+          match l with
+          | .lit n => n == 0
+          | _ => false
+        let guard :=
+          if wrapZeroMinuend then ""
+          else indent ++ "if lt(" ++ lv ++ ", " ++ rv ++ ") { " ++ revert0 ++ " }" ++ nl
+        let txt := preL ++ preR ++ guard ++
           indent ++ "let " ++ nm ++ " := sub(" ++ lv ++ ", " ++ rv ++ ")" ++ nl
         return (txt, nm, st3)
     | .mulU64 l r =>

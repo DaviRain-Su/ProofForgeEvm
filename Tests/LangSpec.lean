@@ -157,6 +157,14 @@ elab "#pf_guard_uint64_ofnat_wrap" : command => do
     throwError "wrap64sub did not subtract a runtime cell from the wrapped 2^64 literal"
   unless (evm.entries.find? (·.ixName == "wrap64sub")).isSome do
     throwError "EVM Lang lost wrap64sub"
+  let yul ←
+    match ProofForge.Evm.Emit.emitYul evm with
+    | .ok text => pure text
+    | .error reason => throwError reason
+  unless yul.contains "sub(0, sload(0))" do
+    throwError "wrap64sub did not emit wrapping 0 minus cells_0"
+  if yul.contains "if lt(0, sload(0))" then
+    throwError "wrap64sub still takes the checked-sub revert on a wrapped 2^64 minuend"
 
 #pf_guard_uint64_ofnat_wrap
 
