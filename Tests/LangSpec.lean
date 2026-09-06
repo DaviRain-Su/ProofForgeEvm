@@ -30,6 +30,8 @@ open Examples.Lang
 #guard wrap64sub (init 3) == u64Max - 2
 #guard wrap64sat (init 0) == 0
 #guard wrap64sat (init 3) == 0
+#guard wrap64wsub (init 0) == 0
+#guard wrap64wsub (init 3) == 3
 #guard Tests.Fixtures.getNarrowPrevious (Tests.Fixtures.initNarrow 7) 0 == 7
 #guard
   match both (init 9) with
@@ -167,6 +169,15 @@ elab "#pf_guard_uint64_ofnat_wrap" : command => do
     throwError "wrap64sat did not saturate runtime minus 2^64 to 0"
   unless (evm.entries.find? (·.ixName == "wrap64sat")).isSome do
     throwError "EVM Lang lost wrap64sat"
+  let some wsub := source.methods.find? (·.ixName == "wrap64wsub")
+    | throwError "Lang lost wrap64wsub"
+  unless wsub.ops.any (fun
+      | .returnU64 (.subU64 (.addU64 _ (.lit 0)) (.lit 0)) => true
+      | .returnU64 (.subU64 (.addU64 (.lit 0) _) (.lit 0)) => true
+      | _ => false) do
+    throwError "wrap64wsub did not sub a wrapped overflow from a wrapping mixed minuend"
+  unless (evm.entries.find? (·.ixName == "wrap64wsub")).isSome do
+    throwError "EVM Lang lost wrap64wsub"
   let yul ←
     match ProofForge.Evm.Emit.emitYul evm with
     | .ok text => pure text

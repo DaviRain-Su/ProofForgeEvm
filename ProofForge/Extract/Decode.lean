@@ -208,7 +208,8 @@ private partial def ecrecoverWideOperands (env : Environment) (fuel : Nat) (args
 Nested mixed `HAdd` and mixed `HMul` reuse the same wrap on each operand.
 Mixed `HSub` wraps a compile-time overflow minuend minus a runtime side.
 Saturating mixed Nat.sub of a runtime UInt64-range minuend minus overflow is 0.
-A wrapping mixed minuend minus overflow stays out. -/
+A wrapping mixed minuend minus overflow wraps the minuend then `subU64`s the overflow.
+A mixed Nat.sub of two runtime sides stays out. -/
 private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : Option Ops.Val :=
   match foldStaticNat? env fuel x with
   | some n =>
@@ -247,7 +248,10 @@ private partial def ofNatNatArg? (env : Environment) (fuel : Nat) (x : Expr) : O
             if m ≥ UInt64.size then
               match asVal env fuel args[args.size - 2]! with
               | some _ => some (.lit 0)
-              | none => none
+              | none =>
+                match ofNatNatArg? env fuel args[args.size - 2]! with
+                | some l => some (.subU64 l (.lit (UInt64.ofNat m)))
+                | none => none
             else none
           | none => none
       else none

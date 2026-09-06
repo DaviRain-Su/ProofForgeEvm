@@ -104,6 +104,12 @@ def wrap64sub (s : State) : UInt64 :=
 def wrap64sat (s : State) : UInt64 :=
   UInt64.ofNat (s.cells[0]!.toNat - 18446744073709551616)
 
+/-- Wrapping mixed minuend minus overflow, then `UInt64.ofNat`.
+`(cells[0] + 2^64) - 2^64` wraps the add to `cells[0]` and the overflow to 0, so the published word is `s.cells[0]`. -/
+@[pf_entry]
+def wrap64wsub (s : State) : UInt64 :=
+  UInt64.ofNat ((s.cells[0]!.toNat + 18446744073709551616) - 18446744073709551616)
+
 /-- 两叶 return。 -/
 @[pf_entry]
 def both (s : State) : UInt64 × UInt64 :=
